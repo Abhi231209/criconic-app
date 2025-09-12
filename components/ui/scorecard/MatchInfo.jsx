@@ -23,6 +23,7 @@ import {
   MaterialCommunityIcons,
   Feather 
 } from '@expo/vector-icons';
+import ThemedText from '../custom/ThemedText';
 
 // Dummy data for the component
 const dummyData = {
@@ -129,9 +130,9 @@ const ImagePlaceHolder = ({ image, name, className, size = 12 }) => {
   
   return (
     <View className={`w-${size} h-${size} rounded-full border-2 ${borderColor} ${bgColor} justify-center items-center ${className}`}>
-      <Text className={`${colorScheme === 'dark' ? 'text-white' : 'text-gray-800'} font-bold text-lg`}>
+      <ThemedText className={`${colorScheme === 'dark' ? 'text-white' : 'text-gray-800'} font-bold text-lg`}>
         {name?.charAt(0)?.toUpperCase() || 'T'}
-      </Text>
+      </ThemedText>
     </View>
   );
 };
@@ -144,6 +145,7 @@ const AnimatedSectionHeader = ({ title, icon, isExpanded, onPress }) => {
   const iconColor = colorScheme === 'dark' ? '#60a5fa' : '#3b82f6';
   
   return (
+    <ScrollView>
     <Animated.View entering={SlideInRight}>
       <TouchableOpacity 
         onPress={onPress}
@@ -152,7 +154,7 @@ const AnimatedSectionHeader = ({ title, icon, isExpanded, onPress }) => {
       >
         <View className="flex-row items-center gap-3">
           {icon}
-          <Text className={`text-lg font-semibold ${textColor}`}>{title}</Text>
+          <ThemedText className={`text-lg font-semibold ${textColor}`}>{title}</ThemedText>
         </View>
         <Animated.View 
           style={{ transform: [{ rotate: isExpanded ? '0deg' : '180deg' }] }}
@@ -162,6 +164,7 @@ const AnimatedSectionHeader = ({ title, icon, isExpanded, onPress }) => {
         </Animated.View>
       </TouchableOpacity>
     </Animated.View>
+    </ScrollView>
   );
 };
 
@@ -178,10 +181,10 @@ const InfoItem = ({ icon, label, value, clickable }) => {
         {icon}
       </View>
       <View className="flex-1">
-        <Text className={`text-sm ${labelColor}`}>{label}</Text>
-        <Text className={`text-base font-medium ${textColor} ${clickable ? 'text-blue-500 dark:text-blue-400' : ''}`}>
+        <ThemedText className={`text-sm ${labelColor}`}>{label}</ThemedText>
+        <ThemedText className={`text-base font-medium ${textColor} ${clickable ? 'text-blue-500 dark:text-blue-400' : ''}`}>
           {value}
-        </Text>
+        </ThemedText>
       </View>
     </View>
   );
@@ -197,7 +200,7 @@ const FormIndicator = ({ result }) => {
   
   return (
     <View className={`w-7 h-7 rounded-full ${getBgColor()} items-center justify-center mx-0.5`}>
-      <Text className="text-xs font-bold text-white">{result}</Text>
+      <ThemedText className="text-xs font-bold text-white">{result}</ThemedText>
     </View>
   );
 };
@@ -232,9 +235,9 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
               image={team.teamLogo}
               name={team.title}
             />
-            <Text className={`text-lg font-medium ${textColor}`}>
+            <ThemedText className={`text-lg font-medium ${textColor}`}>
               {team.title}
-            </Text>
+            </ThemedText>
           </Animated.View>
         ))}
       </View>
@@ -247,39 +250,39 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
         >
           <View className="flex-row items-center gap-2 mb-4">
             <Ionicons name="stats-chart" size={18} color="#60a5fa" />
-            <Text className={`text-md font-semibold ${textColor}`}>
+            <ThemedText className={`text-md font-semibold ${textColor}`}>
               HEAD TO HEAD
-            </Text>
+            </ThemedText>
           </View>
           
           <View className="flex-row justify-between mb-3">
             <View className="items-center flex-1">
-              <Text className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+              <ThemedText className="text-3xl font-bold text-blue-600 dark:text-blue-400">
                 {headToHeadStats.matchesPlayed}
-              </Text>
-              <Text className="text-sm text-gray-500 dark:text-gray-400">Matches</Text>
+              </ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">Matches</ThemedText>
             </View>
             
             <View className="items-center flex-1 border-l border-r border-gray-200 dark:border-gray-700">
-              <Text className="text-2xl font-bold text-green-600 dark:text-green-400">
+              <ThemedText className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {matchWin(score.teams[0].teamId)}
-              </Text>
-              <Text className="text-sm text-gray-500 dark:text-gray-400">{score.teams[0].shortName}</Text>
+              </ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{score.teams[0].shortName}</ThemedText>
             </View>
             
             <View className="items-center flex-1">
-              <Text className="text-2xl font-bold text-red-600 dark:text-red-400">
+              <ThemedText className="text-2xl font-bold text-red-600 dark:text-red-400">
                 {matchWin(score.teams[1].teamId)}
-              </Text>
-              <Text className="text-sm text-gray-500 dark:text-gray-400">{score.teams[1].shortName}</Text>
+              </ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{score.teams[1].shortName}</ThemedText>
             </View>
           </View>
           
           {headToHeadStats.draws > 0 && (
             <View className="items-center mt-2">
-              <Text className="text-sm text-gray-500 dark:text-gray-400">
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
                 {headToHeadStats.draws} Draws
-              </Text>
+              </ThemedText>
             </View>
           )}
         </Animated.View>
@@ -322,9 +325,9 @@ const RecentFormSection = ({ teamsRecentForm, cardBg, textColor }) => {
             entering={LightSpeedInRight.delay(index * 150)}
             className="items-center flex-1 mx-2"
           >
-            <Text className={`text-sm font-medium mb-3 ${textColor}`}>
+            <ThemedText className={`text-sm font-medium mb-3 ${textColor}`}>
               {team.title}
-            </Text>
+            </ThemedText>
             <View className="flex-row justify-center">
               {team.recentForm.map((result, i) => (
                 <FormIndicator key={i} result={result} />
@@ -337,15 +340,15 @@ const RecentFormSection = ({ teamsRecentForm, cardBg, textColor }) => {
       <View className="flex-row justify-center mt-5 gap-4">
         <View className="flex-row items-center">
           <View className="w-3 h-3 rounded-full bg-green-500 mr-1" />
-          <Text className="text-xs text-gray-500 dark:text-gray-400">Win</Text>
+          <ThemedText className="text-xs text-gray-500 dark:text-gray-400">Win</ThemedText>
         </View>
         <View className="flex-row items-center">
           <View className="w-3 h-3 rounded-full bg-red-500 mr-1" />
-          <Text className="text-xs text-gray-500 dark:text-gray-400">Loss</Text>
+          <ThemedText className="text-xs text-gray-500 dark:text-gray-400">Loss</ThemedText>
         </View>
         <View className="flex-row items-center">
           <View className="w-3 h-3 rounded-full bg-gray-500 mr-1" />
-          <Text className="text-xs text-gray-500 dark:text-gray-400">Draw/NR</Text>
+          <ThemedText className="text-xs text-gray-500 dark:text-gray-400">Draw/NR</ThemedText>
         </View>
       </View>
     </Animated.View>
@@ -373,7 +376,7 @@ export default function MatchInfo() {
   };
 
   // Theme-based colors
-  const bgColor = colorScheme === 'dark' ? 'bg-gray-900' : 'bg-gray-50';
+  const bgColor = colorScheme === 'dark' ? 'bg-gray-800' : 'bg-gray-50';
   const cardBg = colorScheme === 'dark' ? 'bg-gray-800' : 'bg-white';
   const textColor = colorScheme === 'dark' ? 'text-white' : 'text-gray-900';
   const secondaryText = colorScheme === 'dark' ? 'text-gray-400' : 'text-gray-500';
@@ -450,12 +453,12 @@ export default function MatchInfo() {
           entering={ZoomIn.duration(600)}
           className={`${cardBg} rounded-2xl p-5 mb-5 shadow-lg`}
         >
-          <Text className={`text-xl font-bold text-center ${textColor} mb-1`}>
+          <ThemedText className={`text-xl font-bold text-center ${textColor} mb-1`}>
             {score.title}
-          </Text>
-          <Text className={`text-sm text-center ${secondaryText}`}>
+          </ThemedText>
+          <ThemedText className={`text-sm text-center ${secondaryText}`}>
             {formatDate(score.date)}
-          </Text>
+          </ThemedText>
           
           {/* Teams vs Badge */}
           <View className="flex-row justify-center items-center my-6">
@@ -465,14 +468,14 @@ export default function MatchInfo() {
                 name={score.teams[0].title}
                 size="16"
               />
-              <Text className={`font-bold mt-2 ${textColor}`}>
+              <ThemedText className={`font-bold mt-2 ${textColor}`}>
                 {score.teams[0].shortName}
-              </Text>
+              </ThemedText>
             </View>
             
             <View className="mx-4 items-center">
               <View className="bg-red-500 px-3 py-1 rounded-full">
-                <Text className="text-white font-bold">VS</Text>
+                <ThemedText className="text-white font-bold">VS</ThemedText>
               </View>
             </View>
             
@@ -482,9 +485,9 @@ export default function MatchInfo() {
                 name={score.teams[1].title}
                 size="16"
               />
-              <Text className={`font-bold mt-2 ${textColor}`}>
+              <ThemedText className={`font-bold mt-2 ${textColor}`}>
                 {score.teams[1].shortName}
-              </Text>
+              </ThemedText>
             </View>
           </View>
         </Animated.View>

@@ -19,10 +19,13 @@ import {
 import { TouchableOpacity } from "react-native";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import Fontisto from '@expo/vector-icons/Fontisto';
+import Fontisto from "@expo/vector-icons/Fontisto";
+import { useNavigation } from "@react-navigation/native";
+import SCREENS from "@/screens";
 // import { SettingsIcon, WalletIcon, GiftIcon, FriendsIcon, LearnIcon, LogoutIcon } from '@gluestack-ui/icons';
 
 export default function CustomDrawer(props) {
+  const navigation = useNavigation();
   return (
     <DrawerContentScrollView {...props} className="bg-gray-900 flex-1 p-4">
       {/* Profile Section */}
@@ -44,7 +47,7 @@ export default function CustomDrawer(props) {
             backgroundColor: "#EDEDED",
             borderRadius: 10,
             // paddingVertical: 4,
-            marginBottom:10,
+            marginBottom: 10,
             paddingTop: 4,
             paddingBottom: 10,
             paddingHorizontal: 10,
@@ -55,17 +58,17 @@ export default function CustomDrawer(props) {
             shadowOffset: { width: 0, height: 3 },
             shadowOpacity: 0.1,
             shadowRadius: 4,
-            width:"100%",
+            width: "100%",
 
             // 🔥 Shadow (Android)
             elevation: 3,
-            
           }}
         >
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate(SCREENS.Settings)}>
             <ThemedText style={{ lineHeight: 20 }}>
               <AntDesign name="setting" size={10} color="black" />
-              Setting</ThemedText>
+              Setting
+            </ThemedText>
           </TouchableOpacity>
         </View>
         {/* <Divider className="my-2 bg-gray-700" /> */}
@@ -167,12 +170,16 @@ export default function CustomDrawer(props) {
           </ThemedText>
         </HStack>
 
-        <HStack space="md" alignItems="center">
-          <ThemedText className=" text-base">
-            <MaterialCommunityIcons name="cricket" size={10} color="black" /> My
-            Matches
-          </ThemedText>
-        </HStack>
+        <TouchableOpacity onPress={() => navigation.navigate("MyCricket")}>
+          <HStack space="md" alignItems="center">
+            <ThemedText className=" text-base">
+              <MaterialCommunityIcons name="cricket" size={10} color="black" />{" "}
+              My Matches
+            </ThemedText>
+          </HStack>
+        </TouchableOpacity>
+
+<TouchableOpacity onPress={() => navigation.navigate("AddPlayer")}>
 
         <HStack space="md" alignItems="center">
           <ThemedText className=" text-base">
@@ -180,6 +187,7 @@ export default function CustomDrawer(props) {
             My Teams
           </ThemedText>
         </HStack>
+</TouchableOpacity>
 
         <SectionHeading title="Cricket Management" />
 
@@ -229,7 +237,7 @@ export default function CustomDrawer(props) {
       <Box mt="auto">
         <Button
           className="bg-gray-700 w-full py-3 rounded-lg"
-          style={{backgroundColor: "#EDEDED",}}
+          style={{ backgroundColor: "#EDEDED" }}
           onPress={() => console.log("Sign Out")}
         >
           <ThemedText className=" text-base font-semibold">Sign out</ThemedText>

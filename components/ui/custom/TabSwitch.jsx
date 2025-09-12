@@ -1,10 +1,12 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   Dimensions,
   StyleSheet,
+  ScrollView,
+  useColorScheme,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -14,215 +16,171 @@ import Animated, {
   runOnJS,
   Easing,
 } from "react-native-reanimated";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import ThemedText from "./ThemedText";
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const Tab = createMaterialTopTabNavigator();
 
 const TabSwitch = ({
   tabs,
   onChange,
   initialIndex = 0,
   tabBarHeight = 40,
-  activeColor = "#007AFF",
-  inactiveColor = "#8E8E93",
-  underlineColor = "#007AFF",
-  backgroundColor = "#FFFFFF",
+  activeColor,
+  inactiveColor,
+  underlineColor,
+  backgroundColor,
   springConfig = { damping: 15, stiffness: 150 },
   enableSwipeGesture = true,
   contentStyle,
   tabStyle,
   underlineHeight = 3,
   animationDuration = 300,
+  gestureSensitivity = 1.5,
 }) => {
-  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const colorScheme = useColorScheme();
+  const isDarkMode = colorScheme === 'dark';
+  
+  // Blue/Cyan color scheme
+  const defaultActiveColor = '#2196F3'; // Cyan
+  const defaultInactiveColor = isDarkMode ? '#90A4AE' : '#78909C'; // Blue-gray
+  const defaultUnderlineColor = '#2196F3'; // Blue
+  const defaultBackgroundColor = isDarkMode ? '#121212' : '#FFFFFF';
+  const defaultTabBarBackground = isDarkMode ? '#1E1E1E' : '#FFFFFF';
+  const defaultIndicatorBackground = isDarkMode ? '#333333' : '#F5F5F5';
 
-  // Shared values for reanimated
-  const translateX = useSharedValue(
-    initialIndex * (SCREEN_WIDTH / tabs.length)
-  );
-  const contentTranslateX = useSharedValue(-initialIndex * SCREEN_WIDTH);
-  const scale = useSharedValue(1);
+  // Use provided colors or fall back to blue/cyan defaults
+  const finalActiveColor = activeColor || defaultActiveColor;
+  const finalInactiveColor = inactiveColor || defaultInactiveColor;
+  const finalUnderlineColor = underlineColor || defaultUnderlineColor;
+  const finalBackgroundColor = backgroundColor || defaultBackgroundColor;
+  const finalTabBarBackground = defaultTabBarBackground;
+  const finalIndicatorBackground = defaultIndicatorBackground;
 
-  const tabWidth = SCREEN_WIDTH / tabs.length;
-  const underlineWidth = tabWidth * 0.6;
+  // Safety check for tabs array
+  if (!tabs || !Array.isArray(tabs) || tabs.length === 0) {
+    console.warn('TabSwitch: tabs prop is invalid or empty');
+    return (
+      <View style={[styles.container, { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: finalBackgroundColor 
+      }]}>
+        <Text style={[styles.defaultText, { color: finalInactiveColor }]}>
+          No tabs available
+        </Text>
+      </View>
+    );
+  }
 
-  const handleTabPress = useCallback(
-    (index) => {
-      if (index === activeIndex) return;
-      setActiveIndex(index);
+  // Create tab screen components dynamically
+  const createTabScreens = () => {
+    return tabs.map((tab, index) => {
+      const TabScreen = () => {
+        // Handle content prop if it exists
+        if (tab.content) {
+          return tab.content;
+        }
+        
+        // Handle content array prop if it exists
+        if (Array.isArray(contentStyle?.content)) {
+          return contentStyle.content[index] || <View />;
+        }
+        
+        return <View />;
+      };
 
-      translateX.value = withSpring(index * tabWidth, springConfig);
+      // Create a unique route name for each tab
+      const routeName = `Tab_${index}`;
 
-      contentTranslateX.value = withTiming(-index * SCREEN_WIDTH, {
-        duration: animationDuration,
-        easing: Easing.out(Easing.cubic),
-      });
+      return (
+        <Tab.Screen
+          key={index}
+          name={routeName}
+          component={TabScreen}
+          options={{
+            tabBarLabel: tab.label || tab.name || `Tab${index}`,
+          }}
+          listeners={{
+            tabPress: () => {
+              if (onChange) {
+                try {
+                  onChange(tab, index);
+                } catch (error) {
+                  console.error('Error in onChange callback:', error);
+                }
+              }
+            },
+          }}
+        />
+      );
+    });
+  };
 
-      scale.value = withSpring(1.05, {}, () => {
-        scale.value = withSpring(1, {});
-      });
-
-      if (onChange) onChange(tabs[index], index);
-    },
-    [activeIndex, tabs, translateX, tabWidth, springConfig, contentTranslateX, animationDuration, scale, onChange]
-  );
-
-  const underlineAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value + (tabWidth - underlineWidth) / 2 },
-      { scaleX: scale.value },
-    ],
-  }));
-
-  const contentAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: contentTranslateX.value }],
-  }));
-
-  const swipeGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .onUpdate((event) => {
-          if (!enableSwipeGesture) return;
-        })
-        .onEnd((event) => {
-          if (!enableSwipeGesture) return;
-
-          // Prevent out-of-bounds
-          let newIndex = activeIndex;
-          if (event.translationX > 50 && activeIndex > 0) {
-            newIndex = activeIndex - 1;
-          } else if (
-            event.translationX < -50 &&
-            activeIndex < tabs.length - 1
-          ) {
-            newIndex = activeIndex + 1;
-          }
-
-          if (newIndex !== activeIndex) {
-            runOnJS(handleTabPress)(newIndex);
-          } else {
-            contentTranslateX.value = withSpring(
-              -activeIndex * SCREEN_WIDTH,
-              springConfig
-            );
-          }
-        }),
-    [activeIndex, enableSwipeGesture, tabs.length, springConfig, contentTranslateX, handleTabPress]
-  );
-
-  const getTabTextStyle = useCallback(
-    (index) => ({
-      color: index === activeIndex ? activeColor : inactiveColor,
-      fontWeight: index === activeIndex ? "600" : "400",
-      fontSize: 16,
-      textAlign: "center",
-      lineHeight: tabBarHeight - 10,
-    }),
-    [activeIndex, activeColor, inactiveColor, tabBarHeight]
-  );
+  // Get the initial route name based on initialIndex
+  const getInitialRouteName = () => {
+    const safeIndex = Math.min(Math.max(0, initialIndex), tabs.length - 1);
+    return `Tab_${safeIndex}`;
+  };
 
   return (
-    <View style={[styles.container, { flex: 1 }]}>
-      {/* Tab Header */}
-      <View
-        style={[styles.tabHeader, { height: tabBarHeight, backgroundColor }]}
+    <View style={[styles.container, { flex: 1, backgroundColor: finalBackgroundColor }]}>
+      <Tab.Navigator
+        initialRouteName={getInitialRouteName()}
+        screenOptions={{
+          tabBarLabelStyle: { 
+            fontSize: 14, 
+            fontWeight: '500',
+            textTransform: 'none',
+          },
+          tabBarIndicatorStyle: { 
+            backgroundColor: finalUnderlineColor,
+            height: underlineHeight,
+          },
+          tabBarStyle: { 
+            backgroundColor: finalTabBarBackground,
+            height: tabBarHeight,
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 1,
+            borderBottomColor: isDarkMode ? '#37474F' : '#E3F2FD',
+          },
+          tabBarActiveTintColor: finalActiveColor,
+          tabBarInactiveTintColor: finalInactiveColor,
+          tabBarPressColor: 'transparent',
+          tabBarPressOpacity: 0.8,
+          tabBarBounces: false,
+          tabBarScrollEnabled: tabs.length > 3,
+          tabBarContentContainerStyle: { 
+            paddingHorizontal: 10,
+            alignItems: 'center',
+          },
+          tabBarItemStyle: { 
+            paddingVertical: 10,
+            minWidth: SCREEN_WIDTH / Math.min(tabs.length, 4),
+          },
+          tabBarIndicatorContainerStyle: { 
+            paddingHorizontal: 10,
+          },
+          tabBarGap: 0,
+          swipeEnabled: enableSwipeGesture,
+          animationEnabled: true,
+          lazy: true,
+        }}
       >
-        {tabs.map((tab, index) => (
-          <TouchableOpacity
-            key={tab.id || index}
-            style={[styles.tab, { width: tabWidth }, tabStyle]}
-            onPress={() => handleTabPress(index)}
-            activeOpacity={0.7}
-          >
-            <ThemedText style={getTabTextStyle(index)}>{tab.label}</ThemedText>
-          </TouchableOpacity>
-        ))}
-
-        {/* Animated underline */}
-        <Animated.View
-          style={[
-            styles.underline,
-            {
-              width: underlineWidth,
-              height: underlineHeight,
-              backgroundColor: underlineColor,
-            },
-            underlineAnimatedStyle,
-          ]}
-        />
-      </View>
-
-      {/* Content Area with Swipe Gesture */}
-      <GestureDetector gesture={swipeGesture}>
-        <View style={[styles.contentContainer, contentStyle, { flex: 1 }]}>
-          <Animated.View
-            style={[
-              styles.contentWrapper,
-              { width: SCREEN_WIDTH * tabs.length },
-              contentAnimatedStyle,
-            ]}
-          >
-            {tabs.map((tab, index) => (
-              <View key={tab.id || index} style={[styles.contentTab, { width: SCREEN_WIDTH }]}>
-                {tab.content || (
-                  <View style={styles.defaultContent}>
-                    <Text style={styles.defaultText}>{tab.label} Content</Text>
-                  </View>
-                )}
-              </View>
-            ))}
-          </Animated.View>
-        </View>
-      </GestureDetector>
+        {createTabScreens()}
+      </Tab.Navigator>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  tabHeader: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E5EA",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  tab: {
+  container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-  underline: {
-    position: "absolute",
-    bottom: 0,
-    borderRadius: 2,
-  },
-  contentContainer: {
-    flex: 1,
-    overflow: "hidden",
-  },
-  contentWrapper: {
-    flexDirection: "row",
-    height: "100%",
-  },
-  contentTab: {
-    width: "100%",
-  },
-  defaultContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
   },
   defaultText: {
-    fontSize: 18,
-    color: "#8E8E93",
-    fontWeight: "500",
+    fontSize: 16,
   },
 });
 

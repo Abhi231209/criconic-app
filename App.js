@@ -26,6 +26,7 @@ import { useEffect } from "react";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SocketProvider } from "./contexts/SocketContext";
 
 const AppContent = () => {
   const isDark = false;
@@ -64,9 +65,11 @@ export default function App() {
           <Provider store={store}>
             <GluestackUIProvider config={config}>
               <QueryClientProvider client={queryClient}>
+              <SocketProvider serverUrl="https://devapi.criconic.com">
                     <NavigationContainer>
                       <AppNavigator />
                     </NavigationContainer>
+              </SocketProvider>
               </QueryClientProvider>
             </GluestackUIProvider>
           </Provider>
@@ -75,7 +78,6 @@ export default function App() {
     </GestureHandlerRootView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -84,3 +86,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+

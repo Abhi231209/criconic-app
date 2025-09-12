@@ -1,4 +1,5 @@
 
+
 const SCREENS = {
 
   LoginScreen: "LoginScreen",
@@ -7,7 +8,25 @@ const SCREENS = {
   NavBar:"NavBar",
   ScoreCard:"ScoreCard",
   MatchScoreCard: "MatchScoreCard",
-
+  CreateTournament: "CreateTournament",
+  CreateTeam: "CreateTeam",
+  CreateMatch: "CreateMatch",
+  MyCricket:  "MyCricket",
+  TeamProfile: "TeamProfile",
+  EditTeam:"EditTeam",
+  TournamentProfile: "TournamentProfile",
+  EditTournament: "EditTournament",
+  AddPlayer: "AddPlayer",
+  CreateMatch: "CreateMatch",
+  SelectSquadScreen: "SelectSquadScreen",
+  SelectTeamScreen: "SelectTeamScreen",
+  MatchDetailsScreen: "MatchDetailsScreen",
+  TossScreen: "TossScreen",
+  PlayerSelectionScreen: "PlayerSelectionScreen",
+  ScorerScreen: "ScorerScreen",
+  PlayerProfile: "PlayerProfile",
+  EditPlayerProfile: "EditPlayerProfile",
+  Settings: "Settings",
 };
 
 export default SCREENS;

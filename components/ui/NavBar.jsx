@@ -1,4 +1,3 @@
-// components/NavBar.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -6,6 +5,7 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  useColorScheme,
 } from "react-native";
 import { DrawerActions, useNavigation } from "@react-navigation/native";
 import {
@@ -14,18 +14,12 @@ import {
   AntDesign,
 } from "@expo/vector-icons";
 import SCREENS from "@/screens";
-// import QRScanner from "../components/scanner/Scanner";
-// import RightSideBar from "./RightSideBar";
-// import BottomSheetList from "./BottomSheetList";
-// import handleScan from "../components/scanner/ScanHandler";
-// import useAlert from "../components/pop/AlertHandler";
-// import { PATHS } from "../../paths";
-// import { FooterTabs } from "@/utils/Common";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function NavBar({ handleSearch }) {
-//   const alert = useAlert();
-
+  const colorScheme = useColorScheme();
+  const isDarkMode = colorScheme === 'dark';
+  
   const [searchValue, setSearchValue] = useState("");
   const [showInput, setShowInput] = useState(false);
   const [isQRScanner, setQRScanner] = useState(false);
@@ -77,28 +71,34 @@ export default function NavBar({ handleSearch }) {
   const navigation = useNavigation();
 
   return (
-    <View className="bg-white px-4 py-3">
+    <View className={`px-4 py-3 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
         <SafeAreaView edges={["top"]}>
 
       <View className="flex-row justify-between items-center">
         <TouchableOpacity
               onPress={() => {
                 setIsLeftSheet(true);
-                // bottomSheetHandler(true, "left");
-                navigation.openDrawer()
-                // navigation.dispatch(DrawerActions.toggleDrawer())
-                
+                navigation.openDrawer();
               }}
               className="ml-2"
             >
-              <MaterialCommunityIcons name="menu" size={24} color="black" />
+              <MaterialCommunityIcons 
+                name="menu" 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
             </TouchableOpacity>
-
 
         {!showInput && (
           <TouchableOpacity onPress={() => navigation.navigate(SCREENS.Home)}>
             <Image
-              source={require("../../assets/Logo.png")}
+              source={
+                // isDarkMode 
+                // ? 
+                // require("../../assets/Logo-dark.png") 
+                // : 
+                require("../../assets/Logo.png")
+              }
               className="w-20 h-10"
               resizeMode="contain"
             />
@@ -114,7 +114,12 @@ export default function NavBar({ handleSearch }) {
                 handleSearchInput(text);
               }}
               placeholder="Search..."
-              className="flex-1 bg-gray-200 text-black px-3 py-1 rounded-md"
+              placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+              className={`flex-1 px-3 py-1 rounded-md ${
+                isDarkMode 
+                  ? 'bg-gray-800 text-white' 
+                  : 'bg-gray-200 text-black'
+              }`}
             />
           )}
 
@@ -123,9 +128,17 @@ export default function NavBar({ handleSearch }) {
             className="ml-2"
           >
             {showInput ? (
-              <AntDesign name="close" size={24} color="black" />
+              <AntDesign 
+                name="close" 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
             ) : (
-              <Ionicons name="search" size={20} color="black" />
+              <Ionicons 
+                name="search" 
+                size={20} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
             )}
           </TouchableOpacity>
 
@@ -134,15 +147,17 @@ export default function NavBar({ handleSearch }) {
               onPress={() => {
                 setQRScanner(true);
                 bottomSheetHandler(true, "top");
-                navigation.openDrawer()
+                navigation.openDrawer();
               }}
               className="ml-2"
             >
-              <Ionicons name="qr-code" size={24} color="black" />
+              <Ionicons 
+                name="qr-code" 
+                size={24} 
+                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              />
             </TouchableOpacity>
           )}
-
-            
         </View>
       </View>
         </SafeAreaView>
@@ -154,21 +169,21 @@ export default function NavBar({ handleSearch }) {
         setOpen={bottomSheetHandler}
       >
         {isQRScanner ? (
-        //   <QRScanner
-        //     onScan={(data) => {
-        //       handleScan(data, alert);
-        //       bottomSheetHandler(false);
-        //     }}
-        //   />
-            <View className="flex-1 justify-center items-center">
-                <Text>QR Scanner Component</Text>
-            </View>
+          <View className={`flex-1 justify-center items-center ${
+            isDarkMode ? 'bg-gray-900' : 'bg-white'
+          }`}>
+            <Text className={isDarkMode ? 'text-white' : 'text-black'}>
+              QR Scanner Component
+            </Text>
+          </View>
         ) : isLeftSheet ? (
-            
-        //   <RightSideBar onClose={() => bottomSheetHandler(false)} />
-            <View className="flex-1 justify-center items-center">
-                <Text>Right Side Bar Component</Text>
-            </View>
+          <View className={`flex-1 justify-center items-center ${
+            isDarkMode ? 'bg-gray-900' : 'bg-white'
+          }`}>
+            <Text className={isDarkMode ? 'text-white' : 'text-black'}>
+              Right Side Bar Component
+            </Text>
+          </View>
         ) : null}
       </BottomSheetList> */}
     </View>
