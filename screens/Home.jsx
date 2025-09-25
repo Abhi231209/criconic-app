@@ -23,6 +23,7 @@ import NavBar from "@/components/ui/NavBar";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import { SafeAreaView } from "react-native-safe-area-context";
 import SCREENS from "@/screens";
+import AnimatedFooter from "@/components/ui/AnimatedFooter";
 
 export default function Home({}) {
   const colorScheme = useColorScheme();
@@ -377,6 +378,7 @@ export default function Home({}) {
             ))}
           </View>
         </ScrollView>
+        <AnimatedFooter />
       </View>
     </View>
   );

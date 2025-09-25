@@ -168,7 +168,7 @@ export const useAxiosPost = (url = "", options = {}) => {
   });
 
   return {
-    mutate: mutation.mutate,
+    post: mutation.mutate,
     isLoading: mutation.isPending,
     error: mutation.error,
     data: mutation.data,
@@ -209,7 +209,7 @@ export const useAxiosPut = (url = "", options = {}) => {
   });
 
   return {
-    mutate: mutation.mutate,
+    put: mutation.mutate,
     isLoading: mutation.isPending,
     error: mutation.error,
     data: mutation.data,

@@ -10,16 +10,22 @@ import { useNavigation } from "@react-navigation/native";
 import ThemedText from "./custom/ThemedText";
 import { MATCH_STATUS, getMatchStatusDisplay, getStatusClass } from "@/utils";
 import SCREENS from "@/screens";
+import { useBottomSheet } from "./custom/CustomBottomSheet";
+import { useSelector } from "react-redux";
+import { useSocket } from "@/contexts/SocketContext";
+
 
 export default function ScoreCard({
   matchId,
   startDate,
   isMatch = true,
   smallBanner = false,
-}) {
+}) { 
   const [loading, setLoading] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const navigation = useNavigation();
+  const { openSheet, closeSheet } = useBottomSheet();
+  
 
   // Dummy data for now
   const score = {
@@ -41,11 +47,30 @@ export default function ScoreCard({
   const statusStyle = getStatusClass(matchStatus);
 
   // ✅ This is the content we’ll pass to the global sheet
-  const BottomSheetContent = () => (
+  const BottomSheetContent = () => {
+    console.log("Rendering BottomSheetContent");
+    
+    return (
     <View style={{ flex: 1 }}>
       <ThemedText style={{ fontSize: 18, fontWeight: "bold", marginBottom: 16 }}>
         Match Options
       </ThemedText>
+      <TouchableOpacity
+        style={{
+          backgroundColor: "#007AFF",
+          padding: 16,
+          borderRadius: 8,
+          marginBottom: 12,
+        }}
+        onPress={() => {
+          closeSheet();
+          navigation.navigate(SCREENS.ScorerScreen, { matchId });
+        }}
+      >
+        <ThemedText style={{ color: "white", textAlign: "center", fontWeight: "600" }}>
+          Resume Scoring
+        </ThemedText>
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={{
@@ -55,8 +80,8 @@ export default function ScoreCard({
           marginBottom: 12,
         }}
         onPress={() => {
-          closeBottomSheet();
-          navigation.navigate("MatchScore", { matchId });
+          closeSheet();
+          navigation.navigate(SCREENS.MatchScoreCard, { matchId });
         }}
       >
         <ThemedText style={{ color: "white", textAlign: "center", fontWeight: "600" }}>
@@ -74,7 +99,7 @@ export default function ScoreCard({
         onPress={() => {
           Alert.alert("Delete Match", "Are you sure?", [
             { text: "Cancel", style: "cancel" },
-            { text: "Delete", onPress: () => closeBottomSheet() },
+            { text: "Delete", onPress: () => closeSheet() },
           ]);
         }}
       >
@@ -89,20 +114,20 @@ export default function ScoreCard({
           padding: 16,
           borderRadius: 8,
         }}
-        onPress={closeBottomSheet}
+        onPress={closeSheet}
       >
         <ThemedText style={{ color: "white", textAlign: "center", fontWeight: "600" }}>
           Close
         </ThemedText>
       </TouchableOpacity>
     </View>
-  );
+  )};
 
   const onCardPress = () => {
     console.log("Card pressed, opening bottom sheet");
-    navigation.navigate(SCREENS.MatchScoreCard);
+    // navigation.navigate(SCREENS.MatchScoreCard);
     // ✅ Open global bottom sheet with dynamic content
-    // openBottomSheet(<BottomSheetContent />, ["30%", "60%"]);
+    openSheet(<BottomSheetContent />);
   };
 
   return (

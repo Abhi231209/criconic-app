@@ -40,13 +40,17 @@
     "expo": "~53.0.13",
     "expo-blur": "~14.1.5",
     "expo-checkbox": "^4.1.4",
+    "expo-clipboard": "^8.0.7",
     "expo-crypto": "^14.1.5",
     "expo-device": "^7.1.4",
     "expo-font": "~13.3.1",
+    "expo-gl": "^16.0.7",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~14.1.5",
     "expo-secure-store": "^14.2.3",
     "expo-status-bar": "~2.2.3",
+    "expo-three": "^8.0.0",
+    "lodash": "^4.17.21",
     "lucide-react-native": "^0.524.0",
     "nativewind": "^4.1.23",
     "react": "19.0.0",
@@ -64,7 +68,8 @@
     "react-native-web": "^0.19.13",
     "react-redux": "^9.2.0",
     "redux-persist": "^6.0.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

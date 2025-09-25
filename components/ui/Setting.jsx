@@ -176,6 +176,7 @@ export default function Settings() {
   );
 
   return (
+    <SafeAreaView className={`flex-1 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
     <View style={[styles.container, isDarkMode ? styles.containerDark : styles.containerLight]}>
       {/* Header */}
       <LinearGradient
@@ -337,6 +338,7 @@ export default function Settings() {
         </ThemedText>
       </ScrollView>
     </View>
+    </SafeAreaView>
   );
 }
 

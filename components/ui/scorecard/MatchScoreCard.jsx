@@ -1111,39 +1111,6 @@ export default function MatchScoreCard({
     });
 
     // Start animations on component mount
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 600,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 500,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-            })
-        ]).start();
-        
-        // Connection status pulsing animation
-        if (isConnected) {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(connectionPulse, {
-                        toValue: 1.2,
-                        duration: 800,
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(connectionPulse, {
-                        toValue: 1,
-                        duration: 800,
-                        useNativeDriver: true,
-                    })
-                ])
-            ).start();
-        }
-    }, [isConnected]);
 
     // Socket.IO event handlers (remain exactly the same)
     useEffect(() => {
@@ -1171,6 +1138,7 @@ export default function MatchScoreCard({
         // Subscribe to events
         console.log('📡 Subscribing to socket events...');
         try {
+            emit('score', { matchID });
             on("score", handleScore);
             console.log('✅ Socket event handlers set up successfully');
         } catch (error) {

@@ -124,7 +124,7 @@ export default function NavBar({ handleSearch }) {
           )}
 
           <TouchableOpacity
-            onPress={() => handleSearchFlag(!showInput)}
+            onPress={() => navigation.navigate(SCREENS.SearchScreen)}
             className="ml-2"
           >
             {showInput ? (

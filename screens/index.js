@@ -27,6 +27,9 @@ const SCREENS = {
   PlayerProfile: "PlayerProfile",
   EditPlayerProfile: "EditPlayerProfile",
   Settings: "Settings",
+  AllTournaments: "AllTournaments",
+  SearchScreen: "SearchScreen",
+  ChangeSquad: "ChangeSquad",
 };
 
 export default SCREENS;

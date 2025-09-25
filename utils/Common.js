@@ -43,3 +43,48 @@ export function convertBallToOvers(ball = 0) {
   const remainingBalls = ball % 6;
   return `${overs}.${remainingBalls}`;
 }
+
+
+export const MatchSettingEnum = {
+  COUNT_NO_BALL_RUN: "countNoBallRun",
+  COUNT_WIDE_RUN: "countWideRun",
+  SINGLE_BATSMAN_ALLOWED: "singleBatsmanAllowed",
+  END_INNING: "endInning",
+  GO_LIVE: "goLive",
+  OVERLAY_SETUP: "overlaySetup",
+  GO_LIVE_TOURNAMENT: "goLiveTournament",
+  LIVE_STREAMING_LINK: "streamUrl",
+  SHOW_COMPARISON_GRAPH: "showComparisonGraph",
+  SHOW_BATSMEN_STATS: "showBatsmenStats",
+  SHOW_MATCH_SUMMARY: "showMatchSummary",
+  SHOW_PLAYING_ELEVEN: "showPlayingEleven",
+  SHOW_MATCH_PREVIEW: "showMatchPreview",
+  SHOW_PARTNERSHIP: "showPartnership",
+  SHOW_TOSS: "showToss",
+};
+
+export const MatchSettings = {
+  [MatchSettingEnum.END_INNING]: "End Inning",
+  [MatchSettingEnum.COUNT_NO_BALL_RUN]: "Count No Ball Run",
+  [MatchSettingEnum.COUNT_WIDE_RUN]: "Count Wide Run",
+  [MatchSettingEnum.SINGLE_BATSMAN_ALLOWED]: "Allow Single Batsman",
+  [MatchSettingEnum.LIVE_STREAMING_LINK]: {
+    label: "Live Streaming Link",
+    placeholder: "Paste Youtube/Facebook Video Link...",
+  },
+};
+
+export const LiveSettings = {
+  [MatchSettingEnum.GO_LIVE_TOURNAMENT]: "Live as Tournament",
+  [MatchSettingEnum.GO_LIVE]: "Go Live",
+  [MatchSettingEnum.OVERLAY_SETUP]: "Overlay Setup",
+
+  [MatchSettingEnum.SHOW_MATCH_PREVIEW]: "Show Match Preview",
+  [MatchSettingEnum.SHOW_TOSS]: "Show Toss Decision",
+  [MatchSettingEnum.SHOW_BATSMEN_STATS]: "Show batsmen Score",
+  [MatchSettingEnum.SHOW_MATCH_SUMMARY]: "Show Match Summary",
+  [MatchSettingEnum.SHOW_PLAYING_ELEVEN]: "Show Playing Eleven",
+  [MatchSettingEnum.SHOW_PARTNERSHIP]: "Show Current Partnership",
+  [MatchSettingEnum.SHOW_COMPARISON_GRAPH]:
+    "Show Comparison Graph on Live Screen",
+};
