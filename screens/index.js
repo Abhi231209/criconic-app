@@ -30,6 +30,8 @@ const SCREENS = {
   AllTournaments: "AllTournaments",
   SearchScreen: "SearchScreen",
   ChangeSquad: "ChangeSquad",
+  ChangeBowler: "ChangeBowler",
+  ThemeConfig: "ThemeConfig",
 };
 
 export default SCREENS;

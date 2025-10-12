@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, useColorScheme } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 // import ReplaceBatterPoPup from "./quickactionpopups/ReplaceBatterPoPup";
 import QuickActionDetails from "./QuickActionsDetails";
@@ -18,10 +18,12 @@ export default function QuickActions({
 }) {
   const { openSheet, closeSheet } = useBottomSheet();
 
+  const colorScheme = useColorScheme();
+    const isDarkMode = colorScheme === "dark";
   return (
         <>
           <TouchableOpacity
-            className="flex-row items-center justify-center gap-2 w-full py-3 bg-gray-800"
+            className="flex-row items-center justify-center gap-2 w-full py-3 bg-white dark:bg-gray-900 "
             onPress={() => {
 
                 openSheet(
@@ -38,10 +40,10 @@ export default function QuickActions({
                 />);
             }}
           >
-            <ThemedText className="text-lg text-white font-semibold">
+            <ThemedText className="text-lg font-semibold text-black dark:text-white ">
               Quick Actions
             </ThemedText>
-            <Ionicons name="chevron-up-outline" size={20} color="white" />
+            <Ionicons name="chevron-up-outline" size={20} color={isDarkMode ? "white" : "black"} />
           </TouchableOpacity>
 
     </>

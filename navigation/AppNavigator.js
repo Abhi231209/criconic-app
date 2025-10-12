@@ -36,7 +36,9 @@ import Settings from "@/components/ui/Setting";
 import AllTournaments from "@/components/ui/AllTournaments";
 import Layout from "@/Layout";
 import SearchScreen from "@/components/ui/SearchScreen";
-import ChangeSquad from "@/components/ui/createMatch/ChangeSquad";
+import ChangeSquad from "@/components/ui/createMatch/ChangeSquad/ChangeSquad";
+import ChangeBowler from "@/components/ui/createMatch/ChangeSquad/ChangeBowler";
+import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -106,6 +108,8 @@ function MainStack() {
       <Stack.Screen name={SCREENS.AllTournaments} component={AllTournaments} />
       <Stack.Screen name={SCREENS.SearchScreen} component={SearchScreen} />
       <Stack.Screen name={SCREENS.ChangeSquad} component={ChangeSquad} />
+      <Stack.Screen name={SCREENS.ChangeBowler} component={ChangeBowler} />
+      <Stack.Screen name={SCREENS.ThemeConfig} component={ThemeConfig} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );

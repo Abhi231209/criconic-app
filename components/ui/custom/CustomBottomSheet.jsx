@@ -7,8 +7,12 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { View, StyleSheet } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { View, StyleSheet, Platform } from "react-native";
+import {
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetKeyboardAvoidingView,
+} from "@gorhom/bottom-sheet";
 
 const BottomSheetContext = createContext({
   openSheet: () => {},
@@ -45,9 +49,9 @@ export const BottomSheetProvider = ({ children }) => {
         snapPoints={["60%", "80%"]}
         backgroundStyle={{ backgroundColor: "white" }}
       >
-                    <BottomSheetView style={styles.contentContainer}>
-{content}
-        {/* <View style={styles.container}></View> */}
+        <BottomSheetView style={styles.contentContainer}>
+          {content}
+          {/* <View style={styles.container}></View> */}
         </BottomSheetView>
       </BottomSheetModal>
     </BottomSheetContext.Provider>
@@ -63,8 +67,8 @@ const styles = StyleSheet.create({
     // you can replace with className if you prefer nativewind
     backgroundColor: "#fff",
   },
-    contentContainer: {
+  contentContainer: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
 });

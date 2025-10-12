@@ -32,6 +32,9 @@ import {
   List,
   Palette,
 } from "lucide-react-native";
+import ThemedText from "../custom/ThemedText";
+import SCREENS from "@/screens";
+import { useNavigation, useRoute } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
 
@@ -59,13 +62,13 @@ const COLORS = {
 // Safe icon component with fallback
 const SafeIcon = ({ icon: Icon, size = 20, color, ...props }) => {
   if (!Icon || typeof Icon === 'undefined') {
-    return <Text style={{ color, fontSize: size - 4 }}>⚙️</Text>;
+    return <ThemedText style={{ color, fontSize: size - 4 }}>⚙️</ThemedText>;
   }
   
   try {
     return <Icon size={size} color={color} {...props} />;
   } catch (error) {
-    return <Text style={{ color, fontSize: size - 4 }}>⚙️</Text>;
+    return <ThemedText style={{ color, fontSize: size - 4 }}>⚙️</ThemedText>;
   }
 };
 
@@ -93,12 +96,12 @@ const AccordionSection = ({
             size={20} 
             color={isDarkMode ? COLORS.dark.text : COLORS.primary} 
           />
-          <Text style={[
+          <ThemedText style={[
             styles.accordionTitle,
             isDarkMode ? styles.darkText : styles.lightText
           ]}>
             {title}
-          </Text>
+          </ThemedText>
         </View>
         <SafeIcon 
           icon={isExpanded ? ChevronUp : ChevronDown} 
@@ -124,31 +127,41 @@ const SettingItem = ({
   type = "switch",
   onValueChange,
   placeholder,
-  isDarkMode 
+  isDarkMode ,
+  onPress,
+  variant = "default"
 }) => {
   return (
     <View style={[
       styles.settingItem,
       isDarkMode ? styles.darkSettingItem : styles.lightSettingItem
     ]}>
-      <View style={styles.settingText}>
-        <Text style={[
+      {type !== "button" && <View style={styles.settingText}>
+        <ThemedText style={[
           styles.settingTitle,
           isDarkMode ? styles.darkText : styles.lightText
         ]}>
           {title}
-        </Text>
+        </ThemedText>
         {description && (
-          <Text style={[
+          <ThemedText style={[
             styles.settingDescription,
             isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
           ]}>
             {description}
-          </Text>
+          </ThemedText>
         )}
-      </View>
+      </View>}
+      { type == "button" ? 
+       <ActionButton 
+       
+       title={title}
+      variant={variant}
+      onPress={onPress}
+      isDarkMode={isDarkMode}
+       />
       
-      {type === "switch" ? (
+      : type === "switch" ? (
         <Switch
           value={value}
           onValueChange={onToggle}
@@ -180,43 +193,110 @@ const ActionButton = ({
   title, 
   onPress, 
   variant = "default",
-  isDarkMode 
+  isDarkMode,
+  disabled = false,
+  size = "medium" // "small", "medium", "large"
 }) => {
   const getVariantStyle = () => {
+    if (disabled) {
+      return [styles.disabledAction, isDarkMode ? styles.darkDisabled : styles.lightDisabled];
+    }
+
     switch (variant) {
       case "primary":
         return styles.primaryAction;
+      case "secondary":
+        return styles.secondaryAction;
       case "danger":
         return styles.dangerAction;
       case "success":
         return styles.successAction;
+      case "warning":
+        return styles.warningAction;
+      case "info":
+        return styles.infoAction;
+      case "outline":
+        return [styles.outlineAction, isDarkMode ? styles.darkOutline : styles.lightOutline];
+      case "ghost":
+        return [styles.ghostAction, isDarkMode ? styles.darkGhost : styles.lightGhost];
       default:
         return [styles.defaultAction, isDarkMode ? styles.darkAction : styles.lightAction];
     }
   };
 
+  const getSizeStyle = () => {
+    switch (size) {
+      case "small":
+        return styles.smallButton;
+      case "large":
+        return styles.largeButton;
+      default:
+        return styles.mediumButton;
+    }
+  };
+
+  const getIconColor = () => {
+    if (disabled) return isDarkMode ? COLORS.neutral[500] : COLORS.neutral[400];
+    
+    switch (variant) {
+      case "primary":
+      case "secondary":
+      case "danger":
+      case "success":
+      case "warning":
+      case "info":
+        return "#FFFFFF";
+      case "outline":
+      case "ghost":
+        return isDarkMode ? COLORS.dark.text : COLORS.primary;
+      default:
+        return isDarkMode ? COLORS.dark.text : COLORS.primary;
+    }
+  };
+
+  const getTextStyle = () => {
+    if (disabled) {
+      return [styles.actionButtonText, styles.disabledText];
+    }
+
+    switch (variant) {
+      case "primary":
+      case "secondary":
+      case "danger":
+      case "success":
+      case "warning":
+      case "info":
+        return [styles.actionButtonText, styles.lightText];
+      case "outline":
+      case "ghost":
+        return [styles.actionButtonText, isDarkMode ? styles.darkText : styles.primaryText];
+      default:
+        return [styles.actionButtonText, isDarkMode ? styles.darkText : styles.primaryText];
+    }
+  };
+
   return (
     <TouchableOpacity
-      style={[styles.actionButton, getVariantStyle()]}
+      style={[
+        styles.actionButton,
+        getSizeStyle(),
+        getVariantStyle(),
+        disabled && styles.disabledState
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
+      disabled={disabled}
     >
-      <SafeIcon 
-        icon={icon} 
-        size={20} 
-        color={variant === "default" ? 
-          (isDarkMode ? COLORS.dark.text : COLORS.primary) : 
-          "#FFFFFF"
-        } 
-      />
-      <Text style={[
-        styles.actionButtonText,
-        variant === "default" ? 
-        (isDarkMode ? styles.darkText : styles.primaryText) : 
-        styles.lightText
-      ]}>
+      {icon && (
+        <SafeIcon 
+          icon={icon} 
+          size={size === "small" ? 16 : size === "large" ? 24 : 20}
+          color={getIconColor()}
+        />
+      )}
+      <ThemedText style={getTextStyle()}>
         {title}
-      </Text>
+      </ThemedText>
     </TouchableOpacity>
   );
 };
@@ -224,6 +304,7 @@ const ActionButton = ({
 export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const navigation = useNavigation();
   
   const [expandedSections, setExpandedSections] = useState({
     player: true,
@@ -287,6 +368,8 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
         <View style={styles.settingsGroup}>
           <SettingItem
             title="Change Team (Bowl)"
+            type="button"
+            variant="ghost"
             description="Switch bowling team"
             value={settings.changeTeamBowl}
             onToggle={() => toggleSetting("changeTeamBowl")}
@@ -294,6 +377,8 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
           />
           <SettingItem
             title="Change Team (Bat)"
+            type="button"
+            variant="ghost"
             description="Switch batting team"
             value={settings.changeTeamBat}
             onToggle={() => toggleSetting("changeTeamBat")}
@@ -302,6 +387,8 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
           <SettingItem
             title="Change Bowler"
             description="Replace current bowler"
+            type="button"
+            variant="ghost"
             value={settings.changeBowler}
             onToggle={() => toggleSetting("changeBowler")}
             isDarkMode={isDarkMode}
@@ -309,6 +396,8 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
           <SettingItem
             title="Replace Batter"
             description="Substitute batsman"
+            type="button"
+            variant="ghost"
             value={settings.replaceBatter}
             onToggle={() => toggleSetting("replaceBatter")}
             isDarkMode={isDarkMode}
@@ -397,17 +486,22 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
           <SettingItem
             title="Overlay Setup"
             description="Enable match overlays"
+            type="button"
             value={settings.overlayEnabled}
-            onToggle={() => toggleSetting("overlayEnabled")}
+            onPress={() => {
+              console.log("Navigate to overlay setup");
+              navigation.navigate(SCREENS.ThemeConfig)
+            }
+            }
             isDarkMode={isDarkMode}
           />
           
-          <Text style={[
+          <ThemedText style={[
             styles.subsectionTitle,
             isDarkMode ? styles.darkText : styles.lightText
           ]}>
             Display Options
-          </Text>
+          </ThemedText>
           
           <SettingItem
             title="Comparison Graph"
@@ -475,18 +569,18 @@ export default function MatchSetting({ matchId, onInningsComplete , onClose }) {
         <View style={styles.header}>
   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
     <View>
-      <Text style={[
+      <ThemedText style={[
         styles.title,
         isDarkMode ? styles.darkText : styles.lightText
       ]}>
         Match Settings
-      </Text>
-      <Text style={[
+      </ThemedText>
+      <ThemedText style={[
         styles.subtitle,
         isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
       ]}>
         Manage all match configurations
-      </Text>
+      </ThemedText>
     </View>
 
     {/* Cross Icon */}

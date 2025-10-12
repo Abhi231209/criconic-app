@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Linking } from "react-native";
 // Option 1: Using Expo Vector Icons (recommended)
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 // } from '@gluestack-ui/themed';
 
 import SCREENS from "@/screens";
+import ReplaceBatterPopup from "./ReplaceBatterPopUp";
+import EditOver from "./EditOver"
+import BonusRuns from "./BonusRuns"
 
 export default function QuickActionDetails({
   isScorerScreen = false,
@@ -32,6 +35,35 @@ export default function QuickActionDetails({
     Linking.openURL("mailto:support@criconic.com").catch((e) =>
       console.warn("Could not open mail client", e)
     );
+  };
+
+   const [showReplacePopup, setShowReplacePopup] = useState(false);
+     const [showEditOverPopup, setShowEditOverPopup] = useState(false);
+     const [showBonusRunsPopup, setShowBonusRunsPopup] = useState(false);
+
+
+  // Mock data - replace with your actual data
+  const players = [
+    { playerId: 1, name: "Virat Kohli" },
+    { playerId: 2, name: "Rohit Sharma" },
+    { playerId: 3, name: "KL Rahul" },
+    { playerId: 4, name: "Shubman Gill" },
+  ];
+  const handleSuccess = () => {
+    // Refresh your match data or update UI
+    console.log("Bonus runs added successfully");
+  };
+
+  const team = "team123";
+
+  const handleOpenPopup = () => {
+    setShowReplacePopup(true);
+  };
+
+  const handleClosePopup = () => {
+    setShowReplacePopup(false);
+    setShowEditOverPopup(false);
+    setShowBonusRunsPopup(false);
   };
 
   const ENUM_FOR_QUICKACTION = [
@@ -69,6 +101,7 @@ export default function QuickActionDetails({
       // GluestackIcon: ClockIcon, // Uncomment if using Gluestack
       handleFunction: () => {
         setOpen?.(false);
+        setShowEditOverPopup(true);
         // alert.show({
         //   componentProps: {
         //     matchID,
@@ -86,13 +119,15 @@ export default function QuickActionDetails({
       Name: "Change Bowler",
       Icon: "person-outline",
       // GluestackIcon: UserIcon, // Uncomment if using Gluestack
-      handleFunction: () => {
-        // navigation.navigate("MatchChangeSquad", {
-        //   teamId: bowlingTeam?.teamId,
-        //   matchId: matchID,
-        //   playerId: bowler?.playerId,
-        // });
-      },
+
+      navigationScreen: SCREENS.ChangeBowler,
+      // handleFunction: () => {
+      //   navigation.navigate(SCREENS.ChangeBowler, {
+      //     teamId: bowlingTeam?.teamId,
+      //     matchId: matchID,
+      //     playerId: bowler?.playerId,
+      //   });
+      // },
     },
     {
       Name: "Replace Batter",
@@ -100,6 +135,7 @@ export default function QuickActionDetails({
       // GluestackIcon: RefreshCwIcon, // Uncomment if using Gluestack
       handleFunction: () => {
         setOpen?.(false);
+        setShowReplacePopup(true);
         // alert.show({
         //   componentProps: {
         //     players: batsmen,
@@ -117,6 +153,8 @@ export default function QuickActionDetails({
       // GluestackIcon: TrophyIcon, // Uncomment if using Gluestack
       handleFunction: () => {
         setOpen?.(false);
+        setShowBonusRunsPopup(true);
+        
         // alert.show({
         //   componentProps: {
         //     battingTeam,
@@ -169,8 +207,11 @@ export default function QuickActionDetails({
                 // );
               }
             } else {
-              navigation.navigate(data.navigationScreen, {})
-              data.handleFunction?.();
+              if(data.navigationScreen){
+                navigation.navigate(data.navigationScreen, {})
+              }else{
+                data.handleFunction?.();
+              }
             }
           };
 
@@ -201,6 +242,27 @@ export default function QuickActionDetails({
           );
         })}
       </View>
+      <ReplaceBatterPopup
+        visible={showReplacePopup}
+        onClose={handleClosePopup}
+        players={players}
+        team={team}
+        matchID={matchID}
+      />
+       <EditOver
+        visible={showEditOverPopup}
+        onClose={handleClosePopup}
+        matchID={matchID}
+        currentOver={currentOver}
+      />
+       <BonusRuns
+        visible={showBonusRunsPopup}
+        onClose={handleClosePopup}
+        onSuccess={handleSuccess}
+        matchID={matchID}
+        battingTeam={battingTeam}
+        bowlingTeam={bowlingTeam}
+      />
     </View>
   );
 }

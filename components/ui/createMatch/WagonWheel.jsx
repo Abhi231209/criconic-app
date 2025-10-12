@@ -8,18 +8,14 @@ const WagonWheel = () => {
 
   // Define the 8 zones with correct cricket field positions
   const zones = [
-    { id: 1, name: 'Straight', color: '#FF6B6B', startAngle: 350, endAngle: 10 },
-    { id: 2, name: 'Cover', color: '#4ECDC4', startAngle: 10, endAngle: 45 },
-    { id: 3, name: 'Extra Cover', color: '#FFE66D', startAngle: 45, endAngle: 80 },
-    { id: 4, name: 'Point', color: '#1A535C', startAngle: 80, endAngle: 100 },
-    { id: 5, name: 'Third Man', color: '#FF9F1C', startAngle: 100, endAngle: 135 },
-    { id: 6, name: 'Fine Leg', color: '#6A0572', startAngle: 135, endAngle: 170 },
-    { id: 7, name: 'Square Leg', color: '#AB83A1', startAngle: 170, endAngle: 190 },
-    { id: 8, name: 'Mid Wicket', color: '#5FAD41', startAngle: 190, endAngle: 225 },
-    { id: 9, name: 'Mid On', color: '#2A9D8F', startAngle: 225, endAngle: 260 },
-    { id: 10, name: 'Mid Off', color: '#E76F51', startAngle: 260, endAngle: 280 },
-    { id: 11, name: 'Covers', color: '#F4A261', startAngle: 280, endAngle: 310 },
-    { id: 12, name: 'Gully', color: '#9B5DE5', startAngle: 310, endAngle: 350 },
+    { id: 1, name: 'Deep Mid Wicket', color: '#FF6B6B', startAngle: 0, endAngle: 45 },
+  { id: 2, name: 'Long On', color: '#4ECDC4', startAngle: 45, endAngle: 90 },
+  { id: 3, name: 'Long Off', color: '#FFE66D', startAngle: 90, endAngle: 135 },
+  { id: 4, name: 'Deep Cover', color: '#1A535C', startAngle: 135, endAngle: 180 },
+  { id: 5, name: 'Deep Point', color: '#FF9F1C', startAngle: 180, endAngle: 225 },
+  { id: 6, name: 'Third Man', color: '#6A0572', startAngle: 225, endAngle: 270 },
+  { id: 7, name: 'Deep Fine Leg', color: '#AB83A1', startAngle: 270, endAngle: 315 },
+  { id: 8, name: 'Deep Square Leg', color: '#5FAD41', startAngle: 315, endAngle: 360 },
   ];
 
   // Create pan responder to handle touch events

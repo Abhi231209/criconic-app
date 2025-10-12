@@ -17,6 +17,7 @@ import { useSocket } from "@/contexts/SocketContext";
 import { LiveSettings, MatchSettingEnum, settingToHideIfNoLive } from "@/utils/Common";
 import * as Clipboard from 'expo-clipboard';
 import { useAxiosGet } from "./useApi";
+import ThemedText from "@/components/ui/custom/ThemedText";
 
 const COLORS = {
   primary: '#3B82F6',
@@ -172,21 +173,23 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
           return (
             <TouchableOpacity 
               style={[styles.settingButton, isDarkMode ? styles.darkButton : styles.lightButton]}
-              onPress={() => {/* Navigate to theme setup */}}
+              onPress={() => {
+                navigation.navigate(SCREENS.ThemeConfig);
+              }}
             >
               <Stream size={20} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
-              <Text style={[styles.buttonText, isDarkMode ? styles.darkText : styles.lightText]}>
+              <ThemedText style={[styles.buttonText, isDarkMode ? styles.darkText : styles.lightText]}>
                 Overlay Setup
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           );
 
         case MatchSettingEnum.LIVE_STREAMING_LINK:
           return (
             <View style={styles.textInputContainer}>
-              <Text style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
+              <ThemedText style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
                 Live Streaming Link
-              </Text>
+              </ThemedText>
               <TextInput
                 style={[styles.textInput, isDarkMode ? styles.darkInput : styles.lightInput]}
                 placeholder="Enter streaming link"
@@ -201,9 +204,9 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
           return (
             <View style={showBatsmenStats && styles.batsmenStatsContainer}>
               <View style={styles.switchContainer}>
-                <Text style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
+                <ThemedText style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
                   {label}
-                </Text>
+                </ThemedText>
                 <Switch
                   value={showBatsmenStats}
                   onValueChange={(value) => {
@@ -232,9 +235,9 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
                       ]}>
                         {setting.player === player.playerId && <View style={styles.radioInnerCircle} />}
                       </View>
-                      <Text style={[styles.radioLabel, isDarkMode ? styles.darkText : styles.lightText]}>
+                      <ThemedText style={[styles.radioLabel, isDarkMode ? styles.darkText : styles.lightText]}>
                         {player.name}
-                      </Text>
+                      </ThemedText>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -248,16 +251,16 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
               style={[styles.endInningButton, isDarkMode ? styles.darkDangerButton : styles.lightDangerButton]}
               onPress={onInningsComplete}
             >
-              <Text style={styles.endInningText}>End Inning</Text>
+              <ThemedText style={styles.endInningText}>End Inning</ThemedText>
             </TouchableOpacity>
           );
 
         default:
           return (
             <View style={styles.switchContainer}>
-              <Text style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
+              <ThemedText style={[styles.label, isDarkMode ? styles.darkText : styles.lightText]}>
                 {label}
-              </Text>
+              </ThemedText>
               <Switch
                 value={typeof setting === "boolean" ? setting : setting?.active}
                 onValueChange={(value) => onSettingChange(settingKey, value)}
@@ -278,9 +281,9 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
             onPress={() => handleCopy(setting.url)}
           >
             <Copy size={16} color={COLORS.primary} />
-            <Text style={[styles.urlText, isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary]}>
+            <ThemedText style={[styles.urlText, isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary]}>
               {setting.url}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
         );
       }
