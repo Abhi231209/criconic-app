@@ -6,28 +6,27 @@ import Home from "@/screens/Home";
 import LoginScreen from "@/screens/LoginScreen";
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { View, Text, Image } from "react-native";
-import CustomDrawer from "../components/ui/CustomDrawer"
+import CustomDrawer from "../components/ui/CustomDrawer";
 import NavBar from "@/components/ui/NavBar";
-// import Home from "../../screens/Home";
-// import LoginScreen from "../../screens/LoginScreen";
-// import other screens as needed
-
+import useAppTheme from "@/hooks/useAppTheme";
 
 const Drawer = createDrawerNavigator();
 
 export default function AppDrawer() {
+  const { isDark } = useAppTheme();
 
-  console.log("inside app drawer")
   return (
-    // <NavigationContainer>
-      <Drawer.Navigator
-        drawerContent={(props) => <CustomDrawer {...props} />}
-        screenOptions={{
-          drawerType: "back",
-          headerShown: false, // Set true if you want header
-          drawerStyle: { backgroundColor: "#fff", width: 240 },
-        }}
-      >
+    <Drawer.Navigator
+      drawerContent={(props) => <CustomDrawer {...props} />}
+      screenOptions={{
+        drawerType: "back",
+        headerShown: false, // Set true if you want header
+        drawerStyle: {
+          backgroundColor: isDark ? "#111827" : "#FFFFFF",
+          width: 280,
+        },
+      }}
+    >
         <Drawer.Screen
           name={SCREENS.NavBar}
           component={NavBar}

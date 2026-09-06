@@ -59,7 +59,7 @@ export default function CustomDrawer(props) {
       onPress={onPress}
       activeOpacity={0.7}
       className={`flex-row items-center justify-between py-3 px-3.5 rounded-xl mb-1 ${
-        isDarkMode ? "hover:bg-gray-800" : "hover:bg-gray-100"
+        isDarkMode ? "active:bg-gray-800" : "active:bg-gray-100"
       }`}
     >
       <View className="flex-row items-center">
@@ -103,7 +103,7 @@ export default function CustomDrawer(props) {
     <View className="px-3 pt-4 pb-2">
       <ThemedText
         className={`text-[11px] font-bold uppercase tracking-wider ${
-          isDarkMode ? "text-gray-500" : "text-gray-400"
+          isDarkMode ? "text-gray-400" : "text-gray-500"
         }`}
       >
         {title}
@@ -114,11 +114,28 @@ export default function CustomDrawer(props) {
   return (
     <DrawerContentScrollView
       {...props}
-      contentContainerStyle={{ flexGrow: 1, padding: 0 }}
+      style={{
+        backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
+      }}
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 0,
+        backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
+      }}
       className={isDarkMode ? "bg-gray-900" : "bg-white"}
     >
-      {/* Profile Card Header with Gradient Accent */}
-      <View className="p-4 border-b border-gray-100 dark:border-gray-800">
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
+        }}
+      >
+        {/* Profile Card Header with Gradient Accent */}
+        <View
+          className={`p-4 border-b ${
+            isDarkMode ? "border-gray-800" : "border-gray-100"
+          }`}
+        >
         {/* HARDCODED USER PROFILE & STATS - COMMENTED OUT (API ONLY) */}
         {/*
         <LinearGradient
@@ -298,22 +315,27 @@ export default function CustomDrawer(props) {
         />
       </View>
 
-      {/* Sign Out Action at Bottom */}
-      <View className="mt-auto px-4 py-6">
-        <TouchableOpacity
-          onPress={handleLogout}
-          activeOpacity={0.7}
-          className={`flex-row items-center justify-center py-3 rounded-xl border ${
-            isDarkMode
-              ? "bg-red-950/20 border-red-900/50"
-              : "bg-red-50 border-red-200"
-          }`}
-        >
-          <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-          <ThemedText className="text-red-600 dark:text-red-400 text-xs font-bold ml-2">
-            Sign Out
-          </ThemedText>
-        </TouchableOpacity>
+        {/* Sign Out Action at Bottom */}
+        <View className="mt-auto px-4 py-6">
+          <TouchableOpacity
+            onPress={handleLogout}
+            activeOpacity={0.7}
+            className={`flex-row items-center justify-center py-3 rounded-xl border ${
+              isDarkMode
+                ? "bg-red-950/20 border-red-900/50"
+                : "bg-red-50 border-red-200"
+            }`}
+          >
+            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+            <ThemedText
+              className={`text-xs font-bold ml-2 ${
+                isDarkMode ? "text-red-400" : "text-red-600"
+              }`}
+            >
+              Sign Out
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
       </View>
     </DrawerContentScrollView>
   );

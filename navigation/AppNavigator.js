@@ -40,6 +40,7 @@ import ChangeSquad from "@/components/ui/createMatch/ChangeSquad/ChangeSquad";
 import ChangeBowler from "@/components/ui/createMatch/ChangeSquad/ChangeBowler";
 import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
+import useAppTheme from "@/hooks/useAppTheme";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -118,16 +119,17 @@ function MainStack() {
 }
 
 export default function AppNavigator() {
-  console.log("inside app Navigator 15");
-  const isDark = false;
+  const { isDark } = useAppTheme();
   return (
-    // <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
         drawerType: "back",
         headerShown: false, // Set true if you want header
-        drawerStyle: { backgroundColor: "#fff", width: 240 },
+        drawerStyle: {
+          backgroundColor: isDark ? "#111827" : "#FFFFFF",
+          width: 280,
+        },
       }}
     >
       <Drawer.Screen
