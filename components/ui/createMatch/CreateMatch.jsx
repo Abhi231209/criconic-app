@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   TouchableOpacity,
@@ -7,16 +7,24 @@ import {
   BackHandler,
   Alert,
   ActivityIndicator,
+  Modal,
+  Image,
+  TextInput,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useSelector } from "react-redux";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { LinearGradient } from "expo-linear-gradient";
-import { confirmLeavePreScore } from "@/utils";
+import { confirmLeavePreScore, getImageFullUrl } from "@/utils";
+import User from "@/utils/User";
 import squadSelectionStore from "./squadSelectionStore";
-import { matchesApi } from "@/utils/api";
+import { matchesApi, tournamentsApi } from "@/utils/api";
 
 export default function CreateMatch() {
   const navigation = useNavigation();
@@ -28,6 +36,99 @@ export default function CreateMatch() {
   const [teamB, setTeamB] = useState(null);
   const [teamASquad, setTeamASquad] = useState([]);
   const [teamBSquad, setTeamBSquad] = useState([]);
+
+  // Tournament integration & state
+  const initialTournament = route.params?.tournament || null;
+  const initialTournamentId =
+    route.params?.tournamentId ||
+    route.params?.tournamentID ||
+    initialTournament?._id ||
+    initialTournament?.id ||
+    null;
+
+  const [tournamentId, setTournamentId] = useState(initialTournamentId);
+  const [selectedTournament, setSelectedTournament] = useState(initialTournament);
+  const [authorizedTournaments, setAuthorizedTournaments] = useState([]);
+  const [tournamentSearchQuery, setTournamentSearchQuery] = useState("");
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showTournamentPickerModal, setShowTournamentPickerModal] = useState(false);
+  const hasPromptedRef = useRef(Boolean(initialTournamentId));
+
+  const filteredTournaments = useMemo(() => {
+    if (!tournamentSearchQuery || !tournamentSearchQuery.trim()) {
+      return authorizedTournaments;
+    }
+    const q = tournamentSearchQuery.trim().toLowerCase();
+    return authorizedTournaments.filter((t) => {
+      const name = String(t?.title || t?.name || "").toLowerCase();
+      const loc = String(t?.location || t?.city || "").toLowerCase();
+      const cat = String(t?.category || t?.tournamentType || t?.format || "").toLowerCase();
+      return name.includes(q) || loc.includes(q) || cat.includes(q);
+    });
+  }, [authorizedTournaments, tournamentSearchQuery]);
+
+  const authUser = useSelector((state) => state.auth?.user);
+  const currentUserId = String(
+    authUser?._id || authUser?.id || User.id || User.user?._id || User.user?.id || ""
+  );
+  const isAdmin = Boolean(
+    User.isAdmin() || authUser?.role === 1 || authUser?.role === 2
+  );
+
+  // Check if user has tournaments with authority if not navigated from a tournament
+  useEffect(() => {
+    if (initialTournamentId) {
+      if (!selectedTournament) {
+        tournamentsApi
+          .getTournamentById(initialTournamentId)
+          .then((res) => {
+            const tData =
+              res?.data?.content || res?.data?.tournament || res?.data;
+            if (tData) setSelectedTournament(tData.content || tData);
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    if (hasPromptedRef.current) return;
+    hasPromptedRef.current = true;
+
+    tournamentsApi
+      .getMyTournaments()
+      .then((res) => {
+        const tourList = res?.data?.content || res?.data || [];
+        if (!Array.isArray(tourList) || tourList.length === 0) return;
+
+        const authorized = tourList.filter((t) => {
+          if (isAdmin) return true;
+          const isOrg = Array.isArray(t?.organizer)
+            ? t.organizer.some((o) => {
+                const oId = String(o?._id || o?.id || o || "");
+                return Boolean(oId && oId === currentUserId);
+              })
+            : typeof t?.organizer === "object"
+            ? Boolean(String(t.organizer?._id || t.organizer?.id || "") === currentUserId)
+            : Boolean(String(t?.organizer || "") === currentUserId);
+
+          const isCreator = Boolean(
+            (t?.createdBy && String(t.createdBy?._id || t.createdBy) === currentUserId) ||
+            (t?.userId && String(t.userId?._id || t.userId) === currentUserId) ||
+            (t?.user && String(t.user?._id || t.user) === currentUserId)
+          );
+
+          return isOrg || isCreator;
+        });
+
+        if (authorized.length > 0) {
+          setAuthorizedTournaments(authorized);
+          setShowTypeModal(true);
+        }
+      })
+      .catch((err) => {
+        console.warn("[CreateMatch] Failed to check user tournaments:", err);
+      });
+  }, [initialTournamentId, currentUserId, isAdmin]);
 
   // Detect initiator screen before match creation flow
   const routes = navigation.getState?.()?.routes || [];
@@ -99,6 +200,7 @@ export default function CreateMatch() {
     navigation.navigate(SCREENS.SelectTeamScreen, {
       teamType,
       otherTeamId,
+      tournamentId,
     });
   };
 
@@ -182,9 +284,8 @@ export default function CreateMatch() {
         teams: teamsPayload,
       };
 
-      if (route.params?.tournamentId || route.params?.tournamentID) {
-        dataToSend.tournamentID =
-          route.params?.tournamentId || route.params?.tournamentID;
+      if (tournamentId) {
+        dataToSend.tournamentID = tournamentId;
       }
 
       const res = await matchesApi.createMatch(dataToSend);
@@ -212,7 +313,7 @@ export default function CreateMatch() {
         teamASquad,
         teamBSquad,
         returnScreen: initiatorScreen,
-        tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+        tournamentId,
       });
     } catch (error) {
       console.warn("[CreateMatch] Error creating match:", error);
@@ -395,6 +496,83 @@ export default function CreateMatch() {
         className="flex-1 px-4 pt-4"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
+        {/* Tournament Info Banner / Status Chip */}
+        {selectedTournament || tournamentId ? (
+          <View
+            className={`p-3.5 rounded-2xl mb-5 border flex-row items-center justify-between ${
+              isDarkMode
+                ? "bg-blue-950/30 border-blue-800/60"
+                : "bg-blue-50 border-blue-200"
+            }`}
+          >
+            <View className="flex-row items-center flex-1 mr-2">
+              <View className="w-9 h-9 rounded-full bg-blue-600 items-center justify-center mr-3">
+                <Ionicons name="trophy" size={18} color="#FFFFFF" />
+              </View>
+              <View className="flex-1">
+                <ThemedText className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  Tournament Match
+                </ThemedText>
+                <ThemedText
+                  numberOfLines={1}
+                  className={`font-bold text-sm ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {selectedTournament?.title ||
+                    selectedTournament?.name ||
+                    "Tournament Match"}
+                </ThemedText>
+              </View>
+            </View>
+
+            {authorizedTournaments.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setShowTypeModal(true)}
+                className="px-3 py-1.5 rounded-lg bg-blue-600"
+                activeOpacity={0.7}
+              >
+                <ThemedText className="text-white text-xs font-semibold">
+                  Change
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : authorizedTournaments.length > 0 ? (
+          <View
+            className={`p-3 rounded-xl mb-5 border flex-row items-center justify-between ${
+              isDarkMode
+                ? "bg-gray-800/60 border-gray-700"
+                : "bg-gray-100 border-gray-200"
+            }`}
+          >
+            <View className="flex-row items-center flex-1 mr-2">
+              <Ionicons
+                name="baseball-outline"
+                size={18}
+                color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                style={{ marginRight: 8 }}
+              />
+              <ThemedText
+                className={`text-xs ${
+                  isDarkMode ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
+                Match Type: <ThemedText className="font-bold">Single Match</ThemedText>
+              </ThemedText>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowTypeModal(true)}
+              className="px-3 py-1 rounded-lg bg-blue-600/10 dark:bg-blue-500/20"
+              activeOpacity={0.7}
+            >
+              <ThemedText className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                Link Tournament
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Matchup Banner */}
         <View className="mb-6">
           <ThemedText
@@ -528,6 +706,278 @@ export default function CreateMatch() {
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Match Type Selection Modal */}
+      <Modal
+        visible={showTypeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTypeModal(false)}
+      >
+        <View className="flex-1 bg-black/60 justify-center items-center px-4">
+          <View
+            className={`w-full max-w-md rounded-2xl p-6 ${
+              isDarkMode ? "bg-gray-800 border border-gray-700" : "bg-white"
+            } shadow-2xl`}
+          >
+            <View className="items-center mb-5">
+              <View className="w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-900/40 items-center justify-center mb-3">
+                <Ionicons name="trophy-outline" size={28} color="#2563EB" />
+              </View>
+              <ThemedText className="text-xl font-bold text-center text-gray-900 dark:text-white">
+                Select Match Type
+              </ThemedText>
+              <ThemedText className="text-xs text-center text-gray-500 dark:text-gray-400 mt-1 px-4">
+                Is this match for one of your tournaments or a standalone single match?
+              </ThemedText>
+            </View>
+
+            {/* Option 1: Single Match */}
+            <TouchableOpacity
+              onPress={() => {
+                setTournamentId(null);
+                setSelectedTournament(null);
+                setShowTypeModal(false);
+              }}
+              activeOpacity={0.8}
+              className={`p-4 rounded-xl border mb-3 flex-row items-center ${
+                !tournamentId
+                  ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20"
+                  : isDarkMode
+                  ? "border-gray-700 bg-gray-900/50"
+                  : "border-gray-200 bg-gray-50"
+              }`}
+            >
+              <View className="w-11 h-11 rounded-full bg-blue-500/10 items-center justify-center mr-3.5">
+                <Ionicons name="baseball-outline" size={22} color="#2563EB" />
+              </View>
+              <View className="flex-1">
+                <ThemedText className="font-bold text-base text-gray-900 dark:text-white">
+                  Single Match
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Standalone friendly or casual match between two teams
+                </ThemedText>
+              </View>
+              {!tournamentId && (
+                <Ionicons name="checkmark-circle" size={20} color="#2563EB" />
+              )}
+            </TouchableOpacity>
+
+            {/* Option 2: Tournament Match */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowTypeModal(false);
+                if (authorizedTournaments.length === 1) {
+                  const t = authorizedTournaments[0];
+                  setSelectedTournament(t);
+                  setTournamentId(String(t._id || t.id || t.slug));
+                } else if (authorizedTournaments.length > 1) {
+                  setShowTournamentPickerModal(true);
+                }
+              }}
+              activeOpacity={0.8}
+              className={`p-4 rounded-xl border mb-4 flex-row items-center ${
+                tournamentId
+                  ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20"
+                  : isDarkMode
+                  ? "border-gray-700 bg-gray-900/50"
+                  : "border-gray-200 bg-gray-50"
+              }`}
+            >
+              <View className="w-11 h-11 rounded-full bg-amber-500/10 items-center justify-center mr-3.5">
+                <Ionicons name="trophy" size={22} color="#F59E0B" />
+              </View>
+              <View className="flex-1">
+                <ThemedText className="font-bold text-base text-gray-900 dark:text-white">
+                  Tournament Match
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Attach to {authorizedTournaments.length > 1 ? "one of your tournaments" : authorizedTournaments[0]?.title || authorizedTournaments[0]?.name || "your tournament"}
+                </ThemedText>
+              </View>
+              {tournamentId ? (
+                <Ionicons name="checkmark-circle" size={20} color="#2563EB" />
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              )}
+            </TouchableOpacity>
+
+            {/* Close / Dismiss */}
+            <TouchableOpacity
+              onPress={() => setShowTypeModal(false)}
+              className="py-2.5 items-center justify-center"
+            >
+              <ThemedText className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                Cancel
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Tournament Picker Modal */}
+      <Modal
+        visible={showTournamentPickerModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowTournamentPickerModal(false);
+          setTournamentSearchQuery("");
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1 bg-black/60 justify-end"
+        >
+          <View
+            className={`w-full max-h-[80%] rounded-t-3xl p-5 pb-8 ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            }`}
+          >
+            {/* Modal Header */}
+            <View className="flex-row items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-700 mb-3">
+              <View className="flex-1 mr-2">
+                <ThemedText className="text-lg font-bold text-gray-900 dark:text-white">
+                  Select Tournament
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                  {authorizedTournaments.length} tournament{authorizedTournaments.length !== 1 ? "s" : ""} available
+                </ThemedText>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowTournamentPickerModal(false);
+                  setTournamentSearchQuery("");
+                }}
+                className="p-1.5 rounded-full bg-gray-100 dark:bg-gray-700"
+              >
+                <Ionicons name="close" size={20} color={isDarkMode ? "#FFF" : "#333"} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input Bar */}
+            <View
+              className={`flex-row items-center px-3 py-2 rounded-xl mb-3 border ${
+                isDarkMode ? "bg-gray-700/60 border-gray-600" : "bg-gray-100 border-gray-200"
+              }`}
+            >
+              <Ionicons
+                name="search"
+                size={18}
+                color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                style={{ marginRight: 8 }}
+              />
+              <TextInput
+                placeholder="Search tournaments by name or location..."
+                placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                value={tournamentSearchQuery}
+                onChangeText={setTournamentSearchQuery}
+                className="flex-1 text-sm text-gray-900 dark:text-white py-1"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {tournamentSearchQuery ? (
+                <TouchableOpacity onPress={() => setTournamentSearchQuery("")}>
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Virtualized FlatList for High Performance */}
+            <FlatList
+              data={filteredTournaments}
+              keyExtractor={(item) => String(item._id || item.id || item.slug)}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={8}
+              maxToRenderPerBatch={8}
+              windowSize={5}
+              renderItem={({ item: t }) => {
+                const tId = String(t._id || t.id || t.slug);
+                const isSelected = tournamentId === tId;
+                const tName = t.title || t.name || "Tournament";
+                const tLoc = t.location || t.city || "";
+                const logo = t.logoImage || t.bannerImage || t.logo;
+
+                return (
+                  <TouchableOpacity
+                    key={tId}
+                    onPress={() => {
+                      setSelectedTournament(t);
+                      setTournamentId(tId);
+                      setShowTournamentPickerModal(false);
+                      setTournamentSearchQuery("");
+                    }}
+                    activeOpacity={0.8}
+                    className={`p-3.5 rounded-xl border mb-2.5 flex-row items-center justify-between ${
+                      isSelected
+                        ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/30"
+                        : isDarkMode
+                        ? "border-gray-700 bg-gray-900/50"
+                        : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      {logo ? (
+                        <Image
+                          source={{ uri: getImageFullUrl(logo) }}
+                          className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 items-center justify-center mr-3">
+                          <ThemedText className="font-bold text-sm text-blue-600 dark:text-blue-400">
+                            {(tName || "T").substring(0, 2).toUpperCase()}
+                          </ThemedText>
+                        </View>
+                      )}
+                      <View className="flex-1">
+                        <ThemedText
+                          numberOfLines={1}
+                          className="font-bold text-sm text-gray-900 dark:text-white"
+                        >
+                          {tName}
+                        </ThemedText>
+                        {tLoc ? (
+                          <ThemedText
+                            numberOfLines={1}
+                            className="text-xs text-gray-500 dark:text-gray-400"
+                          >
+                            📍 {tLoc}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    </View>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={22} color="#2563EB" />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View className="items-center justify-center py-10">
+                  <Ionicons
+                    name="search-outline"
+                    size={36}
+                    color={isDarkMode ? "#6B7280" : "#9CA3AF"}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <ThemedText className="text-gray-500 dark:text-gray-400 text-sm">
+                    {tournamentSearchQuery
+                      ? `No tournaments found matching "${tournamentSearchQuery}"`
+                      : "No tournaments available"}
+                  </ThemedText>
+                </View>
+              }
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

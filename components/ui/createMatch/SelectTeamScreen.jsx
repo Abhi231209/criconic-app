@@ -17,29 +17,33 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import SwipeableTabs from "../custom/SwipeableTab";
-import { teamsApi, searchApi } from "@/utils/api";
+import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
+import { getImageFullUrl } from "@/utils";
 import debounce from "lodash/debounce";
 
 export default function SelectTeamScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { teamType, otherTeamId, selectedOpponentTeamId } = route.params || {};
+  const { teamType, otherTeamId, selectedOpponentTeamId, tournamentId } = route.params || {};
   const blockedTeamId = otherTeamId || selectedOpponentTeamId;
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   
   const [teams, setTeams] = useState([]);
+  const [tournamentTeams, setTournamentTeams] = useState([]);
+  const [tournamentTitle, setTournamentTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("myTeams");
+  const [activeTab, setActiveTab] = useState(tournamentId ? "tournamentTeams" : "myTeams");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const normalizeTeam = (t, isMy = false) => {
-    const raw = t?.team?.[0] || t;
+    const raw = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
     const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
     const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
+    const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
     return {
       ...raw,
       id: teamId,
@@ -48,7 +52,7 @@ export default function SelectTeamScreen() {
       name: teamName,
       title: teamName,
       location: raw?.location || "Location not specified",
-      image: raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null,
+      image: rawImg ? (rawImg.startsWith("http") ? rawImg : getImageFullUrl(rawImg)) : null,
       players: Array.isArray(raw?.players) ? raw.players : [],
       isMyTeam: isMy,
     };
@@ -56,10 +60,18 @@ export default function SelectTeamScreen() {
 
   const fetchTeams = async () => {
     try {
-      const [myRes, oppRes] = await Promise.all([
+      const promises = [
         teamsApi.getMyTeams().catch(() => null),
         teamsApi.getOpponentTeams().catch(() => null),
-      ]);
+      ];
+      if (tournamentId) {
+        promises.push(tournamentsApi.getTournamentById(tournamentId).catch(() => null));
+      }
+
+      const results = await Promise.all(promises);
+      const myRes = results[0];
+      const oppRes = results[1];
+      const tournRes = tournamentId ? results[2] : null;
 
       let myData = [];
       if (Array.isArray(myRes?.data)) {
@@ -84,6 +96,24 @@ export default function SelectTeamScreen() {
       }
 
       setTeams(combined);
+
+      if (tournRes) {
+        let tData =
+          tournRes?.data?.content ||
+          tournRes?.data?.tournament ||
+          tournRes?.data;
+        if (tData?.content) tData = tData.content;
+        if (tData) {
+          setTournamentTitle(tData.title || tData.name || "Tournament");
+          if (Array.isArray(tData.teams)) {
+            const parsedTeams = tData.teams.map((t) => {
+              const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
+              return normalizeTeam(innerTeam, false);
+            });
+            setTournamentTeams(parsedTeams);
+          }
+        }
+      }
     } catch (error) {
       console.warn("[SelectTeam] Failed to fetch teams:", error);
     } finally {
@@ -217,6 +247,7 @@ export default function SelectTeamScreen() {
 
   // Define tabs for SwipeableTabs
   const tabs = [
+    ...(tournamentId ? [{ value: "tournamentTeams", label: "Tournament" }] : []),
     { value: "myTeams", label: "My Teams" },
     { value: "opponentTeams", label: "Opponent Teams" },
     { value: "create", label: "Create Team" },
@@ -241,9 +272,19 @@ export default function SelectTeamScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#2563EB" />
         </TouchableOpacity>
-        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-          Select {teamType === "teamA" ? "Team A" : "Team B"}
-        </ThemedText>
+        <View className="flex-1">
+          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+            Select {teamType === "teamA" ? "Team A" : "Team B"}
+          </ThemedText>
+          {tournamentTitle ? (
+            <View className="flex-row items-center mt-0.5">
+              <Ionicons name="trophy" size={13} color="#EAB308" />
+              <ThemedText className="text-xs text-yellow-600 dark:text-yellow-400 font-medium ml-1" numberOfLines={1}>
+                {tournamentTitle}
+              </ThemedText>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {/* Tabs */}
@@ -252,6 +293,7 @@ export default function SelectTeamScreen() {
           isDarkMode ? "bg-gray-800" : "bg-white"
         } border-b border-gray-300 dark:border-gray-700`}
       >
+        {tournamentId ? renderTabButton("tournamentTeams", "Tournament", "trophy") : null}
         {renderTabButton("myTeams", "My Teams", "people")}
         {renderTabButton("opponentTeams", "Opponents", "shield")}
         {renderTabButton("create", "Create", "add-circle")}
@@ -265,6 +307,18 @@ export default function SelectTeamScreen() {
         onTabChange={setActiveTab}
         isDarkMode={isDarkMode}
       >
+        {/* Tournament Teams Tab */}
+        {activeTab === "tournamentTeams" && (
+          <TeamList 
+            teams={tournamentTeams} 
+            onTeamSelect={handleTeamSelect}
+            isDarkMode={isDarkMode}
+            emptyMessage={tournamentTitle ? `No teams registered in ${tournamentTitle} yet.` : "No tournament teams found."}
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+          />
+        )}
+
         {/* My Teams Tab */}
         {activeTab === "myTeams" && (
           <TeamList 

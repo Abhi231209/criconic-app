@@ -1,7 +1,7 @@
 // socketContext.js
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { io } from "socket.io-client";
-import { apiUrl } from "@/utils/api";
+import { SOCKET_URL } from "@/config";
 
 const SocketContext = createContext(null);
 
@@ -11,7 +11,7 @@ export const SocketProvider = ({ children }) => {
 
   // Initialize socket instance eagerly so it is never null when children mount
   if (!socketRef.current) {
-    const socketUrl = (apiUrl || "https://devapi.criconic.com").replace(/\/+$/, "");
+    const socketUrl = SOCKET_URL;
     console.log("🔌 [SocketProvider] Initializing Socket.IO to:", socketUrl);
     socketRef.current = io(socketUrl, {
       transports: ["websocket", "polling"],

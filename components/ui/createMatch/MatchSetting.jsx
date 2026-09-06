@@ -34,6 +34,7 @@ import { request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
+import { WEB_URL } from "@/config";
 
 const SafeIcon = ({ icon: Icon, size = 20, color, style }) => {
   if (!Icon) return <ThemedText style={{ color, fontSize: size - 4 }}>⚙</ThemedText>;
@@ -213,7 +214,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const isLive = !!(liveMatchData?.active && liveMatchData?.url);
   const isTournamentLive = !!liveMatchData?.isTournamentLive;
   const rawUrlKey = liveMatchData?.url || "";
-  const publicLiveUrl = rawUrlKey ? `https://criconic.com/go-live/${rawUrlKey}` : "";
+  const publicLiveUrl = rawUrlKey ? `${WEB_URL}/go-live/${rawUrlKey}` : "";
 
   const getSetting = (key) => matchConfigs?.[key] || {};
   const getActive = (key) => {

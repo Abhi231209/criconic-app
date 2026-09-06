@@ -4,6 +4,7 @@ import { Platform, Alert } from "react-native";
 import { v4 as uuidv4 } from "uuid";
 import * as Crypto from 'expo-crypto';
 import SCREENS from "@/screens";
+import { BASE_URL } from "@/config";
 
 export const formatNumber = (number) =>
   new Intl.NumberFormat("en-US").format(number);
@@ -244,4 +245,13 @@ export const confirmLeavePreScore = ({
     ],
     { cancelable: true }
   );
+};
+
+export const getImageFullUrl = (img) => {
+  if (!img || typeof img !== "string") return "";
+  if (img.startsWith("http://") || img.startsWith("https://")) {
+    return img;
+  }
+  const cleanImg = img.startsWith("/") ? img.slice(1) : img;
+  return `${BASE_URL}${cleanImg}`;
 };

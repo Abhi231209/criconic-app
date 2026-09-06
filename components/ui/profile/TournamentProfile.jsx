@@ -15,8 +15,11 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
 import SwipeableTabs from "../custom/SwipeableTab";
+import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
-import { tournamentsApi, request } from "@/utils/api";
+import { tournamentsApi, matchesApi, request } from "@/utils/api";
+import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
+import User from "@/utils/User";
 
 export default function TournamentProfile() {
    const navigation = useNavigation();
@@ -238,88 +241,350 @@ export default function TournamentProfile() {
 
   // LIVE API STATE
   const passedTournament = route.params?.tournament || null;
-  const tournamentId = route.params?.tournamentId || passedTournament?._id || passedTournament?.id || route.params?.id;
+  const tournamentId =
+    route.params?.tournamentId ||
+    route.params?.tournamentID ||
+    route.params?.id ||
+    route.params?.slug ||
+    passedTournament?._id ||
+    passedTournament?.id ||
+    passedTournament?.slug ||
+    passedTournament?.raw?._id;
 
-  const [tournamentData, setTournamentData] = useState(passedTournament);
+  const [tournamentData, setTournamentData] = useState(
+    passedTournament?.raw || passedTournament
+  );
   const [matchesList, setMatchesList] = useState([]);
-  const [teamsList, setTeamsList] = useState(passedTournament?.teams || []);
+  const [teamsList, setTeamsList] = useState(
+    passedTournament?.teams || passedTournament?.raw?.teams || []
+  );
   const [pointsTable, setPointsTable] = useState([]);
   const [battingLeaderboard, setBattingLeaderboard] = useState([]);
   const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!passedTournament);
 
   useEffect(() => {
     if (!tournamentId) return;
     let isMounted = true;
     setIsLoading(true);
 
-    Promise.allSettled([
-      tournamentsApi.getTournamentById(tournamentId),
-      tournamentsApi.getMatchesByTournament(tournamentId),
-      tournamentsApi.getPointsTable(tournamentId),
-      request(`api/tournaments/leaderboard/${tournamentId}?type=batting`).catch(() => null),
-      request(`api/tournaments/leaderboard/${tournamentId}?type=fielding`).catch(() => null),
-    ]).then(([tournRes, matchesRes, pointsRes, batLeadRes, bowlLeadRes]) => {
-      if (!isMounted) return;
-      setIsLoading(false);
+    const loadData = async () => {
+      try {
+        const [tournRes, matchesRes, pointsRes, batLeadRes, bowlLeadRes] =
+          await Promise.allSettled([
+            tournamentsApi.getTournamentById(tournamentId),
+            tournamentsApi.getMatchesByTournament(tournamentId),
+            tournamentsApi.getPointsTable(tournamentId),
+            request(`api/tournaments/leaderboard/${tournamentId}?type=batting`).catch(() => null),
+            request(`api/tournaments/leaderboard/${tournamentId}?type=fielding`).catch(() => null),
+          ]);
 
-      if (tournRes.status === "fulfilled" && tournRes.value) {
-        const tData = tournRes.value.tournament || tournRes.value.data || tournRes.value;
-        if (tData) {
-          setTournamentData(tData);
-          if (Array.isArray(tData.teams)) {
-            setTeamsList(tData.teams);
+        if (!isMounted) return;
+
+        let tData = null;
+        if (tournRes.status === "fulfilled" && tournRes.value) {
+          tData =
+            tournRes.value?.data?.content ||
+            tournRes.value?.data?.tournament ||
+            tournRes.value?.data;
+          if (tData?.content) tData = tData.content;
+          if (tData) {
+            setTournamentData(tData);
+            if (Array.isArray(tData.teams)) {
+              setTeamsList(tData.teams);
+            }
           }
         }
-      }
 
-      if (matchesRes.status === "fulfilled" && matchesRes.value) {
-        const mData = matchesRes.value.matches || matchesRes.value.data || (Array.isArray(matchesRes.value) ? matchesRes.value : []);
-        setMatchesList(Array.isArray(mData) ? mData : []);
-      }
+        const extractMatches = (res) => {
+          if (!res) return [];
+          const list =
+            res?.data?.content ||
+            res?.data?.matches ||
+            res?.data?.data ||
+            res?.data;
+          if (Array.isArray(list)) return list;
+          if (Array.isArray(res?.content)) return res.content;
+          if (Array.isArray(res?.matches)) return res.matches;
+          return [];
+        };
 
-      if (pointsRes.status === "fulfilled" && pointsRes.value) {
-        const ptData = pointsRes.value.pointsTable || pointsRes.value.data || (Array.isArray(pointsRes.value) ? pointsRes.value : []);
-        setPointsTable(Array.isArray(ptData) ? ptData : []);
-      }
+        let loadedMatches = [];
+        if (matchesRes.status === "fulfilled" && matchesRes.value) {
+          loadedMatches = extractMatches(matchesRes.value);
+        }
 
-      if (batLeadRes.status === "fulfilled" && batLeadRes.value?.stats) {
-        setBattingLeaderboard(Array.isArray(batLeadRes.value.stats) ? batLeadRes.value.stats : []);
-      }
+        // Secondary fetch: If loadedMatches is empty and we have a MongoDB _id from tData
+        const actualTournamentId = tData?._id || tData?.id;
+        if (
+          loadedMatches.length === 0 &&
+          actualTournamentId &&
+          String(actualTournamentId) !== String(tournamentId)
+        ) {
+          try {
+            const secondaryMatchesRes = await tournamentsApi.getMatchesByTournament(
+              actualTournamentId
+            );
+            const secondaryList = extractMatches(secondaryMatchesRes);
+            if (secondaryList.length > 0) {
+              loadedMatches = secondaryList;
+            }
+          } catch (e) {
+            console.warn("[TournamentProfile] Secondary matches fetch failed:", e);
+          }
+        }
 
-      if (bowlLeadRes.status === "fulfilled" && bowlLeadRes.value?.stats) {
-        setBowlingLeaderboard(Array.isArray(bowlLeadRes.value.stats) ? bowlLeadRes.value.stats : []);
+        // Third fallback: Query matchesApi with tournamentID
+        if (loadedMatches.length === 0 && (actualTournamentId || tournamentId)) {
+          const idToUse = actualTournamentId || tournamentId;
+          try {
+            const fallbackRes = await matchesApi.getMatches({ tournamentID: idToUse });
+            const fbList = extractMatches(fallbackRes);
+            if (fbList.length > 0) {
+              loadedMatches = fbList;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // Fourth fallback: Check tData.matches directly
+        if (
+          loadedMatches.length === 0 &&
+          Array.isArray(tData?.matches) &&
+          tData.matches.length > 0
+        ) {
+          loadedMatches = tData.matches;
+        }
+
+        setMatchesList(loadedMatches);
+
+        if (pointsRes.status === "fulfilled" && pointsRes.value) {
+          let ptData =
+            pointsRes.value?.data?.pointsTable ||
+            pointsRes.value?.data?.content ||
+            pointsRes.value?.data;
+          if (ptData?.pointsTable) ptData = ptData.pointsTable;
+          setPointsTable(Array.isArray(ptData) ? ptData : []);
+        }
+
+        if (batLeadRes.status === "fulfilled" && batLeadRes.value) {
+          const batStats =
+            batLeadRes.value?.data?.stats ||
+            batLeadRes.value?.stats ||
+            batLeadRes.value?.data;
+          if (Array.isArray(batStats)) {
+            setBattingLeaderboard(batStats);
+          }
+        }
+
+        if (bowlLeadRes.status === "fulfilled" && bowlLeadRes.value) {
+          const bowlStats =
+            bowlLeadRes.value?.data?.stats ||
+            bowlLeadRes.value?.stats ||
+            bowlLeadRes.value?.data;
+          if (Array.isArray(bowlStats)) {
+            setBowlingLeaderboard(bowlStats);
+          }
+        }
+      } catch (err) {
+        console.warn("[TournamentProfile] Error loading tournament details:", err);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-    }).catch((err) => {
-      if (isMounted) setIsLoading(false);
-      console.log("Error loading tournament details:", err);
-    });
+    };
+
+    loadData();
 
     return () => {
       isMounted = false;
     };
   }, [tournamentId]);
 
+  const formatDate = (dateVal) => {
+    if (!dateVal) return null;
+    try {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return String(dateVal);
+      return d.toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return String(dateVal);
+    }
+  };
+
+  const rawStart = tournamentData?.date?.start || tournamentData?.startDate;
+  const rawEnd = tournamentData?.date?.end || tournamentData?.endDate;
+  const formattedStart = formatDate(rawStart);
+  const formattedEnd = formatDate(rawEnd);
+  const dateRangeDisplay =
+    formattedStart && formattedEnd
+      ? formattedStart === formattedEnd
+        ? formattedStart
+        : `${formattedStart} - ${formattedEnd}`
+      : formattedStart || formattedEnd || "TBD";
+
+  const locPart = tournamentData?.location || "";
+  const cityPart = tournamentData?.city || "";
+  const locationDisplay =
+    locPart && cityPart && locPart !== cityPart
+      ? `${locPart}, ${cityPart}`
+      : locPart || cityPart || "Not specified";
+
+  let organizerDisplay = "Organizer";
+  let organizerContact = null;
+  if (Array.isArray(tournamentData?.organizer) && tournamentData.organizer.length > 0) {
+    const org0 = tournamentData.organizer[0];
+    organizerDisplay =
+      typeof org0 === "object"
+        ? org0?.username || org0?.name || "Organizer"
+        : String(org0);
+    organizerContact = org0?.mobile || null;
+  } else if (typeof tournamentData?.organizer === "string") {
+    organizerDisplay = tournamentData.organizer;
+  } else if (tournamentData?.organizer?.username) {
+    organizerDisplay = tournamentData.organizer.username;
+    organizerContact = tournamentData.organizer.mobile || null;
+  } else if (tournamentData?.organizerName) {
+    organizerDisplay = tournamentData.organizerName;
+  }
+
   // Derived tournament object
   const tournament = {
     id: tournamentData?._id || tournamentData?.id || tournamentId || "",
     name: tournamentData?.title || tournamentData?.name || "Tournament",
-    shortName: tournamentData?.slug || tournamentData?.shortName || (tournamentData?.title ? tournamentData.title.substring(0, 4).toUpperCase() : "TMT"),
-    logo: tournamentData?.logoImage || tournamentData?.bannerImage || tournamentData?.logo || null,
-    startDate: tournamentData?.date?.start ? new Date(tournamentData.date.start).toLocaleDateString() : (tournamentData?.startDate || "TBD"),
-    endDate: tournamentData?.date?.end ? new Date(tournamentData.date.end).toLocaleDateString() : (tournamentData?.endDate || "TBD"),
-    location: tournamentData?.location || tournamentData?.city || "Not specified",
-    organizer: typeof tournamentData?.organizer === "string" ? tournamentData.organizer : (tournamentData?.organizer?.[0]?.username || tournamentData?.organizerName || "Organizer"),
-    teams: (tournamentData?.teams && tournamentData.teams.length) || teamsList.length || 0,
+    shortName:
+      tournamentData?.slug ||
+      tournamentData?.shortName ||
+      (tournamentData?.title
+        ? tournamentData.title.substring(0, 4).toUpperCase()
+        : "TMT"),
+    logo:
+      tournamentData?.logoImage ||
+      tournamentData?.bannerImage ||
+      tournamentData?.logo ||
+      null,
+    banner: tournamentData?.bannerImage || null,
+    startDate: formattedStart || "TBD",
+    endDate: formattedEnd || "TBD",
+    dateRange: dateRangeDisplay,
+    location: locationDisplay,
+    organizer: organizerDisplay,
+    organizerContact,
+    teams:
+      (Array.isArray(tournamentData?.teams) ? tournamentData.teams.length : null) ||
+      teamsList.length ||
+      0,
     status: tournamentData?.status || "upcoming",
-    format: tournamentData?.format || "Standard",
+    format: tournamentData?.format || tournamentData?.category || "Standard",
     prizeMoney: tournamentData?.prizeMoney || "Not Specified",
-    ballType: tournamentData?.ballType || "Standard",
+    ballType: tournamentData?.ballType
+      ? String(tournamentData.ballType).toUpperCase()
+      : "Standard",
   };
 
-  const liveMatches = matchesList.filter((m) => m.status === "live" || m.isLive);
-  const upcomingMatches = matchesList.filter((m) => m.status === "upcoming");
-  const recentMatches = matchesList.filter((m) => m.status === "completed" || m.status === "finished");
+  const isMatchLive = (m) => {
+    const s = String(m?.status || "").toUpperCase();
+    const display = getMatchStatusDisplay(m?.status);
+    return (
+      Boolean(m?.isLive) ||
+      display === "Live" ||
+      s === "LIVE" ||
+      s === "IN_PROGRESS" ||
+      s === "1" ||
+      m?.status === 1 ||
+      s === MATCH_STATUS.MATCH_IN_PROGRESS ||
+      s === MATCH_STATUS.MATCH_STARTED ||
+      s === MATCH_STATUS.INNINGS_I ||
+      s === MATCH_STATUS.INNINGS_II ||
+      s === MATCH_STATUS.MATCH_RESUMED ||
+      s === MATCH_STATUS.TOSS
+    );
+  };
+
+  const isMatchCompleted = (m) => {
+    const s = String(m?.status || "").toUpperCase();
+    const display = getMatchStatusDisplay(m?.status);
+    return (
+      Boolean(m?.isCompleted) ||
+      display === "End" ||
+      s === "COMPLETED" ||
+      s === "FINISHED" ||
+      s === "END" ||
+      s === "2" ||
+      m?.status === 2 ||
+      s === MATCH_STATUS.MATCH_COMPLETED ||
+      s === MATCH_STATUS.MATCH_ENDED ||
+      s === MATCH_STATUS.MATCH_TIE ||
+      s === MATCH_STATUS.MATCH_CANCELLED ||
+      s === MATCH_STATUS.MATCH_SUSPENDED
+    );
+  };
+
+  const isMatchUpcoming = (m) => {
+    const s = String(m?.status || "").toUpperCase();
+    const display = getMatchStatusDisplay(m?.status);
+    return (
+      display === "Upcoming" ||
+      s === "UPCOMING" ||
+      s === "SCHEDULED" ||
+      s === "PENDING" ||
+      s === "0" ||
+      m?.status === 0 ||
+      s === MATCH_STATUS.MATCH_SCHEDULED ||
+      s === MATCH_STATUS.MATCH_CREATED ||
+      s === MATCH_STATUS.MATCH_DETAILS_ENTERED ||
+      s === MATCH_STATUS.MATCH_OPENER_SELECTED
+    );
+  };
+
+  const liveMatches = matchesList.filter(isMatchLive);
+  const recentMatches = matchesList.filter(
+    (m) => isMatchCompleted(m) && !isMatchLive(m)
+  );
+  const upcomingMatches = matchesList.filter(
+    (m) => isMatchUpcoming(m) && !isMatchLive(m) && !isMatchCompleted(m)
+  );
+  const otherMatches = matchesList.filter(
+    (m) => !isMatchLive(m) && !isMatchCompleted(m) && !isMatchUpcoming(m)
+  );
+
+  const authUser = useSelector((state) => state.auth?.user);
+  const currentUserId = String(
+    authUser?._id || authUser?.id || User.id || User.user?._id || User.user?.id || ""
+  );
+  const isAdmin = Boolean(
+    User.isAdmin() || authUser?.role === 1 || authUser?.role === 2
+  );
+
+  const isOrganizer = Array.isArray(tournamentData?.organizer)
+    ? tournamentData.organizer.some((o) => {
+        const oId = String(o?._id || o?.id || o || "");
+        return Boolean(oId && oId === currentUserId);
+      })
+    : typeof tournamentData?.organizer === "object"
+    ? Boolean(String(tournamentData.organizer?._id || tournamentData.organizer?.id || "") === currentUserId)
+    : Boolean(String(tournamentData?.organizer || "") === currentUserId);
+
+  const isCreator = Boolean(
+    (tournamentData?.createdBy && String(tournamentData.createdBy?._id || tournamentData.createdBy) === currentUserId) ||
+    (tournamentData?.userId && String(tournamentData.userId?._id || tournamentData.userId) === currentUserId) ||
+    (tournamentData?.user && String(tournamentData.user?._id || tournamentData.user) === currentUserId)
+  );
+
+  const canCreateMatch = Boolean(currentUserId) && (isAdmin || isOrganizer || isCreator);
+
+  const handleCreateTournamentMatch = () => {
+    navigation.navigate(SCREENS.CreateMatch, {
+      tournamentId: tournament.id,
+      tournamentID: tournament.id,
+      tournament: tournamentData || tournament,
+      returnScreen: SCREENS.TournamentProfile,
+    });
+  };
 
   const tabs = [
     {
@@ -376,75 +641,108 @@ export default function TournamentProfile() {
     </TouchableOpacity>
   );
 
-  const renderLeaderboardItem = (item, index, type) => (
-    <View
-      key={item.id || item._id || index}
-      className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}
-    >
-      <View className="flex-row justify-between items-center">
-        <View className="flex-row items-center">
-          <ThemedText
-            className={`text-lg font-bold mr-3 ${
-              index < 3
-                ? "text-yellow-600"
-                : isDarkMode
-                ? "text-gray-400"
-                : "text-gray-600"
-            }`}
-          >
-            #{index + 1}
-          </ThemedText>
-          <View>
+  const renderLeaderboardItem = (item, index, type) => {
+    const playerName =
+      item.playerName ||
+      item.name ||
+      item.player?.username ||
+      item.playerId?.username ||
+      "Player";
+    const teamName =
+      item.teamName ||
+      item.team ||
+      item.teamId?.shortName ||
+      item.teamId?.title ||
+      "";
+    const primaryStat =
+      type === "batting"
+        ? `${item.runs ?? item.totalRuns ?? 0} runs`
+        : `${item.wickets ?? item.totalWickets ?? 0} wkts`;
+    const secondaryStat =
+      type === "batting"
+        ? `Avg: ${item.battingAverage ?? item.average ?? item.avg ?? "0.00"} • SR: ${item.strikeRate ?? item.sr ?? "0.00"}`
+        : `Eco: ${item.economyRate ? parseFloat(item.economyRate).toFixed(2) : (item.economy ?? item.econ ?? "0.00")} • Inn: ${item.matchesPlayed ?? item.innings ?? 0}`;
+
+    return (
+      <View
+        key={item.id || item._id || `${type}_${index}`}
+        className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}
+      >
+        <View className="flex-row justify-between items-center">
+          <View className="flex-row items-center flex-1 mr-2">
             <ThemedText
-              className={`font-semibold ${
-                isDarkMode ? "text-white" : "text-gray-900"
+              className={`text-lg font-bold mr-3 ${
+                index < 3
+                  ? "text-yellow-600"
+                  : isDarkMode
+                  ? "text-gray-400"
+                  : "text-gray-600"
               }`}
             >
-              {item.name || item.player?.username || item.playerId?.username || "Player"}
+              #{index + 1}
+            </ThemedText>
+            {item.profileImg ? (
+              <Image
+                source={{ uri: getImageFullUrl(item.profileImg) }}
+                className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
+                resizeMode="cover"
+              />
+            ) : null}
+            <View className="flex-1">
+              <ThemedText
+                numberOfLines={1}
+                className={`font-semibold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {playerName}
+              </ThemedText>
+              {teamName ? (
+                <ThemedText
+                  numberOfLines={1}
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  {teamName}
+                </ThemedText>
+              ) : null}
+            </View>
+          </View>
+
+          <View className="items-end">
+            <ThemedText
+              className={`text-sm font-semibold ${
+                type === "batting"
+                  ? isDarkMode
+                    ? "text-green-400"
+                    : "text-green-600"
+                  : isDarkMode
+                  ? "text-blue-400"
+                  : "text-blue-600"
+              }`}
+            >
+              {primaryStat}
             </ThemedText>
             <ThemedText
               className={`text-xs ${
                 isDarkMode ? "text-gray-400" : "text-gray-600"
               }`}
             >
-              {item.team || item.teamName || item.teamId?.shortName || item.teamId?.title || ""}
+              {secondaryStat}
             </ThemedText>
           </View>
         </View>
-
-        <View className="items-end">
-          <ThemedText
-            className={`text-sm font-semibold ${
-              type === "batting"
-                ? isDarkMode
-                  ? "text-green-400"
-                  : "text-green-600"
-                : isDarkMode
-                ? "text-blue-400"
-                : "text-blue-600"
-            }`}
-          >
-            {type === "batting" ? `${item.runs ?? item.totalRuns ?? 0} runs` : `${item.wickets ?? item.totalWickets ?? 0} wickets`}
-          </ThemedText>
-          <ThemedText
-            className={`text-xs ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            {type === "batting"
-              ? `Avg: ${item.average ?? item.avg ?? "0.00"} • SR: ${item.strikeRate ?? item.sr ?? "0.00"}`
-              : `Eco: ${item.economy ?? item.econ ?? "0.00"} • Avg: ${item.average ?? item.avg ?? "0.00"}`}
-          </ThemedText>
-        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderOverview = () => (
     <ScrollView 
       className="flex-1" 
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
+      nestedScrollEnabled={true}
     >
       {/* Tournament Info Card */}
       <View
@@ -453,7 +751,7 @@ export default function TournamentProfile() {
         } shadow-sm`}
       >
         <View className="flex-row items-center mb-4">
-          <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3">
+          <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3 dark:bg-blue-900/40">
             <Ionicons name="trophy-outline" size={20} color="#3B82F6" />
           </View>
           <ThemedText
@@ -485,7 +783,7 @@ export default function TournamentProfile() {
                 isDarkMode ? "text-white" : "text-gray-900"
               }`}
             >
-              {tournament.startDate} to {tournament.endDate}
+              {tournament.dateRange}
             </ThemedText>
           </View>
 
@@ -500,11 +798,11 @@ export default function TournamentProfile() {
               <ThemedText
                 className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
               >
-                Location
+                Ground / Location
               </ThemedText>
             </View>
             <ThemedText
-              className={`font-medium ${
+              className={`font-medium max-w-[60%] text-right ${
                 isDarkMode ? "text-white" : "text-gray-900"
               }`}
             >
@@ -535,6 +833,31 @@ export default function TournamentProfile() {
             </ThemedText>
           </View>
 
+          {tournament.organizerContact ? (
+            <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
+              <View className="flex-row items-center">
+                <Ionicons 
+                  name="call-outline" 
+                  size={16} 
+                  color={isDarkMode ? "#9CA3AF" : "#6B7280"} 
+                  style={{marginRight: 8}}
+                />
+                <ThemedText
+                  className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+                >
+                  Contact
+                </ThemedText>
+              </View>
+              <ThemedText
+                className={`font-medium ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {tournament.organizerContact}
+              </ThemedText>
+            </View>
+          ) : null}
+
           <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
             <View className="flex-row items-center">
               <Ionicons 
@@ -546,7 +869,7 @@ export default function TournamentProfile() {
               <ThemedText
                 className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
               >
-                Format
+                Format / Category
               </ThemedText>
             </View>
             <ThemedText
@@ -613,7 +936,7 @@ export default function TournamentProfile() {
         } shadow-sm`}
       >
         <View className="flex-row items-center mb-4">
-          <View className="w-10 h-10 bg-amber-100 rounded-full items-center justify-center mr-3">
+          <View className="w-10 h-10 bg-amber-100 rounded-full items-center justify-center mr-3 dark:bg-amber-900/40">
             <Ionicons name="gift-outline" size={20} color="#F59E0B" />
           </View>
           <ThemedText
@@ -732,7 +1055,7 @@ export default function TournamentProfile() {
           </TouchableOpacity>
 
           {expandedSections.batting && (
-            <View className="max-h-64">
+            <View>
               {battingLeaderboard.length > 0 ? (
                 battingLeaderboard.map((item, index) => 
                   renderLeaderboardItem(item, index, "batting")
@@ -776,7 +1099,7 @@ export default function TournamentProfile() {
           </TouchableOpacity>
 
           {expandedSections.bowling && (
-            <View className="max-h-64">
+            <View>
               {bowlingLeaderboard.length > 0 ? (
                 bowlingLeaderboard.map((item, index) => 
                   renderLeaderboardItem(item, index, "bowling")
@@ -799,13 +1122,27 @@ export default function TournamentProfile() {
     <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, alignItems: "center" }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40, alignItems: "center" }}
     >
+      {/* Create Match Banner for Authorized Organizers / Admins */}
+      {canCreateMatch && (
+        <TouchableOpacity
+          onPress={handleCreateTournamentMatch}
+          className="w-full max-w-md bg-blue-600 py-3.5 px-4 rounded-xl flex-row items-center justify-center mb-4 shadow-sm"
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add-circle-outline" size={22} color="#FFFFFF" />
+          <ThemedText className="text-white font-bold ml-2 text-base">
+            Create Tournament Match
+          </ThemedText>
+        </TouchableOpacity>
+      )}
+
       {/* Live Matches */}
       {liveMatches.length > 0 && (
         <>
           <ThemedText
-            className={`text-lg font-bold mb-4 ${
+            className={`text-lg font-bold mb-4 w-full max-w-md ${
               isDarkMode ? "text-white" : "text-gray-900"
             }`}
           >
@@ -816,7 +1153,8 @@ export default function TournamentProfile() {
             <View key={match._id || match.id} className="mb-4 w-full max-w-md">
               <ScoreCard
                 match={match}
-                onPress={() => console.log("Live match pressed:", match._id || match.id)}
+                matchId={match._id || match.id}
+                fullWidth
               />
             </View>
           ))}
@@ -827,7 +1165,7 @@ export default function TournamentProfile() {
       {upcomingMatches.length > 0 && (
         <>
           <ThemedText
-            className={`text-lg font-bold mb-4 ${
+            className={`text-lg font-bold mb-4 mt-2 w-full max-w-md ${
               isDarkMode ? "text-white" : "text-gray-900"
             }`}
           >
@@ -835,44 +1173,13 @@ export default function TournamentProfile() {
           </ThemedText>
 
           {upcomingMatches.map((match) => (
-            <TouchableOpacity
-              key={match._id || match.id}
-              className={`p-4 rounded-xl mb-3 w-full max-w-md ${
-                isDarkMode ? "bg-gray-800" : "bg-white"
-              }`}
-            >
-              <View className="flex-row justify-between items-center mb-2">
-                <ThemedText
-                  className={`font-bold ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {match.team1?.title || match.team1 || "Team 1"} vs {match.team2?.title || match.team2 || "Team 2"}
-                </ThemedText>
-                <Ionicons
-                  name="notifications-outline"
-                  size={20}
-                  color={isDarkMode ? "#9CA3AF" : "#666"}
-                />
-              </View>
-
-              <View className="flex-row justify-between">
-                <ThemedText
-                  className={`text-sm ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  📅 {match.date ? new Date(match.date).toLocaleDateString() : (match.date || "Upcoming")}
-                </ThemedText>
-                <ThemedText
-                  className={`text-sm ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  🏟️ {match.venue || match.location || "Ground"}
-                </ThemedText>
-              </View>
-            </TouchableOpacity>
+            <View key={match._id || match.id} className="mb-4 w-full max-w-md">
+              <ScoreCard
+                match={match}
+                matchId={match._id || match.id}
+                fullWidth
+              />
+            </View>
           ))}
         </>
       )}
@@ -881,7 +1188,7 @@ export default function TournamentProfile() {
       {recentMatches.length > 0 && (
         <>
           <ThemedText
-            className={`text-lg font-bold mb-4 mt-6 ${
+            className={`text-lg font-bold mb-4 mt-4 w-full max-w-md ${
               isDarkMode ? "text-white" : "text-gray-900"
             }`}
           >
@@ -892,19 +1199,55 @@ export default function TournamentProfile() {
             <View key={match._id || match.id} className="mb-4 w-full max-w-md">
               <ScoreCard
                 match={match}
-                onPress={() => console.log("Recent match pressed:", match._id || match.id)}
+                matchId={match._id || match.id}
+                fullWidth
               />
             </View>
           ))}
         </>
       )}
 
-      {liveMatches.length === 0 && upcomingMatches.length === 0 && recentMatches.length === 0 && (
+      {/* Other Matches */}
+      {otherMatches.length > 0 && (
+        <>
+          <ThemedText
+            className={`text-lg font-bold mb-4 mt-4 w-full max-w-md ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            🏏 Other Matches
+          </ThemedText>
+
+          {otherMatches.map((match) => (
+            <View key={match._id || match.id} className="mb-4 w-full max-w-md">
+              <ScoreCard
+                match={match}
+                matchId={match._id || match.id}
+                fullWidth
+              />
+            </View>
+          ))}
+        </>
+      )}
+
+      {matchesList.length === 0 && (
         <View className="py-12 items-center justify-center">
           <Ionicons name="baseball-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
           <ThemedText className={`text-center mt-3 font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
             No matches scheduled or played yet
           </ThemedText>
+          {canCreateMatch && (
+            <TouchableOpacity
+              onPress={handleCreateTournamentMatch}
+              className="mt-4 bg-blue-600 px-5 py-2.5 rounded-full flex-row items-center shadow-sm"
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+              <ThemedText className="text-white font-semibold ml-1">
+                Create First Match
+              </ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </ScrollView>
@@ -914,7 +1257,7 @@ export default function TournamentProfile() {
     <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
     >
       {teamsList.length > 0 ? (
         <FlatList
@@ -924,28 +1267,54 @@ export default function TournamentProfile() {
           renderItem={({ item }) => {
             const teamTitle = item.teamId?.title || item.title || item.name || "Team";
             const teamShort = item.teamId?.shortName || item.shortName || (typeof teamTitle === 'string' ? teamTitle.substring(0, 3).toUpperCase() : "TM");
+            const teamLogo = item.teamId?.teamLogo || item.teamLogo || item.logo || null;
+            const teamLoc = item.location || item.teamId?.location || "";
+
             return (
               <TouchableOpacity
+                onPress={() => {
+                  const targetTeamId = item.teamId?._id || item._id || item.id;
+                  if (targetTeamId) {
+                    navigation.navigate(SCREENS.TeamProfile, { teamId: targetTeamId, team: item });
+                  }
+                }}
                 className={`p-4 rounded-lg mb-3 ${
                   isDarkMode ? "bg-gray-800" : "bg-white"
                 } shadow-sm`}
               >
                 <View className="flex-row justify-between items-center">
-                  <View className="flex-1">
-                    <ThemedText
-                      className={`font-semibold text-lg ${
-                        isDarkMode ? "text-white" : "text-gray-900"
-                      }`}
-                    >
-                      {teamTitle}
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-sm ${
-                        isDarkMode ? "text-gray-400" : "text-gray-600"
-                      }`}
-                    >
-                      ({teamShort})
-                    </ThemedText>
+                  <View className="flex-row items-center flex-1 mr-2">
+                    {teamLogo ? (
+                      <Image
+                        source={{ uri: getImageFullUrl(teamLogo) }}
+                        className="w-11 h-11 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View className="w-11 h-11 rounded-full bg-blue-100 dark:bg-blue-900/30 items-center justify-center mr-3">
+                        <ThemedText className="font-bold text-blue-600 dark:text-blue-400">
+                          {teamShort.substring(0, 3)}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <View className="flex-1">
+                      <ThemedText
+                        numberOfLines={1}
+                        className={`font-semibold text-base ${
+                          isDarkMode ? "text-white" : "text-gray-900"
+                        }`}
+                      >
+                        {teamTitle}
+                      </ThemedText>
+                      <ThemedText
+                        numberOfLines={1}
+                        className={`text-xs ${
+                          isDarkMode ? "text-gray-400" : "text-gray-600"
+                        }`}
+                      >
+                        {teamShort}{teamLoc ? ` • ${teamLoc}` : ""}
+                      </ThemedText>
+                    </View>
                   </View>
 
                   <View className="items-end">
@@ -954,14 +1323,14 @@ export default function TournamentProfile() {
                         isDarkMode ? "text-gray-400" : "text-gray-600"
                       }`}
                     >
-                      {item.matches ?? 0} matches
+                      {item.matches ?? item.totalMatches ?? 0} matches
                     </ThemedText>
                     <ThemedText
                       className={`text-xs ${
                         isDarkMode ? "text-blue-400" : "text-blue-600"
                       }`}
                     >
-                      {item.wins ?? 0} wins • {item.losses ?? 0} losses
+                      {item.wins ?? item.totalWins ?? 0} wins • {item.losses ?? item.totalLosses ?? 0} losses
                     </ThemedText>
                   </View>
                 </View>
@@ -986,22 +1355,22 @@ export default function TournamentProfile() {
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
       >
         {standingsData.length > 0 ? (
           <FlatList
             data={standingsData}
-            keyExtractor={(item, index) => item.team?._id || item.teamId?._id || item._id || item.id || String(index)}
+            keyExtractor={(item, index) => item.team?._id || item.teamId?._id || item._id || item.id || item.teamName || String(index)}
             scrollEnabled={false}
             renderItem={({ item, index }) => {
-              const teamName = item.team?.title || item.teamId?.title || item.title || item.name || "Team";
+              const teamName = item.teamName || item.team?.title || item.teamId?.title || item.title || item.name || "Team";
               const shortName = item.team?.shortName || item.teamId?.shortName || item.shortName || (typeof teamName === 'string' ? teamName.substring(0, 3).toUpperCase() : "TM");
-              const pts = item.points ?? item.pts ?? 0;
-              const matchesPlayed = item.matches ?? item.played ?? item.p ?? 0;
-              const wins = item.wins ?? item.w ?? 0;
-              const losses = item.losses ?? item.l ?? 0;
-              const nrr = item.netRunRate ?? item.nrr ?? "0.000";
-              const form = Array.isArray(item.recentForm) ? item.recentForm : [];
+              const pts = item.points ?? item.pts ?? ((item.totalWins ?? item.wins ?? 0) * 2);
+              const matchesPlayed = item.totalMatches ?? item.matches ?? item.played ?? item.p ?? 0;
+              const wins = item.totalWins ?? item.wins ?? item.w ?? 0;
+              const losses = item.totalLosses ?? item.losses ?? item.l ?? 0;
+              const nrr = item.totalNRR ?? item.netRunRate ?? item.nrr ?? "0.000";
+              const form = Array.isArray(item.last5Results) ? item.last5Results : (Array.isArray(item.recentForm) ? item.recentForm : []);
 
               return (
                 <View
@@ -1124,7 +1493,7 @@ export default function TournamentProfile() {
     <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
     >
       {/* Batting Leaderboard */}
       <ThemedText
@@ -1190,12 +1559,23 @@ export default function TournamentProfile() {
           Tournament Profile
         </ThemedText>
 
-        <TouchableOpacity
-          onPress={() => navigation.navigate(SCREENS.EditTournament, { tournament: tournamentData || tournament })}
-          className="p-2"
-        >
-          <Ionicons name="create-outline" size={24} color="#2563EB" />
-        </TouchableOpacity>
+        <View className="flex-row items-center">
+          {canCreateMatch && (
+            <TouchableOpacity
+              onPress={handleCreateTournamentMatch}
+              className="p-2 mr-1"
+              accessibilityLabel="Create Match"
+            >
+              <Ionicons name="add-circle-outline" size={24} color="#2563EB" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => navigation.navigate(SCREENS.EditTournament, { tournament: tournamentData || tournament })}
+            className="p-2"
+          >
+            <Ionicons name="create-outline" size={24} color="#2563EB" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tournament Header */}
@@ -1204,11 +1584,19 @@ export default function TournamentProfile() {
         className="p-6"
       >
         <View className="items-center mb-2">
-          <View className="w-24 h-24 bg-white/20 rounded-full items-center justify-center mb-3">
-            <ThemedText className="text-3xl font-bold text-white">
-              {tournament.shortName}
-            </ThemedText>
-          </View>
+          {tournament.logo ? (
+            <Image
+              source={{ uri: getImageFullUrl(tournament.logo) }}
+              className="w-20 h-20 rounded-full mb-3 bg-white/20"
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="w-20 h-20 bg-white/20 rounded-full items-center justify-center mb-3">
+              <ThemedText className="text-2xl font-bold text-white">
+                {tournament.shortName.substring(0, 4)}
+              </ThemedText>
+            </View>
+          )}
           <ThemedText className="text-2xl font-bold text-white text-center">
             {tournament.name}
           </ThemedText>
@@ -1217,22 +1605,22 @@ export default function TournamentProfile() {
           </ThemedText>
         </View>
 
-        <View className="flex-row justify-center mt-4">
-          <View className="bg-white/20 rounded-full px-4 py-1 mx-2">
+        <View className="flex-row justify-center mt-3">
+          <View className="bg-white/20 rounded-full px-4 py-1 mx-1">
             <ThemedText className="text-white text-sm">
-              {tournament.startDate} - {tournament.endDate}
+              📅 {tournament.dateRange}
             </ThemedText>
           </View>
-          <View className="bg-white/20 rounded-full px-4 py-1 mx-2">
+          <View className="bg-white/20 rounded-full px-4 py-1 mx-1">
             <ThemedText className="text-white text-sm">
-              {tournament.teams} Teams
+              👥 {tournament.teams} Teams
             </ThemedText>
           </View>
         </View>
       </LinearGradient>
 
-      {/* Tab Navigation */}
-      <View className={`px-4 py-3 ${isDarkMode ? "bg-gray-800" : "bg-white"}`}>
+      {/* Tab Navigation with vertical spacing */}
+      <View className={`px-4 py-3 mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"}`}>
         <View className="flex-row justify-between">
           {tabs.map((tab) => (
             <TabButton
@@ -1245,21 +1633,30 @@ export default function TournamentProfile() {
         </View>
       </View>
 
-      {/* Content with Swipeable Tabs */}
-      <SwipeableTabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={switchTab}
-        isDarkMode={isDarkMode}
-      >
-        <View className="flex-1">
-          {activeTab === "overview" && renderOverview()}
-          {activeTab === "matches" && renderMatches()}
-          {activeTab === "teams" && renderTeams()}
-          {activeTab === "standings" && renderStandings()}
-          {activeTab === "leaderboard" && renderLeaderboard()}
+      {/* Content with Swipeable Tabs or Loading Spinner */}
+      {isLoading && !tournamentData ? (
+        <View className="flex-1 items-center justify-center py-20">
+          <ActivityIndicator size="large" color="#2563EB" />
+          <ThemedText className={`mt-3 text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            Loading tournament details...
+          </ThemedText>
         </View>
-      </SwipeableTabs>
+      ) : (
+        <SwipeableTabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={switchTab}
+          isDarkMode={isDarkMode}
+        >
+          <View className="flex-1">
+            {activeTab === "overview" && renderOverview()}
+            {activeTab === "matches" && renderMatches()}
+            {activeTab === "teams" && renderTeams()}
+            {activeTab === "standings" && renderStandings()}
+            {activeTab === "leaderboard" && renderLeaderboard()}
+          </View>
+        </SwipeableTabs>
+      )}
     </SafeAreaView>
   );
 }

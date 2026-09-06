@@ -22,6 +22,7 @@ import MatchHeader from "./MatchHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSelector } from "react-redux";
 import { matchesApi, teamsApi, request, apiUrl } from "@/utils/api";
+import { SOCKET_URL } from "@/config";
 import { io } from "socket.io-client";
 import BallPreview from "./BallPreview";
 import ThemedText from "../custom/ThemedText";
@@ -830,7 +831,7 @@ export default function ScorerScreen() {
     setMatchDetails(null);
     setIsStatusChecked(false);
 
-    const socketUrl = (apiUrl || "https://devapi.criconic.com").replace(/\/+$/, "");
+    const socketUrl = SOCKET_URL;
     console.log("🔌 [ScorerScreen] Initializing dedicated match socket for:", matchID);
 
     const socketConn = io(socketUrl, {

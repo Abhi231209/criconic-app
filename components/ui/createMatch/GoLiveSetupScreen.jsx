@@ -32,6 +32,7 @@ import ThemedText from "../custom/ThemedText";
 import { request } from "@/utils/api";
 import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
+import { WEB_URL } from "@/config";
 
 // ---- Realistic Scorecard Preview Component ----
 function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
@@ -397,7 +398,7 @@ export default function GoLiveSetupScreen() {
       const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" });
       const liveData = configRes?.data?.content?.goLive || configRes?.data?.content?.goLiveTournament || {};
       const liveKey = liveData?.url || goLiveRes?.data?.matchId?.url || matchId;
-      const fullUrl = `https://criconic.com/go-live/${liveKey}`;
+      const fullUrl = `${WEB_URL}/go-live/${liveKey}`;
 
       setGeneratedLiveUrl(fullUrl);
       setSuccessModalVisible(true);

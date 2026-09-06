@@ -19,7 +19,80 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import { teamsApi, upload } from '@/utils/api';
+
+const InputField = ({ 
+  label, 
+  value, 
+  onChange, 
+  placeholder, 
+  multiline = false, 
+  numberOfLines = 1, 
+  keyboardType = 'default',
+  maxLength
+}) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="mb-4">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        {label}
+      </ThemedText>
+      <TextInput
+        className={`rounded-lg px-4 py-3 text-base ${
+          isDarkMode 
+            ? 'bg-gray-800 border-gray-700 text-white' 
+            : 'bg-white border-gray-300 text-gray-900'
+        } border`}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        style={{ minHeight: multiline ? 80 : 48 }}
+      />
+    </View>
+  );
+};
+
+const ImageUpload = ({ label, image, onPress }) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="items-center mb-6">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        {label}
+      </ThemedText>
+      <TouchableOpacity
+        onPress={onPress}
+        className={`border-2 border-dashed rounded-full items-center justify-center ${
+          isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'
+        } h-24 w-24`}
+      >
+        {image ? (
+          <Image
+            source={{ uri: image }}
+            className="w-full h-full rounded-full"
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="items-center p-3">
+            <FontAwesome 
+              name="picture-o" 
+              size={20} 
+              color={isDarkMode ? '#9CA3AF' : '#666'} 
+            />
+            <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Upload Logo
+            </ThemedText>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 export default function CreateTeam() {
   const navigation = useNavigation();
@@ -148,98 +221,32 @@ export default function CreateTeam() {
     }
   };
 
-  const InputField = ({ 
-    label, 
-    value, 
-    onChange, 
-    placeholder, 
-    multiline = false, 
-    numberOfLines = 1, 
-    keyboardType = 'default',
-    maxLength
-  }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </ThemedText>
-      <TextInput
-        className={`rounded-lg px-4 py-3 text-base ${
-          isDarkMode 
-            ? 'bg-gray-800 border-gray-700 text-white' 
-            : 'bg-white border-gray-300 text-gray-900'
-        } border`}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
-        multiline={multiline}
-        numberOfLines={numberOfLines}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        style={{ minHeight: multiline ? 80 : 48 }}
-      />
-    </View>
-  );
-
-  const ImageUpload = ({ label, image, onPress }) => (
-    <View className="items-center mb-6">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </ThemedText>
-      <TouchableOpacity
-        onPress={onPress}
-        className={`border-2 border-dashed rounded-full items-center justify-center ${
-          isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'
-        } h-24 w-24`}
-      >
-        {image ? (
-          <Image
-            source={{ uri: image }}
-            className="w-full h-full rounded-full"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="items-center p-3">
-            <FontAwesome 
-              name="picture-o" 
-              size={20} 
-              color={isDarkMode ? '#9CA3AF' : '#666'} 
-            />
-            <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Upload Logo
-            </ThemedText>
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <SafeAreaView className={`flex-1 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        }`}>
-          <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-            <Ionicons name="arrow-back" size={24} color="#2563EB" />
-          </TouchableOpacity>
-          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-            Create Team
-          </ThemedText>
-          <View className="w-10" />
-        </View>
+      {/* Header */}
+      <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
+        isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      }`}>
+        <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
+          <Ionicons name="arrow-back" size={24} color="#2563EB" />
+        </TouchableOpacity>
+        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+          Create Team
+        </ThemedText>
+        <View className="w-10" />
+      </View>
 
-        <ScrollView className="flex-1 px-4 py-4" showsVerticalScrollIndicator={false}>
-          {/* Logo Upload */}
-          <ImageUpload
-            label="Team Logo"
-            image={formData.logo}
-            onPress={pickImage}
-          />
+      <AppKeyboardAwareScrollView
+        className="flex-1 px-4 py-4"
+        extraHeight={80}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Logo Upload */}
+        <ImageUpload
+          label="Team Logo"
+          image={formData.logo}
+          onPress={pickImage}
+        />
 
           {/* Team Name and Short Name in a row */}
           <View className="flex-row justify-between mb-4">
@@ -440,8 +447,7 @@ export default function CreateTeam() {
               )}
             </LinearGradient>
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </AppKeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

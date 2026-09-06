@@ -4,8 +4,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDeviceId } from "./index";
 import { store } from "@/redux/store";
 import User from "./User";
-
-export const apiUrl = "https://devapi.criconic.com/";
+import { BASE_URL, API_URL, apiUrl, SOCKET_URL } from "@/config";
+export { BASE_URL, API_URL, apiUrl, SOCKET_URL };
 
 const COOKIE_STORAGE_KEY = "@auth_cookie";
 let sessionCookie = null;
@@ -340,7 +340,7 @@ export const tournamentsApi = {
   getAllTournaments: (options = {}) =>
     request("api/tournaments", { method: "GET", errorAlert: false, ...options }),
   getMyTournaments: (options = {}) =>
-    request("api/tournaments?self=1", { method: "GET", errorAlert: false, ...options }),
+    request("api/tournaments?self=1&limit=50", { method: "GET", errorAlert: false, ...options }),
   getTournamentById: (id, options = {}) =>
     request(`api/tournaments/${id}`, { method: "GET", errorAlert: false, ...options }),
   createTournament: (data, options = {}) =>

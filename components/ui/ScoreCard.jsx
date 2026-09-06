@@ -25,6 +25,8 @@ function ScoreCard({
   onPress,
   isMatch = true,
   smallBanner = false,
+  fullWidth = false,
+  style,
 }) {
   const effectiveMatchId = matchId || match?._id || match?.id || match?.matchId;
   const hasExistingData = Boolean(match?.teams?.length || match?.score || match?.title);
@@ -249,9 +251,20 @@ function ScoreCard({
   );
 
   const isLive =
+    Boolean(combinedMatch?.isLive) ||
     matchStatus?.toUpperCase().includes("LIVE") ||
-    matchStatus?.toUpperCase().includes("INNINGS");
-  const isCompleted = matchStatus?.toUpperCase().includes("COMPLETED");
+    matchStatus?.toUpperCase().includes("INNINGS") ||
+    currentStatus === MATCH_STATUS.MATCH_IN_PROGRESS ||
+    currentStatus === MATCH_STATUS.MATCH_STARTED ||
+    currentStatus === MATCH_STATUS.INNINGS_I ||
+    currentStatus === MATCH_STATUS.INNINGS_II;
+  const isCompleted =
+    Boolean(combinedMatch?.isCompleted) ||
+    matchStatus?.toUpperCase() === "END" ||
+    matchStatus?.toUpperCase().includes("COMPLETED") ||
+    matchStatus?.toUpperCase().includes("FINISHED") ||
+    currentStatus === MATCH_STATUS.MATCH_COMPLETED ||
+    currentStatus === MATCH_STATUS.MATCH_ENDED;
 
   const BottomSheetContent = () => (
     <MatchActionSheet
@@ -290,16 +303,19 @@ function ScoreCard({
             ? "bg-gray-800/90 border-gray-700/80 shadow-black/40"
             : "bg-white border-gray-100 shadow-slate-200"
         }`}
-        style={{
-          width: 300,
-          height: 170,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isDarkMode ? 0.3 : 0.08,
-          shadowRadius: 10,
-          elevation: 4,
-          marginHorizontal: 4,
-          marginVertical: 4,
-        }}
+        style={[
+          {
+            width: fullWidth ? "100%" : 300,
+            height: 170,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: isDarkMode ? 0.3 : 0.08,
+            shadowRadius: 10,
+            elevation: 4,
+            marginHorizontal: 4,
+            marginVertical: 4,
+          },
+          style,
+        ]}
       >
         <ActivityIndicator size="small" color="#3B82F6" />
         <ThemedText style={{ marginTop: 8, fontSize: 13, fontWeight: "600", color: isDarkMode ? "#94a3b8" : "#64748b" }}>
@@ -316,15 +332,18 @@ function ScoreCard({
           ? "bg-gray-800/90 border-gray-700/80 shadow-black/40"
           : "bg-white border-gray-100 shadow-slate-200"
       } ${loading ? "opacity-70" : "opacity-100"}`}
-      style={{
-        width: 300,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: isDarkMode ? 0.3 : 0.08,
-        shadowRadius: 10,
-        elevation: 4,
-        marginHorizontal: 4,
-        marginVertical: 4,
-      }}
+      style={[
+        {
+          width: fullWidth ? "100%" : 300,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.08,
+          shadowRadius: 10,
+          elevation: 4,
+          marginHorizontal: 4,
+          marginVertical: 4,
+        },
+        style,
+      ]}
     >
       <TouchableOpacity
         onPress={handlePress}

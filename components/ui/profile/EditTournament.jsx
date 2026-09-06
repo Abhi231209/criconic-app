@@ -20,7 +20,129 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import { tournamentsApi } from '@/utils/api';
+
+const formatDate = (date) => {
+  if (!date) return '';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    return d.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return String(date);
+  }
+};
+
+const InputField = ({ 
+  label, 
+  value, 
+  onChange, 
+  placeholder, 
+  keyboardType = 'default',
+  maxLength,
+  multiline = false,
+  numberOfLines = 1
+}) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="mb-4">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        {label}
+      </ThemedText>
+      <TextInput
+        className={`rounded-lg px-4 py-3 text-base ${
+          isDarkMode 
+            ? 'bg-gray-800 border-gray-700 text-white' 
+            : 'bg-white border-gray-300 text-gray-900'
+        } border`}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        style={{ minHeight: multiline ? 80 : 48 }}
+      />
+    </View>
+  );
+};
+
+const DatePickerField = ({ label, value, onPress }) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="mb-4">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        {label}
+      </ThemedText>
+      <TouchableOpacity
+        className={`rounded-lg px-4 py-3 flex-row justify-between items-center border ${
+          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
+        }`}
+        onPress={onPress}
+      >
+        <ThemedText className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+          {formatDate(value)}
+        </ThemedText>
+        <Ionicons name="calendar" size={20} color={isDarkMode ? '#9CA3AF' : '#666'} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const ImageUpload = ({ logo, onPress, onTakePhoto }) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="items-center mb-6">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        Tournament Logo
+      </ThemedText>
+      <TouchableOpacity
+        onPress={onPress}
+        className={`border-2 border-dashed rounded-full items-center justify-center ${
+          isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'
+        } h-32 w-32`}
+      >
+        {logo ? (
+          <Image
+            source={{ uri: logo }}
+            className="w-full h-full rounded-full"
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="items-center p-3">
+            <FontAwesome 
+              name="trophy" 
+              size={32} 
+              color={isDarkMode ? '#9CA3AF' : '#666'} 
+            />
+            <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Upload Logo
+            </ThemedText>
+          </View>
+        )}
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        onPress={onTakePhoto}
+        className={`mt-3 flex-row items-center justify-center px-4 py-2 rounded-lg ${
+          isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
+        }`}
+      >
+        <Ionicons name="camera" size={16} color={isDarkMode ? '#9CA3AF' : '#666'} />
+        <ThemedText className={`text-sm ml-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+          Take Photo
+        </ThemedText>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 export default function EditTournament() {
   const navigation = useNavigation();
@@ -244,131 +366,38 @@ export default function EditTournament() {
     }
   };
 
-  const InputField = ({ 
-    label, 
-    value, 
-    onChange, 
-    placeholder, 
-    keyboardType = 'default',
-    maxLength,
-    multiline = false,
-    numberOfLines = 1
-  }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </ThemedText>
-      <TextInput
-        className={`rounded-lg px-4 py-3 text-base ${
-          isDarkMode 
-            ? 'bg-gray-800 border-gray-700 text-white' 
-            : 'bg-white border-gray-300 text-gray-900'
-        } border`}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        multiline={multiline}
-        numberOfLines={numberOfLines}
-        style={{ minHeight: multiline ? 80 : 48 }}
-      />
-    </View>
-  );
-
-  const DatePickerField = ({ label, value, onPress, type }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </ThemedText>
-      <TouchableOpacity
-        className={`rounded-lg px-4 py-3 flex-row justify-between items-center border ${
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-        }`}
-        onPress={onPress}
-      >
-        <ThemedText className={`text-base ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-          {formatDate(value)}
-        </ThemedText>
-        <Ionicons name="calendar" size={20} color={isDarkMode ? '#9CA3AF' : '#666'} />
-      </TouchableOpacity>
-    </View>
-  );
-
-  const ImageUpload = () => (
-    <View className="items-center mb-6">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        Tournament Logo
-      </ThemedText>
-      <TouchableOpacity
-        onPress={pickImage}
-        className={`border-2 border-dashed rounded-full items-center justify-center ${
-          isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'
-        } h-32 w-32`}
-      >
-        {formData.logo ? (
-          <Image
-            source={{ uri: formData.logo }}
-            className="w-full h-full rounded-full"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="items-center p-3">
-            <FontAwesome 
-              name="trophy" 
-              size={32} 
-              color={isDarkMode ? '#9CA3AF' : '#666'} 
-            />
-            <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Upload Logo
-            </ThemedText>
-          </View>
-        )}
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        onPress={takePhoto}
-        className={`mt-3 flex-row items-center justify-center px-4 py-2 rounded-lg ${
-          isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
-        }`}
-      >
-        <Ionicons name="camera" size={16} color={isDarkMode ? '#9CA3AF' : '#666'} />
-        <ThemedText className={`text-sm ml-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-          Take Photo
-        </ThemedText>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <SafeAreaView className={`flex-1 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        }`}>
-          <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-            <Ionicons name="arrow-back" size={24} color="#2563EB" />
-          </TouchableOpacity>
-          
-          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-            Edit Tournament
+      {/* Header */}
+      <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
+        isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      }`}>
+        <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
+          <Ionicons name="arrow-back" size={24} color="#2563EB" />
+        </TouchableOpacity>
+        
+        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+          Edit Tournament
+        </ThemedText>
+        
+        <TouchableOpacity onPress={() => setFormData(tournament)} className="p-2">
+          <ThemedText className="text-blue-600 text-sm font-medium">
+            Reset
           </ThemedText>
-          
-          <TouchableOpacity onPress={() => setFormData(tournament)} className="p-2">
-            <ThemedText className="text-blue-600 text-sm font-medium">
-              Reset
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+      </View>
 
-        <ScrollView className="flex-1 px-4 py-4" showsVerticalScrollIndicator={false}>
-          {/* Logo Upload */}
-          <ImageUpload />
+      <AppKeyboardAwareScrollView
+        className="flex-1 px-4 py-4"
+        extraHeight={80}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Logo Upload */}
+        <ImageUpload
+          logo={formData.logo}
+          onPress={pickImage}
+          onTakePhoto={takePhoto}
+        />
 
           {/* Basic Information */}
           <ThemedText className={`text-lg font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -635,8 +664,7 @@ export default function EditTournament() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </AppKeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
