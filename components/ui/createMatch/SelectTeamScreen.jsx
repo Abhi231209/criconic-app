@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   useColorScheme,
   Image,
   TextInput,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -14,106 +17,167 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import SwipeableTabs from "../custom/SwipeableTab";
+import { teamsApi, searchApi } from "@/utils/api";
+import debounce from "lodash/debounce";
 
 export default function SelectTeamScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { teamType, onTeamSelect, onSquadSelect } = route.params;
+  const { teamType, otherTeamId, selectedOpponentTeamId } = route.params || {};
+  const blockedTeamId = otherTeamId || selectedOpponentTeamId;
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("myTeams");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Mock data - replace with actual API call
-  useEffect(() => {
-    const fetchTeams = () => {
-      setTimeout(() => {
-        const mockTeams = [
-          { 
-            id: "1", 
-            name: "Mumbai Indians", 
-            location: "Mumbai, India",
-            image: "https://example.com/mumbai-indians.jpg",
-            players: Array(20).fill().map((_, i) => ({ id: `p${i+1}`, name: `Player ${i+1}` })),
-            isMyTeam: true
-          },
-          { 
-            id: "2", 
-            name: "Chennai Super Kings", 
-            location: "Chennai, India",
-            image: "https://example.com/chennai-super-kings.jpg",
-            players: Array(18).fill().map((_, i) => ({ id: `c${i+1}`, name: `CSK Player ${i+1}` })),
-            isMyTeam: true
-          },
-          { 
-            id: "3", 
-            name: "Royal Challengers", 
-            location: "Bangalore, India",
-            image: "https://example.com/royal-challengers.jpg",
-            players: Array(22).fill().map((_, i) => ({ id: `r${i+1}`, name: `RCB Player ${i+1}` })),
-            isMyTeam: false
-          },
-          { 
-            id: "4", 
-            name: "Kolkata Knight Riders", 
-            location: "Kolkata, India",
-            image: "https://example.com/kkr.jpg",
-            players: Array(19).fill().map((_, i) => ({ id: `k${i+1}`, name: `KKR Player ${i+1}` })),
-            isMyTeam: false
-          },
-        ];
-        setTeams(mockTeams);
-        setLoading(false);
-      }, 500);
+  const normalizeTeam = (t, isMy = false) => {
+    const raw = t?.team?.[0] || t;
+    const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
+    const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
+    return {
+      ...raw,
+      id: teamId,
+      _id: teamId,
+      teamId,
+      name: teamName,
+      title: teamName,
+      location: raw?.location || "Location not specified",
+      image: raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null,
+      players: Array.isArray(raw?.players) ? raw.players : [],
+      isMyTeam: isMy,
     };
+  };
 
+  const fetchTeams = async () => {
+    try {
+      const [myRes, oppRes] = await Promise.all([
+        teamsApi.getMyTeams().catch(() => null),
+        teamsApi.getOpponentTeams().catch(() => null),
+      ]);
+
+      let myData = [];
+      if (Array.isArray(myRes?.data)) {
+        myData = myRes.data.map((t) => normalizeTeam(t, true));
+      }
+
+      const rawOppList = Array.isArray(oppRes?.data?.content)
+        ? oppRes.data.content
+        : Array.isArray(oppRes?.data)
+        ? oppRes.data
+        : [];
+      const oppData = rawOppList.map((t) => normalizeTeam(t, false));
+
+      // Combine and deduplicate
+      const combined = [...myData];
+      const seenIds = new Set(myData.map((t) => t.id).filter(Boolean));
+      for (const t of oppData) {
+        if (t.id && !seenIds.has(t.id)) {
+          seenIds.add(t.id);
+          combined.push(t);
+        }
+      }
+
+      setTeams(combined);
+    } catch (error) {
+      console.warn("[SelectTeam] Failed to fetch teams:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
     fetchTeams();
   }, []);
 
+  const debouncedTeamSearch = useCallback(
+    debounce(async (query) => {
+      if (!query || !query.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+      try {
+        const res = await searchApi.search(query.trim(), "team");
+        const list =
+          res?.data?.[0]?.data ||
+          (Array.isArray(res?.data) ? res.data : []);
+        setSearchResults(
+          (Array.isArray(list) ? list : []).map((t) => normalizeTeam(t, false))
+        );
+      } catch (err) {
+        console.warn("[SelectTeamScreen] Global search error:", err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300),
+    []
+  );
+
+  const handleSearchQueryChange = (text) => {
+    setSearchQuery(text);
+    if (!text || !text.trim()) {
+      debouncedTeamSearch.cancel();
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    debouncedTeamSearch(text);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchTeams();
+  };
+
   const handleTeamSelect = (team) => {
+    const selectedId = team?._id || team?.id || team?.teamId;
+    if (
+      blockedTeamId &&
+      selectedId &&
+      String(blockedTeamId) === String(selectedId)
+    ) {
+      Alert.alert(
+        "Invalid Selection",
+        "Team A and Team B cannot be the same team. Please choose a different opponent."
+      );
+      return;
+    }
+
     navigation.navigate(SCREENS.SelectSquadScreen, {
       team,
       teamType,
-      onSquadSelect: (squad) => {
-        onTeamSelect(team);
-        onSquadSelect(team, squad, teamType);
-        navigation.goBack();
-      }
     });
   };
 
   const handleCreateTeam = () => {
     navigation.navigate(SCREENS.CreateTeam, {
       onTeamCreated: (newTeam) => {
-        const updatedTeams = [...teams, {...newTeam, isMyTeam: true}];
-        setTeams(updatedTeams);
-        setActiveTab("myTeams");
-      }
+        if (newTeam) {
+          const normalized = normalizeTeam(newTeam, true);
+          setTeams((prev) => [normalized, ...prev]);
+          setActiveTab("myTeams");
+        }
+      },
     });
   };
 
-  // Filter teams based on active tab and search query
+  // Filter teams based on active tab
   const getFilteredTeams = () => {
     let filtered = teams;
-    
-    // Filter by tab
     if (activeTab === "myTeams") {
-      filtered = filtered.filter(team => team.isMyTeam);
+      filtered = filtered.filter((t) => t.isMyTeam);
     } else if (activeTab === "opponentTeams") {
-      filtered = filtered.filter(team => !team.isMyTeam);
+      filtered = filtered.filter((t) => !t.isMyTeam);
     }
-    
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(team => 
-        team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        team.location.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
     return filtered;
   };
 
@@ -208,6 +272,8 @@ export default function SelectTeamScreen() {
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             emptyMessage="No teams available. Create one!"
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
           />
         )}
 
@@ -218,6 +284,8 @@ export default function SelectTeamScreen() {
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             emptyMessage="No opponent teams available."
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
           />
         )}
 
@@ -229,11 +297,12 @@ export default function SelectTeamScreen() {
         {/* Search Tab */}
         {activeTab === "search" && (
           <SearchTab 
-            teams={getFilteredTeams()} 
+            teams={searchResults} 
+            isSearching={isSearching}
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
+            setSearchQuery={handleSearchQueryChange}
           />
         )}
       </SwipeableTabs>
@@ -242,12 +311,22 @@ export default function SelectTeamScreen() {
 }
 
 // Team List Component
-const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage }) => {
+const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, onRefresh }) => {
   return (
     <View className="flex-1 p-4">
       <FlatList
         data={teams}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={!!refreshing}
+              onRefresh={onRefresh}
+              colors={["#2563EB"]}
+              tintColor="#2563EB"
+            />
+          ) : undefined
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             onPress={() => onTeamSelect(item)}
@@ -267,7 +346,7 @@ const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage }) => {
                 {item.name}
               </ThemedText>
               <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                {item.location} • {item.players.length} players
+                {item.location} • {item.players?.length || 0} players
               </ThemedText>
             </View>
             <Ionicons
@@ -318,8 +397,8 @@ const CreateTeamTab = ({ onCreateTeam, isDarkMode }) => {
   );
 };
 
-// Search Tab Component
-const SearchTab = ({ teams, onTeamSelect, isDarkMode, searchQuery, setSearchQuery }) => {
+// Search Tab Component with Live Global Search
+const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, setSearchQuery }) => {
   return (
     <View className="flex-1 p-4">
       <View
@@ -336,12 +415,15 @@ const SearchTab = ({ teams, onTeamSelect, isDarkMode, searchQuery, setSearchQuer
           style={{ marginRight: 8 }}
         />
         <TextInput
-          placeholder="Search teams..."
+          placeholder="Search all teams globally..."
           placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
           value={searchQuery}
           onChangeText={setSearchQuery}
           className="flex-1 text-gray-900 dark:text-white"
         />
+        {isSearching ? (
+          <ActivityIndicator size="small" color="#3B82F6" style={{ marginRight: 6 }} />
+        ) : null}
         {searchQuery ? (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Ionicons
@@ -375,7 +457,7 @@ const SearchTab = ({ teams, onTeamSelect, isDarkMode, searchQuery, setSearchQuer
                 {item.name}
               </ThemedText>
               <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                {item.location} • {item.players.length} players
+                {item.location} • {item.players?.length || 0} players
               </ThemedText>
             </View>
             <Ionicons
@@ -388,7 +470,11 @@ const SearchTab = ({ teams, onTeamSelect, isDarkMode, searchQuery, setSearchQuer
         ListEmptyComponent={
           <View className="items-center justify-center py-10">
             <ThemedText className="text-gray-500 dark:text-gray-400">
-              {searchQuery ? "No teams found. Try a different search." : "Search for teams by name or location"}
+              {isSearching
+                ? "Searching teams..."
+                : searchQuery
+                ? "No teams found matching your search."
+                : "Type a team name to search across Criconic."}
             </ThemedText>
           </View>
         }

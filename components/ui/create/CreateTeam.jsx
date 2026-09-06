@@ -10,7 +10,7 @@ import {
   Image,
   useColorScheme,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,9 +19,11 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import { teamsApi, upload } from '@/utils/api';
 
 export default function CreateTeam() {
   const navigation = useNavigation();
+  const route = useRoute();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
   
@@ -88,32 +90,62 @@ export default function CreateTeam() {
       return;
     }
 
-    if (!formData.captainName.trim()) {
-      Alert.alert('Error', 'Please enter captain name');
-      return;
-    }
-
-    if (!formData.city.trim()) {
-      Alert.alert('Error', 'Please enter city');
-      return;
-    }
-
     setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+
+    try {
+      let logoUrl = null;
+      if (formData.logo) {
+        const uploadRes = await upload(formData.logo, "team");
+        logoUrl = uploadRes?.url || uploadRes?.data?.url || uploadRes?.data || null;
+      }
+
+      const teamPayload = {
+        title: formData.teamName.trim(),
+        shortName: formData.shortName.trim(),
+        location: formData.city.trim() || "Local",
+        teamType: formData.teamType,
+        captainName: formData.captainName.trim(),
+        captainPhone: formData.captainPhone.trim(),
+        coachName: formData.coachName.trim(),
+        homeGround: formData.homeGround.trim(),
+        establishedYear: formData.establishedYear,
+        jerseyColor: formData.jerseyColor,
+        description: formData.description,
+        teamLogo: logoUrl,
+      };
+
+      const res = await teamsApi.createTeam(teamPayload);
+
+      if (res?.data?.success || res?.status === 200 || res?.data?.data?._id) {
+        const createdTeam = res.data?.data || {
+          _id: res.data?._id,
+          name: formData.teamName,
+          title: formData.teamName,
+          location: formData.city,
+        };
+
+        if (route.params?.onTeamCreated) {
+          route.params.onTeamCreated(createdTeam);
+        }
+
+        Alert.alert(
+          'Success',
+          res?.data?.message || 'Team created successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Notice', res?.data?.message || 'Could not create team. Please try again.');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to create team');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Success',
-        'Team created successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
-    }, 1500);
+    }
   };
 
   const InputField = ({ 

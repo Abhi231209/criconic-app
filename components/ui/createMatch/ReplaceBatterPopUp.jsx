@@ -1,36 +1,14 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   Modal,
   ScrollView,
   useColorScheme,
 } from "react-native";
+import ThemedText from "../custom/ThemedText";
 import { X } from "lucide-react-native";
-// import { useRouter } from "expo-router";
-
-const COLORS = {
-  primary: "#DC2626",
-  secondary: "#16A34A",
-  accent: "#EA580C",
-  light: {
-    background: "#FFFFFF",
-    card: "#F8FAFC",
-    text: "#1E293B",
-    textSecondary: "#64748B",
-    border: "#E2E8F0",
-    inputBackground: "#FFFFFF",
-  },
-  dark: {
-    background: "#0F172A",
-    card: "#1E293B",
-    text: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    border: "#334155",
-    inputBackground: "#1E293B",
-  },
-};
+import { COLORS } from "@/theme/colors";
 
 // Player Card Component for the popup
 const PlayerCard = ({ 
@@ -48,12 +26,12 @@ const PlayerCard = ({
     onPress={onPress}
     activeOpacity={0.7}
   >
-    <Text style={[
+    <ThemedText style={[
       styles.playerName,
       isDarkMode ? styles.darkText : styles.lightText
     ]}>
       {playerName}
-    </Text>
+    </ThemedText>
     {isSelected && (
       <View style={styles.selectedIndicator} />
     )}
@@ -83,14 +61,14 @@ const Button = ({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <Text style={[
+      <ThemedText style={[
         styles.buttonText,
         isOutline 
           ? (isDarkMode ? styles.darkOutlineText : styles.lightOutlineText)
           : styles.primaryButtonText
       ]}>
         {title}
-      </Text>
+      </ThemedText>
     </TouchableOpacity>
   );
 };
@@ -101,6 +79,7 @@ export default function ReplaceBatterPopup({
   matchID,
   visible = false,
   onClose = () => {},
+  onSelect,
 }) {
 //   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -116,6 +95,9 @@ export default function ReplaceBatterPopup({
     if (!selectedPlayer) return;
     
     onClose();
+    if (onSelect) {
+      onSelect(selectedPlayer);
+    }
     // Navigate to the change squad screen with selected player
     // router.push(`/match-change-squad/${team}/${matchID}/${selectedPlayer}`);
   };
@@ -140,18 +122,18 @@ export default function ReplaceBatterPopup({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerContent}>
-              <Text style={[
+              <ThemedText style={[
                 styles.title,
                 isDarkMode ? styles.darkText : styles.lightText
               ]}>
                 Replace Batter
-              </Text>
-              <Text style={[
+              </ThemedText>
+              <ThemedText style={[
                 styles.description,
                 isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
               ]}>
                 * Stats for the current match will be transferred to new batter
-              </Text>
+              </ThemedText>
             </View>
             <TouchableOpacity 
               onPress={handleClose} 
@@ -167,15 +149,29 @@ export default function ReplaceBatterPopup({
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.playersGrid}>
-              {players.map((player, index) => (
-                <PlayerCard
-                  key={player.playerId || index}
-                  playerName={player.name}
-                  isSelected={selectedPlayer === player.playerId}
-                  onPress={() => handleClick(player.playerId)}
-                  isDarkMode={isDarkMode}
-                />
-              ))}
+              {players && players.length > 0 ? (
+                players.map((player, index) => {
+                  const pId = player.playerId || player.id || player._id || index;
+                  const pName = player.name || player.username || player.playerName || `Player ${index + 1}`;
+                  return (
+                    <PlayerCard
+                      key={pId.toString()}
+                      playerName={pName}
+                      isSelected={selectedPlayer === pId}
+                      onPress={() => handleClick(pId)}
+                      isDarkMode={isDarkMode}
+                    />
+                  );
+                })
+              ) : (
+                <ThemedText style={[
+                  styles.description,
+                  isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary,
+                  { textAlign: 'center', padding: 20, width: '100%' }
+                ]}>
+                  No batters available to replace
+                </ThemedText>
+              )}
             </View>
           </ScrollView>
 

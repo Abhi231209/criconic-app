@@ -10,7 +10,7 @@ import {
   Easing,
   TouchableOpacity
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import Header from "./Header";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
@@ -19,18 +19,29 @@ import MatchInfo from "./MatchInfo";
 import MatchSummary from "./MatchSummary";
 import FullScoreCard from "./FullScorecard";
 import { useSocket } from "@/contexts/SocketContext";
+import { matchesApi } from "@/utils/api";
 import MatchFullCommentary from "./MatchFullCommentry";
 import CurrentSquad from "./CurrentSquad";
 import MatchLive from "./MatchLive";
+import ThemedText from "../custom/ThemedText";
 
 export default function MatchScoreCard({
-    matchID = "68790176f91f25d2ad72a60f",
+    matchID: matchIDProp,
     hideHeader,
     setStreamUrl,
     seoData = {},
 }) {
     const { isConnected, emit, on, off } = useSocket();
     const navigation = useNavigation();
+    const route = useRoute();
+    const matchID =
+        matchIDProp ||
+        route.params?.matchId ||
+        route.params?.matchID ||
+        route.params?.matchDetails?._id ||
+        route.params?.matchDetails?.id ||
+        route.params?.match?._id ||
+        route.params?.match?.id;
     const colorScheme = useColorScheme();
     const isDarkMode = colorScheme === 'dark';
     
@@ -39,8 +50,9 @@ export default function MatchScoreCard({
     const slideAnim = useState(new Animated.Value(50))[0];
     const connectionPulse = useState(new Animated.Value(1))[0];
     
-    // Sample hardcoded score data structure
-    const [score, setScore] = useState({
+    // HARDCODED MOCK INITIAL SCORE - COMMENTED OUT (API ONLY)
+    /*
+    const mockInitialScore = {
         "success": true,
         "streamUrl": "",
         "publishedTime": "2025-07-17T13:58:14.327Z",
@@ -1108,7 +1120,47 @@ export default function MatchScoreCard({
             "matchResult": "",
             "description": ""
         }
+    };
+    */
+
+    const [loading, setLoading] = useState(true);
+    const [score, setScore] = useState({
+        success: true,
+        teams: [],
+        inning: [],
+        commentary: [],
+        fullCommentary: [],
+        matchConfig: {
+            showMatchSummary: false,
+            showMatchPreview: false,
+            showPlayingEleven: false,
+        }
     });
+
+    useEffect(() => {
+        if (!matchID) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        Promise.all([
+            matchesApi.getMatchById(matchID),
+            matchesApi.getMatchScore(matchID).catch(() => null),
+        ])
+            .then(([matchRes, scoreRes]) => {
+                const matchData = matchRes?.match || matchRes?.data || matchRes;
+                const scoreData = scoreRes?.data;
+                if (matchData) {
+                    setScore(prev => ({
+                        ...prev,
+                        ...matchData,
+                        ...(scoreData && typeof scoreData === "object" ? scoreData : {}),
+                    }));
+                }
+            })
+            .catch(err => console.log('Error fetching match by id:', err))
+            .finally(() => setLoading(false));
+    }, [matchID]);
 
     // Start animations on component mount
 
@@ -1127,7 +1179,7 @@ export default function MatchScoreCard({
         // Handle generic score updates
         const handleScore = (data) => {
             console.log('📊 Score data received:', data);
-            if (data && typeof data === 'object') {
+            if (data && typeof data === 'object' && data.success !== false) {
                 setScore(prevScore => ({
                     ...prevScore,
                     ...data
@@ -1138,7 +1190,7 @@ export default function MatchScoreCard({
         // Subscribe to events
         console.log('📡 Subscribing to socket events...');
         try {
-            emit('score', { matchID });
+            emit('score', { matchId: matchID, matchID });
             on("score", handleScore);
             console.log('✅ Socket event handlers set up successfully');
         } catch (error) {
@@ -1154,7 +1206,7 @@ export default function MatchScoreCard({
                 console.error('❌ Error cleaning up socket events:', error);
             }
         };
-    }, [isConnected, matchID]);
+    }, [isConnected, matchID, emit, on, off]);
 
     // Styles for light/dark mode
     const containerStyle = {
@@ -1186,16 +1238,21 @@ export default function MatchScoreCard({
         backgroundColor: isConnected ? (isDarkMode ? '#2e7d32' : '#4caf50') : (isDarkMode ? '#c62828' : '#f44336'),
     };
 
-    // Defensive render if loading
-    if (score.isLoading) {
+    // Defensive render if loading or score data not yet received
+    const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
+    if (loading || score.isLoading || isScoreEmpty) {
         return (
-            <View className="flex-1 justify-center items-center" style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}>
-                <ActivityIndicator size="large" color={isDarkMode ? "#bb86fc" : "#1976d2"} />
-                <Text style={[textStyle, {marginTop: 16}]}>Loading match data...</Text>
-            </View>
+            <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <ThemedText style={{ marginTop: 16, fontSize: 15, fontWeight: "600", color: isDarkMode ? '#94A3B8' : '#64748B' }}>
+                    Loading match scorecard...
+                </ThemedText>
+            </SafeAreaView>
         );
     }
 
+    // HARDCODED FULL SCORECARD MOCK DATA - COMMENTED OUT (API ONLY)
+    /*
     let fullScoreCardScore = {
         "streamUrl": "",
         "publishedTime": "2025-07-17T13:58:14.327Z",
@@ -1460,7 +1517,11 @@ export default function MatchScoreCard({
         },
         "stats": {},
         "extras": 9
-}
+    };
+    */
+
+    const currentInningScore = (score?.inning && score.inning[score.inning.length - 1]) || score;
+    const isChasing = score?.matchCurrentStatus === "INNINGS_II";
 
     const tabs = [
         {
@@ -1499,7 +1560,7 @@ export default function MatchScoreCard({
                     bounces={false}
                     overScrollMode="never"
                 >
-                   <FullScoreCard score={fullScoreCardScore} isChasing={false} description={"Epic blasters need 86 runs in 28 balls."} isFirstInning={false}/>
+                   <FullScoreCard score={currentInningScore} isChasing={isChasing} description={score?.description || (score?.prompt && score.prompt[0]) || ""} isFirstInning={!isChasing}/>
                 </ScrollView>
             ),
         },
@@ -1513,7 +1574,7 @@ export default function MatchScoreCard({
                     bounces={false}
                     overScrollMode="never"
                 >
-                    <MatchFullCommentary />
+                    <MatchFullCommentary matchId={matchID} score={score} />
                 </ScrollView>
             ),
         },
@@ -1527,7 +1588,7 @@ export default function MatchScoreCard({
                     bounces={false}
                     overScrollMode="never"
                 >
-                    <CurrentSquad />
+                    <CurrentSquad matchId={matchID} score={score} />
                 </ScrollView>
             ),
         },

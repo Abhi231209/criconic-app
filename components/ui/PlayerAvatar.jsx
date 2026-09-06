@@ -9,9 +9,15 @@ const PlayerAvatar = ({ player, size = 40, onPress }) => {
   
   // Get initials from player name
   const getInitials = (name) => {
-    return name.split(' ').map(word => word[0]).join('').toUpperCase();
+    if (!name || typeof name !== 'string') return 'P';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'P';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
   
+  const playerName = player?.name || player?.username || player?.playerName || 'Player';
+
   return (
     <TouchableOpacity 
       onPress={onPress}
@@ -35,7 +41,7 @@ const PlayerAvatar = ({ player, size = 40, onPress }) => {
           fontSize: size * 0.35
         }}
       >
-        {getInitials(player.name)}
+        {getInitials(playerName)}
       </Text>
     </TouchableOpacity>
   );

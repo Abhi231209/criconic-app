@@ -23,10 +23,20 @@ export default function QuickActions({
   return (
         <>
           <TouchableOpacity
-            className="flex-row items-center justify-center gap-2 w-full py-3 bg-white dark:bg-gray-900 "
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              width: "100%",
+              paddingVertical: 14,
+              backgroundColor: isDarkMode ? "#111827" : "#ffffff",
+              borderTopWidth: 1,
+              borderTopColor: isDarkMode ? "#1f2937" : "#e5e7eb",
+            }}
+            activeOpacity={0.7}
             onPress={() => {
-
-                openSheet(
+              openSheet(
                 <QuickActionDetails
                   matchID={matchID}
                   bowlingTeam={bowlingTeam}
@@ -36,14 +46,17 @@ export default function QuickActions({
                   batsmen={batsmen}
                   navigation={navigation}
                   cb={cb}
-                //   setOpen={setOpen}
-                />);
+                  setOpen={(isOpen) => {
+                    if (!isOpen) closeSheet();
+                  }}
+                />
+              );
             }}
           >
-            <ThemedText className="text-lg font-semibold text-black dark:text-white ">
+            <ThemedText style={{ fontSize: 16, fontWeight: "600", color: isDarkMode ? "#ffffff" : "#111827" }}>
               Quick Actions
             </ThemedText>
-            <Ionicons name="chevron-up-outline" size={20} color={isDarkMode ? "white" : "black"} />
+            <Ionicons name="chevron-up-outline" size={18} color={isDarkMode ? "#ffffff" : "#111827"} />
           </TouchableOpacity>
 
     </>

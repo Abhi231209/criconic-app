@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,32 +7,14 @@ import {
   Alert,
   useColorScheme,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-// import { useRouter } from "expo-router";
 import { ArrowLeft, Plus } from "lucide-react-native";
-
-const COLORS = {
-  primary: "#DC2626",
-  secondary: "#16A34A",
-  accent: "#EA580C",
-  light: {
-    background: "#FFFFFF",
-    card: "#F8FAFC",
-    text: "#1E293B",
-    textSecondary: "#64748B",
-    border: "#E2E8F0",
-    inputBackground: "#FFFFFF",
-  },
-  dark: {
-    background: "#0F172A",
-    card: "#1E293B",
-    text: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    border: "#334155",
-    inputBackground: "#1E293B",
-  },
-};
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { request } from "@/utils/api";
+import SCREENS from "@/screens";
+import { COLORS } from "@/theme/colors";
 
 // Player Card Component
 const PlayerCard = ({ 
@@ -61,7 +43,7 @@ const PlayerCard = ({
           styles.playerName,
           isDarkMode ? styles.darkText : styles.lightText
         ]}>
-          {player.username || player.name}
+          {player.username || player.name || player.playerName || "Player"}
         </Text>
         {player.role && (
           <Text style={[
@@ -107,53 +89,157 @@ const ButtonNormal = ({
   </TouchableOpacity>
 );
 
-export default function ChangeBowler() {
-//   const router = useRouter();
+export default function ChangeBowler(props) {
+  let route;
+  let navigation;
+  try {
+    route = useRoute();
+  } catch (e) {}
+  try {
+    navigation = useNavigation();
+  } catch (e) {}
+
+  const nav = props?.navigation || navigation;
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  let props = {}
   
-  // Get parameters from route - you might need to adjust this based on your routing setup
-  const { teamId, matchId, playerId } = props || {};
-  
+  // Get parameters from props or route
+  const teamId = props?.teamId || route?.params?.teamId;
+  const matchId = props?.matchId || route?.params?.matchId;
+  const playerId = props?.playerId || route?.params?.playerId;
+  const playerName = props?.playerName || route?.params?.playerName;
+  const fallbackSquad = props?.squad || route?.params?.squad || [];
+
   const [squadPlayer, setSquadPlayer] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [isRemoveLoading, setIsRemoveLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const handleGoBack = useCallback(() => {
+    try {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+        return;
+      }
+      if (props?.navigation?.canGoBack && props.navigation.canGoBack()) {
+        props.navigation.goBack();
+        return;
+      }
+    } catch (e) {
+      console.warn("[ChangeBowler] navigation.goBack() failed:", e);
+    }
+    if (matchId && matchId !== "1") {
+      (navigation || props?.navigation)?.navigate(SCREENS.ScorerScreen, { matchId });
+    } else if ((navigation || props?.navigation)?.navigate) {
+      (navigation || props?.navigation)?.navigate(SCREENS.Home);
+    }
+  }, [navigation, props?.navigation, matchId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (!navigation.isFocused()) return false;
+        handleGoBack();
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [navigation, handleGoBack])
+  );
+
   const fetchPlayerCanChanged = async () => {
+    if (!matchId || !teamId) {
+      if (fallbackSquad && fallbackSquad.length > 0) {
+        const filtered = fallbackSquad.filter(
+          (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+        );
+        setSquadPlayer(filtered.length > 0 ? filtered : fallbackSquad);
+      }
+      return;
+    }
     try {
       setLoading(true);
-      // Replace with your actual API call
-      // const res = await request(`api/matches/getPlayerToReplaced/${matchId}/${teamId}`, {
-      //   method: "GET",
-      // });
-      
-      // Mock data - replace with actual API response
-      const mockPlayers = [
-        { id: 1, username: "Virat Kohli", role: "Batsman" },
-        { id: 2, username: "MS Dhoni", role: "Wicketkeeper" },
-        { id: 3, username: "Rohit Sharma", role: "Batsman" },
-        { id: 4, username: "Jasprit Bumrah", role: "Bowler" },
-        { id: 5, username: "Ravindra Jadeja", role: "All-rounder" },
-      ];
-      
-      setSquadPlayer(mockPlayers);
+      const res = await request(`api/matches/getPlayerToReplaced/${matchId}/${teamId}`, {
+        method: "GET",
+        errorAlert: false,
+      });
+      const list =
+        res?.data?.finalPlayerList ||
+        res?.data?.data ||
+        (Array.isArray(res?.data) ? res.data : []);
+      if (Array.isArray(list) && list.length > 0) {
+        const filtered = list.filter(
+          (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+        );
+        setSquadPlayer(filtered.length > 0 ? filtered : list);
+      } else if (fallbackSquad && fallbackSquad.length > 0) {
+        const filtered = fallbackSquad.filter(
+          (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+        );
+        setSquadPlayer(filtered.length > 0 ? filtered : fallbackSquad);
+      } else {
+        // Fallback: fetch team directly from api/teams/${teamId}
+        const teamRes = await request(`api/teams/${teamId}`, {
+          method: "GET",
+          errorAlert: false,
+        });
+        const teamPlayers = teamRes?.data?.players || teamRes?.data?.data?.players || [];
+        if (Array.isArray(teamPlayers) && teamPlayers.length > 0) {
+          const filtered = teamPlayers.filter(
+            (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+          );
+          setSquadPlayer(filtered.length > 0 ? filtered : teamPlayers);
+        } else {
+          setSquadPlayer([]);
+        }
+      }
     } catch (error) {
-      Alert.alert("Error", "Failed to load players");
       console.error("Error fetching players:", error);
+      if (fallbackSquad && fallbackSquad.length > 0) {
+        const filtered = fallbackSquad.filter(
+          (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+        );
+        setSquadPlayer(filtered.length > 0 ? filtered : fallbackSquad);
+      } else {
+        try {
+          const teamRes = await request(`api/teams/${teamId}`, {
+            method: "GET",
+            errorAlert: false,
+          });
+          const teamPlayers = teamRes?.data?.players || teamRes?.data?.data?.players || [];
+          if (Array.isArray(teamPlayers) && teamPlayers.length > 0) {
+            const filtered = teamPlayers.filter(
+              (p) => !playerId || String(p.id || p._id || p.playerId) !== String(playerId)
+            );
+            setSquadPlayer(filtered.length > 0 ? filtered : teamPlayers);
+          } else {
+            setSquadPlayer([]);
+          }
+        } catch (e) {
+          setSquadPlayer([]);
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClick = (playerId) => {
-    setSelectedPlayer(playerId);
+  const handleClick = (pId) => {
+    setSelectedPlayer(pId);
   };
 
   const handleAddNew = () => {
-    // Navigate to ChangeSquad screen
-    router.push(`/changesquad/${teamId}/${matchId}`);
+    const params = {
+      teamId,
+      matchId,
+      squad: squadPlayer,
+      team: route?.params?.team,
+    };
+    if (navigation?.navigate) {
+      navigation.navigate(SCREENS.ChangeSquad, params);
+    } else if (nav?.navigate) {
+      nav.navigate(SCREENS.ChangeSquad, params);
+    }
   };
 
   const handleReplace = async () => {
@@ -168,26 +254,20 @@ export default function ChangeBowler() {
         teamId,
       };
       
-      // Replace with your actual API call
-      // const res = await request(`api/matches/replacePlayer`, {
-      //   method: "PUT",
-      //   data: body,
-      // });
+      const res = await request(`api/matches/replacePlayer`, {
+        method: "PUT",
+        data: body,
+      });
       
-      // Mock success response
-      const mockSuccess = true; // Replace with actual response check: res.data.success
+      const isSuccess = res?.status === 200 || res?.data?.success;
       
-      if (mockSuccess) {
+      if (isSuccess) {
         Alert.alert("Success", "Player replaced successfully");
-        
-        // Navigate back
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.push("/"); // Navigate to home if can't go back
-        }
+        props?.cb?.();
+        route?.params?.cb?.();
+        handleGoBack();
       } else {
-        Alert.alert("Error", "Failed to replace player");
+        Alert.alert("Error", res?.data?.message || "Failed to replace player");
       }
     } catch (error) {
       Alert.alert("Error", "Something went wrong");
@@ -198,40 +278,23 @@ export default function ChangeBowler() {
   };
 
   useEffect(() => {
-    if (matchId && teamId) {
-      fetchPlayerCanChanged();
-    }
+    fetchPlayerCanChanged();
   }, [matchId, teamId]);
-
-  if (loading) {
-    return (
-      <SafeAreaView style={[
-        styles.container,
-        isDarkMode ? styles.darkContainer : styles.lightContainer,
-        styles.centered
-      ]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={[
-          styles.loadingText,
-          isDarkMode ? styles.darkText : styles.lightText
-        ]}>
-          Loading players...
-        </Text>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={[
       styles.container,
       isDarkMode ? styles.darkContainer : styles.lightContainer
     ]}>
-      {/* Header */}
+      {/* Header — ALWAYS visible */}
       <View style={styles.header}>
         <TouchableOpacity 
-          onPress={() => router.back()} 
+          onPress={handleGoBack} 
           style={styles.backButton}
-          activeOpacity={0.7}
+          activeOpacity={0.6}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <ArrowLeft size={24} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
         </TouchableOpacity>
@@ -239,59 +302,78 @@ export default function ChangeBowler() {
           styles.headerTitle,
           isDarkMode ? styles.darkText : styles.lightText
         ]}>
-          Select Player
+          {playerName ? `Replace ${playerName}` : "Select Player"}
         </Text>
         <View style={styles.headerSpacer} />
       </View>
 
       {/* Main Content */}
       <View style={styles.content}>
-        {/* Instruction Section */}
-        <View style={styles.instructionSection}>
-          <Text style={[
-            styles.instructionText,
-            isDarkMode ? styles.darkText : styles.lightText
-          ]}>
-            Select player from below or
-          </Text>
-          <TouchableOpacity
-            style={styles.addNewButton}
-            onPress={handleAddNew}
-            activeOpacity={0.7}
-          >
-            <Plus size={16} color={COLORS.primary} />
-            <Text style={styles.addNewButtonText}>Add new</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Players List */}
-        <FlatList
-          data={squadPlayer}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <PlayerCard
-              player={item}
-              isSelected={selectedPlayer === item.id}
-              onPress={() => handleClick(item.id)}
-              isDarkMode={isDarkMode}
-            />
-          )}
-          contentContainerStyle={styles.playersList}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
+        {loading ? (
+          <View style={[styles.centered, { flex: 1, paddingVertical: 40 }]}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={[
+              styles.loadingText,
+              isDarkMode ? styles.darkText : styles.lightText
+            ]}>
+              Loading players...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Instruction Section */}
+            <View style={styles.instructionSection}>
               <Text style={[
-                styles.emptyText,
-                isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                styles.instructionText,
+                isDarkMode ? styles.darkText : styles.lightText
               ]}>
-                No players available
+                Select player from below or
               </Text>
-              <ButtonNormal onPress={handleAddNew} style={styles.emptyButton}>
-                Add New Player
-              </ButtonNormal>
+              <TouchableOpacity
+                style={styles.addNewButton}
+                onPress={handleAddNew}
+                activeOpacity={0.7}
+              >
+                <Plus size={16} color={COLORS.primary} />
+                <Text style={styles.addNewButtonText}>Add new</Text>
+              </TouchableOpacity>
             </View>
-          }
-        />
+
+            {/* Players List */}
+            <FlatList
+              data={squadPlayer}
+              keyExtractor={(item, index) =>
+                (item.id || item._id || item.playerId || index).toString()
+              }
+              renderItem={({ item }) => {
+                const currentId = item.id || item._id || item.playerId;
+                return (
+                  <PlayerCard
+                    player={item}
+                    isSelected={selectedPlayer === currentId}
+                    onPress={() => handleClick(currentId)}
+                    isDarkMode={isDarkMode}
+                  />
+                );
+              }}
+              contentContainerStyle={styles.playersList}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Text style={[
+                    styles.emptyText,
+                    isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                  ]}>
+                    No players available
+                  </Text>
+                  <ButtonNormal onPress={handleAddNew} style={styles.emptyButton}>
+                    Add New Player
+                  </ButtonNormal>
+                </View>
+              }
+            />
+          </>
+        )}
       </View>
 
       {/* Replace Button */}
@@ -333,7 +415,11 @@ const styles = {
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   backButton: {
-    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 18,
@@ -341,7 +427,7 @@ const styles = {
     textAlign: 'center',
   },
   headerSpacer: {
-    width: 32,
+    width: 44,
   },
   content: {
     flex: 1,

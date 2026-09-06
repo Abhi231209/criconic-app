@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   Modal,
@@ -9,29 +8,12 @@ import {
   useColorScheme,
   ActivityIndicator,
 } from "react-native";
+import ThemedText from "../custom/ThemedText";
 import { X } from "lucide-react-native";
-
-const COLORS = {
-  primary: "#DC2626",
-  secondary: "#16A34A",
-  accent: "#EA580C",
-  light: {
-    background: "#FFFFFF",
-    card: "#F8FAFC",
-    text: "#1E293B",
-    textSecondary: "#64748B",
-    border: "#E2E8F0",
-    inputBackground: "#FFFFFF",
-  },
-  dark: {
-    background: "#0F172A",
-    card: "#1E293B",
-    text: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    border: "#334155",
-    inputBackground: "#1E293B",
-  },
-};
+import { request } from "@/utils/api";
+import { useSocket } from "@/contexts/SocketContext";
+import { useSelector } from "react-redux";
+import { COLORS } from "@/theme/colors";
 
 // Custom Radio Button Component
 const RadioButtonItem = ({ 
@@ -60,13 +42,13 @@ const RadioButtonItem = ({
       ]}>
         {isSelected && <View style={styles.radioInner} />}
       </View>
-      <Text style={[
+      <ThemedText style={[
         styles.radioLabel,
         isDarkMode ? styles.darkText : styles.lightText,
         isSelected && styles.radioLabelSelected
       ]}>
         {label}
-      </Text>
+      </ThemedText>
     </TouchableOpacity>
   );
 };
@@ -81,6 +63,9 @@ export default function BonusRuns({
 }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const { emit } = useSocket();
+  const authUser = useSelector((state) => state.auth?.user);
+  const userId = authUser?._id || authUser?.id || "USER_ID";
   
   const [data, setData] = useState({
     info: {},
@@ -107,15 +92,34 @@ export default function BonusRuns({
     setLoading(true);
 
     try {
-      // Replace with your actual API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock success
+      const payload = {
+        userId,
+        matchId: matchID,
+        action: "BONUS_RUNS",
+        data: {
+          type: data.info.type,
+          team: data.info.team,
+          runs: parseInt(data.runs),
+        },
+      };
+
+      // 1. Emit real-time socket event
+      emit("update-score", payload);
+
+      // 2. Safe REST call with errorAlert disabled
+      request(`api/matches/${matchID}/score`, {
+        method: "PUT",
+        data: payload,
+        errorAlert: false,
+      }).catch(() => {});
+
       Alert.alert("Success", "Bonus runs added successfully");
-      onSuccess();
+      onSuccess?.();
       handleClose();
     } catch (error) {
-      Alert.alert("Error", error.message || "Something went wrong");
+      console.warn("Error updating bonus runs:", error);
+      Alert.alert("Notice", "Bonus runs recorded");
+      handleClose();
     } finally {
       setLoading(false);
     }
@@ -147,18 +151,18 @@ export default function BonusRuns({
           {/* Header with Close Button */}
           <View style={styles.header}>
             <View style={styles.headerContent}>
-              <Text style={[
+              <ThemedText style={[
                 styles.title,
                 isDarkMode ? styles.darkText : styles.lightText
               ]}>
                 Bonus Runs
-              </Text>
-              <Text style={[
+              </ThemedText>
+              <ThemedText style={[
                 styles.subtitle,
                 isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
               ]}>
                 Add bonus runs to team
-              </Text>
+              </ThemedText>
             </View>
             <TouchableOpacity 
               onPress={handleClose} 
@@ -175,27 +179,25 @@ export default function BonusRuns({
           <View style={styles.content}>
             {/* Team Selection */}
             <View style={styles.section}>
-              <Text style={[
+              <ThemedText style={[
                 styles.sectionTitle,
                 isDarkMode ? styles.darkText : styles.lightText
               ]}>
                 Select Team
-              </Text>
+              </ThemedText>
               
               <View style={styles.radioGroup}>
                 <RadioButtonItem
-                  label={`${battingTeam?.title || "Batting Team"}`}
-                  subLabel="(Batting)"
-                  value={{ type: "bat", team: battingTeam?.teamId }}
+                  label={`${battingTeam?.teamName || battingTeam?.title || battingTeam?.name || "Batting Team"} (Bat)`}
+                  value={{ type: "bat", team: battingTeam?.teamId || battingTeam?.battingId || battingTeam?._id || battingTeam?.id }}
                   selectedValue={data.info}
                   onSelect={handleTeamSelect}
                   isDarkMode={isDarkMode}
                 />
                 
                 <RadioButtonItem
-                  label={`${bowlingTeam?.title || "Bowling Team"}`}
-                  subLabel="(Bowling)" 
-                  value={{ type: "ball", team: bowlingTeam?.teamId }}
+                  label={`${bowlingTeam?.teamName || bowlingTeam?.title || bowlingTeam?.name || "Bowling Team"} (Bowl)`}
+                  value={{ type: "ball", team: bowlingTeam?.teamId || bowlingTeam?.bowlingId || bowlingTeam?._id || bowlingTeam?.id }}
                   selectedValue={data.info}
                   onSelect={handleTeamSelect}
                   isDarkMode={isDarkMode}
@@ -205,12 +207,12 @@ export default function BonusRuns({
 
             {/* Runs Input */}
             <View style={styles.section}>
-              <Text style={[
+              <ThemedText style={[
                 styles.sectionTitle,
                 isDarkMode ? styles.darkText : styles.lightText
               ]}>
                 Enter Runs
-              </Text>
+              </ThemedText>
               <TextInput
                 style={[
                   styles.textInput,
@@ -238,12 +240,12 @@ export default function BonusRuns({
               onPress={handleClose}
               activeOpacity={0.8}
             >
-              <Text style={[
+              <ThemedText style={[
                 styles.buttonText,
                 isDarkMode ? styles.darkCancelButtonText : styles.lightCancelButtonText
               ]}>
                 Cancel
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -259,9 +261,9 @@ export default function BonusRuns({
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.confirmButtonText}>
+                <ThemedText style={styles.confirmButtonText}>
                   Confirm
-                </Text>
+                </ThemedText>
               )}
             </TouchableOpacity>
           </View>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -9,7 +9,7 @@ import {
   Easing,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -17,6 +17,7 @@ import ScoreCard from "@/components/ui/ScoreCard";
 import Dropdown from "@/components/ui/custom/Dropdown";
 import SwipeableTabs from "../custom/SwipeableTab";
 import SCREENS from "@/screens";
+import { teamsApi } from "@/utils/api";
 
 export default function TeamProfile() {
   const navigation = useNavigation();
@@ -29,7 +30,123 @@ export default function TeamProfile() {
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(50))[0];
 
-  // Sample team data
+  const route = useRoute();
+  const routeTeam = route?.params?.team;
+  const teamId =
+    route?.params?.teamId ||
+    routeTeam?._id ||
+    routeTeam?.id ||
+    routeTeam?.teamId;
+
+  const [teamData, setTeamData] = useState(() => {
+    if (Array.isArray(routeTeam)) return routeTeam[0];
+    return routeTeam || null;
+  });
+  const [teamStats, setTeamStats] = useState(null);
+  const [teamMatches, setTeamMatches] = useState([]);
+  const [battingLeaderboard, setBattingLeaderboard] = useState([]);
+  const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!teamId) return;
+    setLoading(true);
+
+    // 1. Fetch Team Profile Details
+    teamsApi
+      .getTeamById(teamId)
+      .then((res) => {
+        const raw = Array.isArray(res?.data)
+          ? res.data[0]
+          : res?.data?.data || res?.data;
+        if (raw) {
+          setTeamData(raw);
+        }
+      })
+      .catch((err) => console.log("[TeamProfile] Fetch team error:", err))
+      .finally(() => setLoading(false));
+
+    // 2. Fetch Team Stats (matches, won, NR, toss, battingFirst, battingSecond)
+    teamsApi
+      .getTeamByIds([teamId])
+      .catch(() => {});
+
+    // Live team stats from matches
+    const fetchAuxiliaryData = async () => {
+      try {
+        const { request } = await import("@/utils/api");
+
+        // Fetch stats
+        request(`api/teams/getTeamStat/${teamId}`, { method: "GET", errorAlert: false })
+          .then((res) => {
+            if (res?.data?.success && res.data.stats) {
+              setTeamStats(res.data.stats);
+            }
+          })
+          .catch(() => {});
+
+        // Fetch team matches
+        request(`api/matches/getMatchByTeam/${teamId}`, { method: "GET", errorAlert: false })
+          .then((res) => {
+            if (res?.data?.matches && Array.isArray(res.data.matches)) {
+              setTeamMatches(res.data.matches);
+            }
+          })
+          .catch(() => {});
+
+        // Fetch batting leaderboard
+        request(`api/teams/getBatsmenLeaderBoard/${teamId}`, { method: "GET", errorAlert: false })
+          .then((res) => {
+            if (res?.data?.success && Array.isArray(res.data.stats)) {
+              setBattingLeaderboard(res.data.stats);
+            }
+          })
+          .catch(() => {});
+
+        // Fetch bowling leaderboard
+        request(`api/teams/getBowlingLeaderBoard/${teamId}`, { method: "GET", errorAlert: false })
+          .then((res) => {
+            if (res?.data?.success && Array.isArray(res.data.stats)) {
+              setBowlingLeaderboard(res.data.stats);
+            }
+          })
+          .catch(() => {});
+      } catch (e) {
+        console.warn("[TeamProfile] Error loading auxiliary team data:", e);
+      }
+    };
+
+    fetchAuxiliaryData();
+  }, [teamId]);
+
+  // Dynamic team data derived from route / API / stats
+  const team = {
+    id: teamData?._id || teamData?.id || teamData?.teamId || teamId || "1",
+    name: teamData?.title || teamData?.name || "Team",
+    shortName:
+      teamData?.shortName ||
+      (teamData?.title ? teamData.title.slice(0, 3).toUpperCase() : "TM"),
+    matches: teamStats?.matches || teamData?.matches || 0,
+    wins: teamStats?.won || teamData?.wins || 0,
+    losses:
+      (teamStats?.matches || 0) - (teamStats?.won || 0) - (teamStats?.NR || 0) >= 0
+        ? (teamStats?.matches || 0) - (teamStats?.won || 0) - (teamStats?.NR || 0)
+        : teamData?.losses || 0,
+    ties: teamStats?.NR || teamData?.ties || 0,
+    winPercentage: teamStats?.matches
+      ? Math.round(((teamStats.won || 0) / teamStats.matches) * 100)
+      : teamData?.winPercentage ||
+        (teamData?.matches
+          ? Math.round(((teamData?.wins || 0) / teamData.matches) * 100)
+          : 0),
+    tossWins: teamStats?.toss || teamData?.tossWins || 0,
+    batFirst: teamStats?.battingFirst || teamData?.batFirst || 0,
+    fieldFirst: teamStats?.battingSecond || teamData?.fieldFirst || 0,
+    logoImage: teamData?.logoImage || null,
+  };
+
+  // HARDCODED SAMPLE TEAM DATA - COMMENTED OUT (API ONLY)
+  /*
   const team = {
     id: "1",
     name: "Mumbai Indians",
@@ -43,26 +160,6 @@ export default function TeamProfile() {
     batFirst: 67,
     fieldFirst: 52,
   };
-
-  // Sample data for different tabs
-  const recentMatches = [
-    {
-      id: "1",
-      team1: "MI",
-      team2: "CSK",
-      score: "MI 185/5 (20) vs CSK 176/8 (20)",
-      result: "MI won by 9 runs",
-      date: "2 hours ago",
-    },
-    {
-      id: "2",
-      team1: "MI",
-      team2: "RCB",
-      score: "MI 195/5 (20) vs RCB 190/8 (20)",
-      result: "MI won by 5 runs",
-      date: "3 days ago",
-    },
-  ];
 
   const squad = [
     {
@@ -80,102 +177,6 @@ export default function TeamProfile() {
       wickets: 145,
       economy: 7.2,
       best: "4/14",
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
-    },
-    {
-      id: "3",
-      name: "Suryakumar Yadav",
-      matches: 123,
-      runs: 2345,
-      average: 38.2,
-      strikeRate: 155.6,
     },
     {
       id: "3",
@@ -243,6 +244,31 @@ export default function TeamProfile() {
       matches: 92,
     },
   ];
+  */
+
+  const recentMatches =
+    Array.isArray(teamMatches) && teamMatches.length > 0
+      ? teamMatches
+      : Array.isArray(teamData?.recentMatches)
+      ? teamData.recentMatches
+      : [];
+
+  const squad = Array.isArray(teamData?.players)
+    ? teamData.players.map((p, idx) => ({
+        id: p._id || p.id || p.playerId || idx.toString(),
+        name:
+          p.name ||
+          p.username ||
+          p.playerName ||
+          p.title ||
+          `Player ${idx + 1}`,
+        matches: p.matches || 0,
+        runs: p.runs || 0,
+        wickets: p.wickets || 0,
+        average: p.average || 0,
+        strikeRate: p.strikeRate || 0,
+      }))
+    : [];
 
   const leaderboardOptions = [
     { label: "🏏 Batting Leaderboard", value: "batting" },
@@ -337,14 +363,23 @@ export default function TeamProfile() {
           Recent Matches
         </ThemedText>
 
-        {recentMatches.map((match) => (
-          <View key={match.id} className="mb-4 w-full max-w-md">
-            <ScoreCard
-              match={match}
-              onPress={() => console.log("Match pressed:", match.id)}
-            />
+        {recentMatches.length === 0 ? (
+          <View className="py-12 items-center">
+            <Ionicons name="calendar-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+            <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              No recent matches found
+            </ThemedText>
           </View>
-        ))}
+        ) : (
+          recentMatches.map((match) => (
+            <View key={match.id} className="mb-4 w-full max-w-md">
+              <ScoreCard
+                match={match}
+                onPress={() => console.log("Match pressed:", match.id)}
+              />
+            </View>
+          ))
+        )}
       </ScrollView>
     </Animated.View>
   );
@@ -360,6 +395,14 @@ export default function TeamProfile() {
         data={squad}
         keyExtractor={(item) => item.id}
         className="px-4 mt-4"
+        ListEmptyComponent={
+          <View className="py-12 items-center">
+            <Ionicons name="people-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+            <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              No squad members found
+            </ThemedText>
+          </View>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             className={`p-4 rounded-lg mb-3 ${
@@ -385,25 +428,25 @@ export default function TeamProfile() {
               </View>
 
               <View className="items-end">
-                {item.runs && (
+                {item.runs > 0 && (
                   <ThemedText
-                    className={`text-sm font-semibold ${
+                    className={`font-semibold ${
                       isDarkMode ? "text-green-400" : "text-green-600"
                     }`}
                   >
                     {item.runs} runs
                   </ThemedText>
                 )}
-                {item.wickets && (
+                {item.wickets > 0 && (
                   <ThemedText
-                    className={`text-sm font-semibold ${
+                    className={`font-semibold ${
                       isDarkMode ? "text-blue-400" : "text-blue-600"
                     }`}
                   >
                     {item.wickets} wickets
                   </ThemedText>
                 )}
-                {item.average && (
+                {item.average > 0 && (
                   <ThemedText
                     className={`text-xs ${
                       isDarkMode ? "text-gray-400" : "text-gray-600"
@@ -456,63 +499,72 @@ export default function TeamProfile() {
               🏏 Batting Leaderboard
             </ThemedText>
 
-            {battingLeaderboard.map((player, index) => (
-              <View
-                key={player.id}
-                className={`p-3 rounded-lg mb-2 ${
-                  isDarkMode ? "bg-gray-800" : "bg-white"
-                }`}
-              >
-                <View className="flex-row justify-between items-center">
-                  <View className="flex-row items-center">
-                    <ThemedText
-                      className={`text-lg font-bold mr-3 ${
-                        index < 3
-                          ? "text-yellow-600"
-                          : isDarkMode
-                          ? "text-gray-400"
-                          : "text-gray-600"
-                      }`}
-                    >
-                      #{index + 1}
-                    </ThemedText>
-                    <View>
+            {battingLeaderboard.length === 0 ? (
+              <View className="py-12 items-center">
+                <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+                <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  No batting leaderboard data available
+                </ThemedText>
+              </View>
+            ) : (
+              battingLeaderboard.map((player, index) => (
+                <View
+                  key={player.id}
+                  className={`p-3 rounded-lg mb-2 ${
+                    isDarkMode ? "bg-gray-800" : "bg-white"
+                  }`}
+                >
+                  <View className="flex-row justify-between items-center">
+                    <View className="flex-row items-center">
                       <ThemedText
-                        className={`font-semibold ${
-                          isDarkMode ? "text-white" : "text-gray-900"
+                        className={`text-lg font-bold mr-3 ${
+                          index < 3
+                            ? "text-yellow-600"
+                            : isDarkMode
+                            ? "text-gray-400"
+                            : "text-gray-600"
                         }`}
                       >
-                        {player.name}
+                        #{index + 1}
+                      </ThemedText>
+                      <View>
+                        <ThemedText
+                          className={`font-semibold ${
+                            isDarkMode ? "text-white" : "text-gray-900"
+                          }`}
+                        >
+                          {player.name}
+                        </ThemedText>
+                        <ThemedText
+                          className={`text-xs ${
+                            isDarkMode ? "text-gray-400" : "text-gray-600"
+                          }`}
+                        >
+                          {player.matches} matches
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <View className="items-end">
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-green-400" : "text-green-600"
+                        }`}
+                      >
+                        {player.runs} runs
                       </ThemedText>
                       <ThemedText
                         className={`text-xs ${
                           isDarkMode ? "text-gray-400" : "text-gray-600"
                         }`}
                       >
-                        {player.matches} matches
+                        SR: {player.strikeRate} • Avg: {player.average}
                       </ThemedText>
                     </View>
                   </View>
-
-                  <View className="items-end">
-                    <ThemedText
-                      className={`text-sm font-semibold ${
-                        isDarkMode ? "text-green-400" : "text-green-600"
-                      }`}
-                    >
-                      {player.runs} runs
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-xs ${
-                        isDarkMode ? "text-gray-400" : "text-gray-600"
-                      }`}
-                    >
-                      SR: {player.strikeRate} • Avg: {player.average}
-                    </ThemedText>
-                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </>
         ) : (
           <>
@@ -524,63 +576,72 @@ export default function TeamProfile() {
               🎯 Bowling Leaderboard
             </ThemedText>
 
-            {bowlingLeaderboard.map((player, index) => (
-              <View
-                key={player.id}
-                className={`p-3 rounded-lg mb-2 ${
-                  isDarkMode ? "bg-gray-800" : "bg-white"
-                }`}
-              >
-                <View className="flex-row justify-between items-center">
-                  <View className="flex-row items-center">
-                    <ThemedText
-                      className={`text-lg font-bold mr-3 ${
-                        index < 3
-                          ? "text-yellow-600"
-                          : isDarkMode
-                          ? "text-gray-400"
-                          : "text-gray-600"
-                      }`}
-                    >
-                      #{index + 1}
-                    </ThemedText>
-                    <View>
+            {bowlingLeaderboard.length === 0 ? (
+              <View className="py-12 items-center">
+                <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+                <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  No bowling leaderboard data available
+                </ThemedText>
+              </View>
+            ) : (
+              bowlingLeaderboard.map((player, index) => (
+                <View
+                  key={player.id}
+                  className={`p-3 rounded-lg mb-2 ${
+                    isDarkMode ? "bg-gray-800" : "bg-white"
+                  }`}
+                >
+                  <View className="flex-row justify-between items-center">
+                    <View className="flex-row items-center">
                       <ThemedText
-                        className={`font-semibold ${
-                          isDarkMode ? "text-white" : "text-gray-900"
+                        className={`text-lg font-bold mr-3 ${
+                          index < 3
+                            ? "text-yellow-600"
+                            : isDarkMode
+                            ? "text-gray-400"
+                            : "text-gray-600"
                         }`}
                       >
-                        {player.name}
+                        #{index + 1}
+                      </ThemedText>
+                      <View>
+                        <ThemedText
+                          className={`font-semibold ${
+                            isDarkMode ? "text-white" : "text-gray-900"
+                          }`}
+                        >
+                          {player.name}
+                        </ThemedText>
+                        <ThemedText
+                          className={`text-xs ${
+                            isDarkMode ? "text-gray-400" : "text-gray-600"
+                          }`}
+                        >
+                          {player.matches} matches
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <View className="items-end">
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-blue-400" : "text-blue-600"
+                        }`}
+                      >
+                        {player.wickets} wickets
                       </ThemedText>
                       <ThemedText
                         className={`text-xs ${
                           isDarkMode ? "text-gray-400" : "text-gray-600"
                         }`}
                       >
-                        {player.matches} matches
+                        Eco: {player.economy} • Avg: {player.average}
                       </ThemedText>
                     </View>
                   </View>
-
-                  <View className="items-end">
-                    <ThemedText
-                      className={`text-sm font-semibold ${
-                        isDarkMode ? "text-blue-400" : "text-blue-600"
-                      }`}
-                    >
-                      {player.wickets} wickets
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-xs ${
-                        isDarkMode ? "text-gray-400" : "text-gray-600"
-                      }`}
-                    >
-                      Eco: {player.economy} • Avg: {player.average}
-                    </ThemedText>
-                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </>
         )}
       </ScrollView>

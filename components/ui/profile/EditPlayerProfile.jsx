@@ -16,6 +16,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
+import { useSelector } from "react-redux";
+import { request } from "@/utils/api";
 
 export default function EditPlayerProfile() {
   const navigation = useNavigation();
@@ -23,7 +25,35 @@ export default function EditPlayerProfile() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
-  // Sample player data - in a real app, this would come from props or state management
+  const routePlayer = route?.params?.player;
+  const authUser = useSelector((state) => state?.auth?.user);
+
+  // Dynamic player data derived from route params or Redux auth user
+  const [player, setPlayer] = useState({
+    id: routePlayer?._id || routePlayer?.id || authUser?._id || authUser?.id || "",
+    name: routePlayer?.username || routePlayer?.name || authUser?.username || "",
+    shortName: routePlayer?.shortName || "",
+    team: routePlayer?.team || "",
+    nationality: routePlayer?.nationality || routePlayer?.location || "",
+    age: routePlayer?.age?.toString() || "",
+    role: routePlayer?.role || authUser?.role || "Batsman",
+    battingStyle: routePlayer?.battingStyle || "Right Handed",
+    bowlingStyle: routePlayer?.bowlingStyle || "Right Arm Medium",
+    photo: routePlayer?.profileImage || routePlayer?.photo || authUser?.profileImage || null,
+    debut: routePlayer?.debut || "",
+    matches: routePlayer?.matches?.toString() || "0",
+    runs: routePlayer?.runs?.toString() || "0",
+    wickets: routePlayer?.wickets?.toString() || "0",
+    highestScore: routePlayer?.highestScore?.toString() || "0",
+    bestBowling: routePlayer?.bestBowling || "-",
+    average: routePlayer?.average?.toString() || "0",
+    strikeRate: routePlayer?.strikeRate?.toString() || "0",
+    economy: routePlayer?.economy?.toString() || "0",
+    isPublic: true,
+  });
+
+  // HARDCODED SAMPLE PLAYER DATA - COMMENTED OUT (API ONLY)
+  /*
   const [player, setPlayer] = useState({
     id: "1",
     name: "Virat Kohli",
@@ -46,6 +76,7 @@ export default function EditPlayerProfile() {
     economy: "8.52",
     isPublic: true,
   });
+  */
 
   const [formData, setFormData] = useState({ ...player });
   const [isSaving, setIsSaving] = useState(false);
@@ -103,16 +134,42 @@ export default function EditPlayerProfile() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsSaving(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const playerId = player.id || authUser?._id || authUser?.id;
+      if (playerId) {
+        const updatePayload = {
+          username: formData.name,
+          role: formData.role,
+          location: formData.nationality,
+          profileImage: formData.photo,
+        };
+        await request(`api/users/edit/${playerId}`, {
+          method: "POST",
+          data: { dataToChange: updatePayload },
+        });
+      }
+
+      // HARDCODED MOCK SAVE TIMEOUT - COMMENTED OUT (API ONLY)
+      /*
+      setTimeout(() => {
+        setPlayer({ ...formData });
+        setIsSaving(false);
+        Alert.alert("Success", "Profile updated successfully");
+        navigation.goBack();
+      }, 1500);
+      */
+
       setPlayer({ ...formData });
-      setIsSaving(false);
       Alert.alert("Success", "Profile updated successfully");
       navigation.goBack();
-    }, 1500);
+    } catch (err) {
+      console.error("Save profile error:", err);
+      Alert.alert("Error", err?.response?.data?.message || err.message || "Failed to update profile");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {

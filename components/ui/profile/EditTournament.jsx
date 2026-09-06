@@ -20,6 +20,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import { tournamentsApi } from '@/utils/api';
 
 export default function EditTournament() {
   const navigation = useNavigation();
@@ -27,6 +28,8 @@ export default function EditTournament() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
   
+  // HARDCODED SAMPLE TOURNAMENT - COMMENTED OUT (API ONLY)
+  /*
   // Get tournament data from route params or use sample data
   const tournament = route.params?.tournament || {
     id: '1',
@@ -47,24 +50,28 @@ export default function EditTournament() {
     description: 'Indian Premier League 2024 season',
     rules: 'Official IPL rules apply',
   };
+  */
+
+  const paramTournament = route.params?.tournament || {};
+  const tournamentId = paramTournament._id || paramTournament.id || route.params?.tournamentId || route.params?.id;
 
   const [formData, setFormData] = useState({
-    name: tournament.name,
-    shortName: tournament.shortName,
-    startDate: new Date(tournament.startDate),
-    endDate: new Date(tournament.endDate),
-    location: tournament.location,
-    organizerName: tournament.organizerName,
-    organizerPhone: tournament.organizerPhone,
-    status: tournament.status,
-    format: tournament.format,
-    prizeMoney: tournament.prizeMoney,
-    entryFee: tournament.entryFee,
-    ballType: tournament.ballType,
-    isPublic: tournament.isPublic,
-    description: tournament.description,
-    rules: tournament.rules,
-    logo: tournament.logo,
+    name: paramTournament.title || paramTournament.name || '',
+    shortName: paramTournament.slug || paramTournament.shortName || '',
+    startDate: paramTournament.date?.start ? new Date(paramTournament.date.start) : (paramTournament.startDate ? new Date(paramTournament.startDate) : new Date()),
+    endDate: paramTournament.date?.end ? new Date(paramTournament.date.end) : (paramTournament.endDate ? new Date(paramTournament.endDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+    location: paramTournament.location || paramTournament.city || '',
+    organizerName: typeof paramTournament.organizer === 'string' ? paramTournament.organizer : (paramTournament.organizer?.[0]?.username || paramTournament.organizerName || ''),
+    organizerPhone: paramTournament.organizerPhone || paramTournament.organizer?.[0]?.mobile || '',
+    status: paramTournament.status || 'upcoming',
+    format: paramTournament.format || 'roundRobin',
+    prizeMoney: paramTournament.prizeMoney ? String(paramTournament.prizeMoney) : '',
+    entryFee: paramTournament.entryFee ? String(paramTournament.entryFee) : '',
+    ballType: paramTournament.ballType || 'leather',
+    isPublic: paramTournament.config?.visibility !== 'PRIVATE',
+    description: paramTournament.highlights || paramTournament.description || '',
+    rules: paramTournament.rules || '',
+    logo: paramTournament.logoImage || paramTournament.bannerImage || paramTournament.logo || null,
   });
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -184,7 +191,8 @@ export default function EditTournament() {
 
     setIsLoading(true);
     
-    // Simulate API call
+    // HARDCODED SIMULATED API CALL - COMMENTED OUT (API ONLY)
+    /*
     setTimeout(() => {
       setIsLoading(false);
       Alert.alert(
@@ -198,6 +206,42 @@ export default function EditTournament() {
         ]
       );
     }, 1500);
+    */
+
+    try {
+      if (tournamentId) {
+        await tournamentsApi.updateTournament(tournamentId, {
+          title: formData.name,
+          location: formData.location,
+          date: {
+            start: formData.startDate,
+            end: formData.endDate,
+          },
+          status: formData.status,
+          ballType: formData.ballType,
+          highlights: formData.description,
+          logoImage: formData.logo,
+          config: {
+            visibility: formData.isPublic ? 'PUBLIC' : 'PRIVATE',
+          },
+        });
+      }
+      setIsLoading(false);
+      Alert.alert(
+        'Success',
+        'Tournament updated successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      setIsLoading(false);
+      console.log('Error updating tournament:', error);
+      Alert.alert('Error', error?.response?.data?.message || error?.message || 'Failed to update tournament');
+    }
   };
 
   const InputField = ({ 

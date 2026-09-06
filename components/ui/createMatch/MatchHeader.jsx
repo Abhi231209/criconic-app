@@ -5,14 +5,12 @@ import { Home, Settings } from "lucide-react-native"; // icons
 import Ionicons from "@expo/vector-icons/Ionicons";
 import RightDrawer from "../custom/RightDrawer";
 import MatchSetting from "./MatchSetting";
-// import CommonBottomSheet from "../common/CommonBottomSheet"; // your reusable RN bottom sheet
-// import QuickActionDetails from "./QuickActionDetails";
-// import MatchSetting from "./MatchSetting";
-// import AccordionV1 from "../accordion/AccordionV1";
+import SCREENS from "@/screens";
 
 export default function MatchHeader({
   discription,
   onBack,
+  onHome,
   showHomeIcon,
   showSetting = true,
   handleInningsComplete,
@@ -24,6 +22,8 @@ export default function MatchHeader({
   bowler,
   cb,
   isScorerScreen,
+  matchDetails,
+  score,
 }) {
   const navigation = useNavigation();
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -39,8 +39,18 @@ export default function MatchHeader({
       <View className="flex-row justify-between items-center">
         {/* Left Icon */}
         {showHomeIcon ? (
-          <TouchableOpacity onPress={() => navigation.navigate("Home")}>
-            <Home size={28} color="white" />
+          <TouchableOpacity 
+            onPress={() => {
+              if (onHome) {
+                onHome();
+              } else {
+                navigation.navigate(SCREENS.Home);
+              }
+            }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+          >
+            <Home size={26} color="white" />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -51,11 +61,9 @@ export default function MatchHeader({
                 navigation.goBack();
               }
             }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
           >
-            {/* <Image
-              source={require("../../assets/back-arrow.png")}
-              style={{ width: 28, height: 28 }}
-            /> */}
             <Ionicons name="arrow-back" size={24} color="#2563EB" />
           </TouchableOpacity>
         )}
@@ -67,7 +75,11 @@ export default function MatchHeader({
 
         {/* Settings */}
         {showSetting ? (
-          <TouchableOpacity onPress={() => setIsDrawerOpen(true)}>
+          <TouchableOpacity 
+            onPress={() => setIsDrawerOpen(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+          >
             <Settings size={22} color="white" />
           </TouchableOpacity>
         ) : (
@@ -81,8 +93,12 @@ export default function MatchHeader({
         onClose={() => setIsDrawerOpen(false)}
       >
         <MatchSetting
+          matchId={matchID}
+          onInningsComplete={handleInningsComplete}
           onClose={() => setIsDrawerOpen(false)}
           onSettingsChange={handleSettingsChange}
+          matchDetails={matchDetails}
+          score={score || { batting: battingTeam, bowling: bowlingTeam, batsman: batsmen, bowler }}
         />
       </RightDrawer>
 

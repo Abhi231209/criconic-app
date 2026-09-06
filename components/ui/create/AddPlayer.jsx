@@ -18,6 +18,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import { LinearGradient } from "expo-linear-gradient";
 import QRCode from "react-native-qrcode-svg";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
+import { searchApi, teamsApi } from "@/utils/api";
 
 export default function AddPlayer({showHeader = true}) {
   const navigation = useNavigation();
@@ -39,30 +40,35 @@ export default function AddPlayer({showHeader = true}) {
     return "";
   };
 
-  const handlePlayerSearch = (text) => {
+  const handlePlayerSearch = async (text) => {
     setSearchTerm(text);
-    if (!text) {
+    if (!text || text.trim().length === 0) {
       return setSearchPlayer([]);
     }
-    // Simulate API call - replace with actual API call
-    setTimeout(() => {
-      // Mock data for demonstration
-      const mockPlayers = [
-        {
-          id: "1",
-          name: "John Doe",
-          mobile: "1234567890",
-          location: "New York",
-        },
-        {
-          id: "2",
-          name: "Jane Smith",
-          mobile: "0987654321",
-          location: "Los Angeles",
-        },
-      ];
-      setSearchPlayer(mockPlayers);
-    }, 500);
+    try {
+      const res = await searchApi.search(text.trim(), "player");
+      let list = [];
+      if (Array.isArray(res?.data)) {
+        const playerCategory = res.data.find(
+          (c) => c?.key?.toLowerCase() === "player"
+        );
+        list = playerCategory ? playerCategory.data : res.data;
+      }
+      if (Array.isArray(list)) {
+        setSearchPlayer(
+          list.map((item) => ({
+            id: String(item._id || item.id),
+            name: item.username || item.name || "Player",
+            mobile: item.mobile || "",
+            location: item.location || "Location not specified",
+          }))
+        );
+      } else {
+        setSearchPlayer([]);
+      }
+    } catch (error) {
+      console.warn("[AddPlayer] Search player failed:", error);
+    }
   };
 
   const handlePlayerOnClick = (player) => {
@@ -76,10 +82,30 @@ export default function AddPlayer({showHeader = true}) {
         },
         {
           text: "Add",
-          onPress: () => {
-            // Handle adding player
-            cb?.();
-            navigation.goBack();
+          onPress: async () => {
+            if (teamID) {
+              try {
+                const res = await teamsApi.addPlayerToTeam(teamID, {
+                  players: [
+                    {
+                      id: player.id,
+                      name: player.name,
+                      mobile: player.mobile,
+                    },
+                  ],
+                });
+                if (res?.data?.success || res?.status === 200 || res?.status === 201) {
+                  Alert.alert("Success", `${player.name} added to team!`);
+                  cb?.();
+                  navigation.goBack();
+                }
+              } catch (e) {
+                Alert.alert("Error", "Failed to add player to team");
+              }
+            } else {
+              cb?.(player);
+              navigation.goBack();
+            }
           },
         },
       ]
@@ -425,7 +451,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
     setAddedPlayers(updatedPlayers);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!mobile.trim() || !username.trim()) {
       Alert.alert("Error", "Please fill all required fields");
       return;
@@ -443,14 +469,29 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
     }
 
     setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+
+    try {
+      if (teamID) {
+        const res = await teamsApi.addPlayerToTeam(teamID, {
+          players: playersToAdd,
+        });
+        if (res?.data?.success || res?.status === 200 || res?.status === 201) {
+          Alert.alert("Success", "Players added successfully");
+          setShowAddMobile(false);
+          cb?.();
+        } else {
+          Alert.alert("Notice", res?.data?.message || "Failed to add players");
+        }
+      } else {
+        Alert.alert("Success", "Players saved successfully");
+        setShowAddMobile(false);
+        cb?.(playersToAdd);
+      }
+    } catch (error) {
+      Alert.alert("Error", error?.message || "Failed to add players");
+    } finally {
       setIsLoading(false);
-      Alert.alert("Success", "Players added successfully");
-      setShowAddMobile(false);
-      cb?.();
-    }, 1500);
+    }
   };
 
   return (

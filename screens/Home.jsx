@@ -1,54 +1,46 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Image,
-  Linking,
   useWindowDimensions,
   ImageBackground,
   useColorScheme,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
-import RenderHtml from "react-native-render-html";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useAxiosGet } from "@/hooks/useApi";
 import ScoreCard from "@/components/ui/ScoreCard";
-import Ionicons from "react-native-vector-icons/Ionicons";
-import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
 import NavBar from "@/components/ui/NavBar";
-import AntDesign from "@expo/vector-icons/AntDesign";
-import { SafeAreaView } from "react-native-safe-area-context";
 import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
 
+const MATCHES_CONDITION = { items: 10 };
+
 export default function Home({}) {
   const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === 'dark';
-  
+  const isDarkMode = colorScheme === "dark";
+
   const [homeConfig, setHomeConfig] = useState({});
-  const [tournaments, setTournaments] = useState([
-    {
-      id: "1",
-      title: "IPL 2024",
-      logo: "https://example.com/ipl-logo.jpg",
-      matches: [
-        {
-          id: "101",
-          team1: "MI",
-          team2: "CSK",
-          date: "May 5, 7:30 PM",
-          venue: "Wankhede",
-        },
-      ],
-    },
-  ]);
-  const { matchesIds, setMatchesIds } = useMatches({
-    initialCondition: { items: 5 },
+  const [tournaments, setTournaments] = useState([]);
+
+  const { matchesIds, setMatchesIds, refresh: refreshMatches } = useMatches({
+    initialCondition: MATCHES_CONDITION,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshMatches?.();
+    }, [refreshMatches])
+  );
+
   const {
     get: getConfigDetails,
     isLoading,
@@ -72,72 +64,241 @@ export default function Home({}) {
     }
   };
 
-  const handleDelete = (matchId) => {
-    const updated = matchesIds.filter((match) => match._id !== matchId);
-    setMatchesIds(updated);
-  };
-
   useEffect(() => {
     getConfig();
   }, []);
 
-  // Reusable Section Header Component
+  // Sleek Reusable Section Header Component
   const SectionHeader = ({ title, actionText, onAction }) => (
-    <View className="flex-row justify-between items-center mb-3">
-      <ThemedText className={`text-xl font-bold ${isDarkMode ? "text-white":""}`}>
-        {title}
-      </ThemedText>
-      <TouchableOpacity onPress={onAction}>
-        <ThemedText className={`text-sm font-medium text-blue-600 ${isDarkMode ? "text-white":""}`}>
-          {actionText}
+    <View className="flex-row justify-between items-center mb-3 mt-4">
+      <View className="flex-row items-center">
+        <View className="w-1.5 h-4 rounded-full bg-blue-600 mr-2" />
+        <ThemedText
+          className={`text-lg font-bold tracking-tight ${
+            isDarkMode ? "text-white" : "text-gray-900"
+          }`}
+        >
+          {title}
         </ThemedText>
-      </TouchableOpacity>
+      </View>
+      {actionText && (
+        <TouchableOpacity
+          onPress={onAction}
+          activeOpacity={0.7}
+          className={`flex-row items-center px-2.5 py-1 rounded-full ${
+            isDarkMode ? "bg-gray-800" : "bg-blue-50"
+          }`}
+        >
+          <ThemedText
+            className={`text-xs font-semibold mr-1 ${
+              isDarkMode ? "text-blue-400" : "text-blue-600"
+            }`}
+          >
+            {actionText}
+          </ThemedText>
+          <Ionicons
+            name="chevron-forward"
+            size={12}
+            color={isDarkMode ? "#60A5FA" : "#2563EB"}
+          />
+        </TouchableOpacity>
+      )}
     </View>
   );
 
   return (
-    <View className={`flex-1 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
+    <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
       <NavBar />
+
       <View className="flex-1">
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 24 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           className="px-4"
         >
+          {/* Quick-Start Actions Row */}
+          <View className="mt-3 mb-2">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="flex-row"
+              contentContainerStyle={{ paddingVertical: 4, gap: 10 }}
+            >
+              {/* Create Match Chip */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+                activeOpacity={0.8}
+                className="overflow-hidden rounded-xl"
+              >
+                <LinearGradient
+                  colors={["#2563EB", "#1D4ED8"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  className="flex-row items-center px-4 py-2.5"
+                >
+                  <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                  <ThemedText className="text-white text-xs font-bold ml-1.5">
+                    Create Match
+                  </ThemedText>
+                </LinearGradient>
+              </TouchableOpacity>
 
-          {/* Hero Carousel */}
-          <View className="mb-6">
+              {/* Add Team Chip */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.CreateTeam)}
+                activeOpacity={0.8}
+                className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-white border-gray-200"
+                }`}
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDarkMode ? 0.2 : 0.05,
+                  shadowRadius: 3,
+                  elevation: 2,
+                }}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={16}
+                  color={isDarkMode ? "#60A5FA" : "#2563EB"}
+                />
+                <ThemedText
+                  className={`text-xs font-semibold ml-1.5 ${
+                    isDarkMode ? "text-gray-100" : "text-gray-800"
+                  }`}
+                >
+                  Add Team
+                </ThemedText>
+              </TouchableOpacity>
+
+              {/* Add Tournament Chip */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.CreateTournament)}
+                activeOpacity={0.8}
+                className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-white border-gray-200"
+                }`}
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDarkMode ? 0.2 : 0.05,
+                  shadowRadius: 3,
+                  elevation: 2,
+                }}
+              >
+                <Ionicons
+                  name="trophy-outline"
+                  size={16}
+                  color={isDarkMode ? "#FBBF24" : "#D97706"}
+                />
+                <ThemedText
+                  className={`text-xs font-semibold ml-1.5 ${
+                    isDarkMode ? "text-gray-100" : "text-gray-800"
+                  }`}
+                >
+                  Add Tournament
+                </ThemedText>
+              </TouchableOpacity>
+
+              {/* My Matches Shortcut */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.MyCricket)}
+                activeOpacity={0.8}
+                className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-white border-gray-200"
+                }`}
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDarkMode ? 0.2 : 0.05,
+                  shadowRadius: 3,
+                  elevation: 2,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="cricket"
+                  size={16}
+                  color={isDarkMode ? "#34D399" : "#059669"}
+                />
+                <ThemedText
+                  className={`text-xs font-semibold ml-1.5 ${
+                    isDarkMode ? "text-gray-100" : "text-gray-800"
+                  }`}
+                >
+                  My Cricket
+                </ThemedText>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+
+          {/* Hero Highlights Carousel */}
+          <View className="my-2">
             <Carousel
               loop
               width={width - 32}
-              height={width * 0.5}
+              height={width * 0.48}
               autoPlay={true}
               autoPlayInterval={5000}
-              data={[1, 2, 3, 4, 5]}
-              scrollAnimationDuration={1000}
+              data={[1, 2, 3]}
+              scrollAnimationDuration={800}
               mode="parallax"
-              parallaxScrollingScale={0.9}
-              parallaxScrollingOffset={50}
+              parallaxScrollingScale={0.92}
+              parallaxScrollingOffset={40}
               renderItem={({ item, index }) => (
-                <TouchableOpacity activeOpacity={0.9} className="shadow-lg">
-                  <View className="rounded-xl overflow-hidden shadow-lg">
-                    <ImageBackground
-                      source={require("../assets/stadium-background-image.jpg")}
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    />
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  className="rounded-2xl overflow-hidden border border-slate-700/20"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 8,
+                    elevation: 5,
+                  }}
+                >
+                  <ImageBackground
+                    source={require("../assets/stadium-background-image.jpg")}
+                    style={{ width: "100%", height: "100%" }}
+                    resizeMode="cover"
+                  >
                     <LinearGradient
-                      colors={["transparent", "rgba(0,0,0,0.8)"]}
-                      className="absolute bottom-0 left-0 right-0 h-1/3 px-4 pb-4 justify-end"
+                      colors={[
+                        "rgba(15,23,42,0.1)",
+                        "rgba(15,23,42,0.6)",
+                        "rgba(15,23,42,0.92)",
+                      ]}
+                      className="absolute inset-0 px-4 pb-4 justify-between"
                     >
-                      <ThemedText className="text-white text-lg font-bold">
-                        Match Highlight {index + 1}
-                      </ThemedText>
-                      <ThemedText className="text-white text-sm mt-1">
-                        Click to watch highlights
-                      </ThemedText>
+                      {/* Top Pill */}
+                      <View className="flex-row justify-between items-center pt-3">
+                        <View className="px-2.5 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/20">
+                          <ThemedText className="text-[11px] font-bold text-white uppercase tracking-wider">
+                            Match Highlights • #{index + 1}
+                          </ThemedText>
+                        </View>
+                        <View className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md items-center justify-center">
+                          <Ionicons name="play" size={16} color="#FFFFFF" />
+                        </View>
+                      </View>
+
+                      {/* Bottom Info */}
+                      <View>
+                        <ThemedText className="text-white text-lg font-bold">
+                          Grand Finale: Thunderbolts vs Knights
+                        </ThemedText>
+                        <ThemedText className="text-gray-300 text-xs mt-0.5">
+                          Thrilling final over thriller • 14 runs needed off 6 balls
+                        </ThemedText>
+                      </View>
                     </LinearGradient>
-                  </View>
+                  </ImageBackground>
                 </TouchableOpacity>
               )}
             />
@@ -147,170 +308,102 @@ export default function Home({}) {
           <SectionHeader
             title="Recent Matches"
             actionText="View All"
-            onAction={() => navigation.navigate("Matches")}
+            onAction={() => navigation.navigate(SCREENS.MyCricket)}
           />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="flex-row"
-          >
-            {matchesIds?.map((id, index) => (
-              <View
-                key={`scorecard_${index}`}
-                style={{
-                  marginRight: index !== matchesIds.length - 1 ? 16 : 0,
-                }}
-              >
-                <ScoreCard
-                  matchId={id?._id || id}
-                  startDate={id?.startDate || id?.createdAt}
-                />
-              </View>
-            ))}
-          </ScrollView>
-
-          <SectionHeader
-            title="Quick-Start"
-            // onAction={() => navigation.navigate("Matches")}
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="flex-row "
-          >
-            <View
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                gap: 10,
-                paddingVertical: 10,
-                paddingHorizontal: 3,
-              }}
-            >
-              <View
-                style={{
-                  backgroundColor: isDarkMode ? '#37474F' : '#EDEDED',
-                  borderRadius: 10,
-                  paddingTop: 4,
-                  paddingBottom: 10,
-                  paddingHorizontal: 10,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  minHeight: 10,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 4,
-                  elevation: 3,
-                }}
-              >
-                <TouchableOpacity onPress={() => navigation.navigate(SCREENS.CreateMatch)}>
-                  <ThemedText className={`${isDarkMode ? "text-white":""}`}>+ Create Match</ThemedText>
-                </TouchableOpacity>
-              </View>
-              <View
-                style={{
-                  backgroundColor: isDarkMode ? '#37474F' : '#EDEDED',
-                  borderRadius: 10,
-                  paddingTop: 4,
-                  paddingBottom: 10,
-                  paddingHorizontal: 10,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  minHeight: 10,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 4,
-                  elevation: 3,
-                }}
-                className="shadow-sm"
-              >
-                <TouchableOpacity style={{ lineHeight: 20 }}  onPress={() => navigation.navigate(SCREENS.CreateTeam)}>
-                  <ThemedText className={`${isDarkMode ? "text-white":""}`}>
-                    <AntDesign name="team" size={8} color={isDarkMode ? "#FFFFFF" : "#000000"} /> Add Team
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
-              <View
-                style={{
-                  backgroundColor: isDarkMode ? '#37474F' : '#EDEDED',
-                  borderRadius: 10,
-                  paddingTop: 4,
-                  paddingBottom: 10,
-                  paddingHorizontal: 10,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  minHeight: 10,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 4,
-                  elevation: 3,
-                }}
-              >
-                <TouchableOpacity style={{ lineHeight: 20 }} onPress={() => navigation.navigate(SCREENS.CreateTournament)}>
-                  <ThemedText className={`${isDarkMode ? "text-white":""}`}>
-                    <AntDesign name="Trophy" size={8} color={isDarkMode ? "#FFFFFF" : "#000000"} /> Add Tournament
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
+          {matchesIds && matchesIds.length > 0 ? (
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={matchesIds}
+              keyExtractor={(item, index) =>
+                String(item?._id || item?.id || item || index)
+              }
+              renderItem={({ item, index }) => (
+                <View
+                  style={{
+                    marginRight: index !== matchesIds.length - 1 ? 12 : 0,
+                  }}
+                >
+                  <ScoreCard
+                    matchId={item?._id || item?.id || item}
+                    startDate={item?.startDate || item?.createdAt}
+                  />
+                </View>
+              )}
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+              contentContainerStyle={{ paddingVertical: 4 }}
+            />
+          ) : (
+            <View className="py-6 px-4 items-center justify-center">
+              <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                No active matches found. Start a match to see live scores!
+              </ThemedText>
             </View>
-          </ScrollView>
+          )}
 
-          {/* Live Matches Banner */}
-          <View className="space-y-3" style={{ marginTop: 5 }}>
-            <TouchableOpacity
-              className="mb-6 rounded-xl overflow-hidden"
-              activeOpacity={0.8}
-              style={{ borderRadius: 16 }}
+          {/* Live Streaming & Broadcast Banner */}
+          <SectionHeader title="Live Cricket Arena" />
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate(SCREENS.MyCricket)}
+            className="rounded-2xl overflow-hidden border border-slate-700/30 mb-5"
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDarkMode ? 0.35 : 0.12,
+              shadowRadius: 8,
+              elevation: 4,
+            }}
+          >
+            <ImageBackground
+              source={require("../assets/dark-background.png")}
+              className="w-full justify-between p-5"
+              style={{ minHeight: 140 }}
+              resizeMode="cover"
             >
-              <ImageBackground
-                source={require("../assets/dark-background.png") 
-                  // : require("../assets/light-background.png")
-                }
-                className="w-full aspect-video justify-center items-center"
-                resizeMode="cover"
-                style={{
-                  width: "100%",
-                  height: 200,
-                  marginTop: 10,
-                  borderRadius: 16,
-                  overflow: "hidden",
-                }}
-                imageStyle={{
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
-                  borderBottomLeftRadius: 16,
-                  borderBottomRightRadius: 16,
-                }}
-              >
-                <View className="bg-red-600 px-3 py-1 rounded-full absolute top-3 left-3 flex-row items-center">
-                  <View className="w-2 h-2 bg-white rounded-full mr-1" />
-                  <ThemedText className="text-white text-xs font-bold">
-                    LIVE
+              <View className="flex-row justify-between items-center">
+                <View className="bg-red-600/90 px-3 py-1 rounded-full flex-row items-center border border-red-400/40">
+                  <View className="w-2 h-2 bg-white rounded-full mr-1.5" />
+                  <ThemedText className="text-white text-xs font-extrabold uppercase tracking-wide">
+                    Live Broadcast
                   </ThemedText>
                 </View>
+                <View className="bg-blue-500/20 px-3 py-1 rounded-full border border-blue-400/30">
+                  <ThemedText className="text-blue-300 text-xs font-semibold">
+                    HD Commentary
+                  </ThemedText>
+                </View>
+              </View>
+
+              <View className="mt-3">
                 <ThemedText className="text-white text-xl font-bold">
-                  Watch Live Matches
+                  Ball-by-Ball Live Scoring
                 </ThemedText>
-                <ThemedText className="text-white text-sm mt-1">
-                  Tap to join live streaming
+                <ThemedText className="text-gray-300 text-xs mt-1">
+                  Follow live match updates, run rates, commentary & player stats
                 </ThemedText>
-              </ImageBackground>
-              
-            </TouchableOpacity>
-          </View>
+              </View>
+
+              <View className="flex-row items-center mt-3 pt-2 border-t border-white/10">
+                <ThemedText className="text-blue-400 text-xs font-bold mr-1">
+                  Open Match Center
+                </ThemedText>
+                <Ionicons name="arrow-forward" size={14} color="#60A5FA" />
+              </View>
+            </ImageBackground>
+          </TouchableOpacity>
 
           {/* Tournaments Section */}
           {tournaments?.map((tournament, index) => (
-            <View key={`tournament_${index}`} className="mb-6">
+            <View key={`tournament_${index}`} className="mb-4">
               <SectionHeader
-                title={tournament?.title || "Tournament"}
-                actionText="View All"
+                title={tournament?.title || "Featured Tournament"}
+                actionText="View Tournament"
                 onAction={() =>
-                  navigation.navigate("TournamentDetail", {
+                  navigation.navigate(SCREENS.TournamentProfile, {
                     slug: tournament?.slug || tournament?._id,
                   })
                 }
@@ -319,65 +412,27 @@ export default function Home({}) {
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingVertical: 8 }}
+                className="flex-row"
+                contentContainerStyle={{ paddingVertical: 4 }}
               >
                 {tournament?.matches?.map((item, idx) => (
-                  <TouchableOpacity
+                  <View
                     key={`tournament_match_${idx}`}
-                    className="rounded-lg p-4 mr-4"
                     style={{
-                      backgroundColor: isDarkMode ? '#1E1E1E' : '#FFFFFF',
+                      marginRight:
+                        idx !== tournament.matches.length - 1 ? 12 : 0,
                     }}
                   >
                     <ScoreCard
-                      key={item.id}
                       match={item}
-                      onPress={() =>
-                        navigation.navigate("MatchDetail", { id: match.id })
-                      }
                     />
-                  </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             </View>
           ))}
-
-          {/* Tournament Matches Section */}
-          <View className="mt-6">
-            <SectionHeader title="Tournament Matches" actionText="View All" />
-
-            {tournaments?.map((tournament) => (
-              <View key={tournament.id} className="mb-6">
-                <TouchableOpacity
-                  className="flex-row items-center mb-2"
-                  onPress={() =>
-                    navigation.navigate("TournamentDetail", {
-                      id: tournament.id,
-                    })
-                  }
-                >
-                  <Image
-                    source={{ uri: tournament.logo }}
-                    className="w-8 h-8 mr-2"
-                  />
-                  <ThemedText className="font-bold">
-                    {tournament.name}
-                  </ThemedText>
-                </TouchableOpacity>
-
-                {tournament?.matches?.map((match) => (
-                  <ScoreCard
-                    key={match.id}
-                    match={match}
-                    onPress={() =>
-                      navigation.navigate("MatchDetail", { id: match.id })
-                    }
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
         </ScrollView>
+
         <AnimatedFooter />
       </View>
     </View>

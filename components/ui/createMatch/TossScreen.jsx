@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,17 +6,35 @@ import {
   useColorScheme,
   Animated,
   Easing,
+  Alert,
+  BackHandler,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
+import { matchesApi } from "@/utils/api";
+import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
 
 export default function TossScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { teamA, teamB, teamASquad, teamBSquad, matchDetails } = route.params;
+  const {
+    teamA: initialTeamA,
+    teamB: initialTeamB,
+    teamASquad: initialTeamASquad,
+    teamBSquad: initialTeamBSquad,
+    matchDetails,
+    matchId,
+  } = route.params || {};
+
+  const [teamA, setTeamA] = useState(initialTeamA);
+  const [teamB, setTeamB] = useState(initialTeamB);
+  const [teamASquad, setTeamASquad] = useState(initialTeamASquad || []);
+  const [teamBSquad, setTeamBSquad] = useState(initialTeamBSquad || []);
+
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -24,38 +42,148 @@ export default function TossScreen() {
   const [winner, setWinner] = useState(null);
   const [decision, setDecision] = useState(null);
   const [isFlipping, setIsFlipping] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tossCompleted, setTossCompleted] = useState(false);
+  const [isStatusChecked, setIsStatusChecked] = useState(false);
+  const isLeavingRef = useRef(false);
   const flipAnimation = useRef(new Animated.Value(0)).current;
 
+  // Mount status validation
+  useEffect(() => {
+    if (!matchId) {
+      setIsStatusChecked(true);
+      return;
+    }
+
+    matchesApi
+      .getMatchById(matchId)
+      .then((res) => {
+        const m = res?.data;
+        if (!m) {
+          setIsStatusChecked(true);
+          return;
+        }
+
+        // If status is MATCH_CREATED and not coming from MatchDetailsScreen -> redirect back to MatchDetailsScreen
+        if (m.status === MATCH_STATUS.MATCH_CREATED) {
+          if (!route.params?.fromMatchDetails && !route.params?.matchDetails) {
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.MatchDetailsScreen, { matchId, ...route.params });
+            return; // do NOT setIsStatusChecked — we're redirecting away
+          }
+          // If arriving from MatchDetailsScreen, ensure backend has status: MATCH_DETAILS_ENTERED
+          matchesApi
+            .updateMatch(matchId, {
+              updateField: {
+                status: MATCH_STATUS.MATCH_DETAILS_ENTERED,
+              },
+            })
+            .catch(() => {});
+        }
+
+        // If status is TOSS, toss is already completed -> redirect forward to PlayerSelectionScreen
+        if (m.status === MATCH_STATUS.TOSS) {
+          setTossCompleted(true);
+          isLeavingRef.current = true;
+          navigation.replace(SCREENS.PlayerSelectionScreen, { matchId, ...route.params });
+          return; // do NOT setIsStatusChecked — we're redirecting away
+        }
+
+        // If status is MATCH_OPENER_SELECTED or later -> redirect to ScorerScreen
+        if (
+          m.status &&
+          m.status !== MATCH_STATUS.MATCH_DETAILS_ENTERED &&
+          m.status !== MATCH_STATUS.MATCH_CREATED
+        ) {
+          const target = matchRedirectBasedOnStatus(matchId, m.status);
+          isLeavingRef.current = true;
+          navigation.replace(target.screen, target.params);
+          return; // do NOT setIsStatusChecked — we're redirecting away
+        }
+
+        // Populate teams if missing
+        if (m.teams && m.teams.length >= 2) {
+          if (!teamA) setTeamA({ name: m.teams[0].title, _id: m.teams[0].teamId, id: m.teams[0].teamId });
+          if (!teamB) setTeamB({ name: m.teams[1].title, _id: m.teams[1].teamId, id: m.teams[1].teamId });
+          if (teamASquad.length === 0 && m.teams[0].players) setTeamASquad(m.teams[0].players);
+          if (teamBSquad.length === 0 && m.teams[1].players) setTeamBSquad(m.teams[1].players);
+        }
+
+        if (m.score?.toss?.winningTeam) {
+          setTossCompleted(true);
+        }
+
+        // Status check done — safe to render TossScreen UI
+        setIsStatusChecked(true);
+      })
+      .catch((err) => {
+        console.warn("[TossScreen] Error loading match status:", err);
+        setIsStatusChecked(true); // ungate even on error
+      });
+  }, [matchId]);
+
+
+  const handleBack = () => {
+    confirmLeavePreScore({
+      navigation,
+      route,
+      onLeave: () => {
+        isLeavingRef.current = true;
+      },
+    });
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      isLeavingRef.current = false;
+
+      const backAction = () => {
+        if (!navigation.isFocused()) return false;
+        handleBack();
+        return true;
+      };
+
+      const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+
+      const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+        const actionType = e.data?.action?.type;
+        if (actionType !== "GO_BACK" && actionType !== "POP") return;
+        if (isLeavingRef.current || !navigation.isFocused()) return;
+        e.preventDefault();
+        handleBack();
+      });
+
+      return () => {
+        backHandler.remove();
+        unsubscribe();
+      };
+    }, [navigation, tossCompleted, matchId, teamA, teamB, teamASquad, teamBSquad, matchDetails])
+  );
+
   const flipCoin = () => {
-  if (isFlipping) return;
+    if (isFlipping) return;
 
-  setIsFlipping(true);
-  setTossResult(null);
-  setWinner(null);
-  setDecision(null);
+    setIsFlipping(true);
+    setTossResult(null);
+    setWinner(null);
+    setDecision(null);
 
-  // Random result
-  const result = Math.random() < 0.5 ? "Heads" : "Tails";
+    const result = Math.random() < 0.5 ? "Heads" : "Tails";
+    const spins = 3;
+    const finalValue = result === "Heads" ? spins * 360 : spins * 360 + 180;
 
-  // Decide final rotation (in degrees)
-  const spins = 3; // number of full flips before landing
-  const finalValue = result === "Heads"
-    ? spins * 360
-    : spins * 360 + 180;
+    flipAnimation.setValue(0);
 
-  flipAnimation.setValue(0);
-
-  Animated.timing(flipAnimation, {
-    toValue: finalValue,
-    duration: 2000, // longer for multiple spins
-    easing: Easing.out(Easing.cubic),
-    useNativeDriver: true,
-  }).start(() => {
-    setTossResult(result);
-    setIsFlipping(false);
-  });
-};
-
+    Animated.timing(flipAnimation, {
+      toValue: finalValue,
+      duration: 2000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setTossResult(result);
+      setIsFlipping(false);
+    });
+  };
 
   const selectWinner = (selectedTeam) => {
     setWinner(selectedTeam);
@@ -65,17 +193,78 @@ export default function TossScreen() {
     setDecision(selectedDecision);
   };
 
-  const proceedToMatch = () => {
-    navigation.navigate(SCREENS.PlayerSelectionScreen, {
-      teamA,
-      teamB,
-      teamASquad,
-      teamBSquad,
-      matchDetails,
-      tossWinner: winner,
-      tossDecision: decision,
-      tossResult,
-    });
+  const proceedToMatch = async () => {
+    if (!winner || !decision) {
+      Alert.alert(
+        "Selection Required",
+        `Please select ${!winner ? "which team won the toss" : "whether they elect to bat or bowl"}.`
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    if (matchId && winner) {
+      try {
+        const winningTeamId = winner._id || winner.id || winner.teamId;
+        const tossPayload = {
+          toss: {
+            winningTeam: winningTeamId,
+            decision: decision === "Bat" ? "BAT" : "FIELD",
+          },
+        };
+
+        const res = await matchesApi.toss(matchId, tossPayload);
+        if (res?.data?.success || res?.status === 200 || res?.status === 202) {
+          setTossCompleted(true);
+          isLeavingRef.current = true;
+          navigation.navigate(SCREENS.PlayerSelectionScreen, {
+            matchId,
+            teamA,
+            teamB,
+            teamASquad,
+            teamBSquad,
+            matchDetails,
+            tossWinner: winner,
+            tossDecision: decision,
+            tossResult,
+          });
+        } else {
+          Alert.alert("Error", res?.data?.message || "Failed to record toss on server.");
+        }
+      } catch (err) {
+        console.warn("[Toss] Failed to record toss on server:", err);
+        Alert.alert("Notice", "Network error recording toss. Continuing to player selection.");
+        isLeavingRef.current = true;
+        navigation.navigate(SCREENS.PlayerSelectionScreen, {
+          matchId,
+          teamA,
+          teamB,
+          teamASquad,
+          teamBSquad,
+          matchDetails,
+          tossWinner: winner,
+          tossDecision: decision,
+          tossResult,
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      isLeavingRef.current = true;
+      setIsSubmitting(false);
+      navigation.navigate(SCREENS.PlayerSelectionScreen, {
+        matchId,
+        teamA,
+        teamB,
+        teamASquad,
+        teamBSquad,
+        matchDetails,
+        tossWinner: winner,
+        tossDecision: decision,
+        tossResult,
+      });
+    }
   };
 
   // Interpolate the flip animation for front and back of coin
@@ -96,6 +285,11 @@ export default function TossScreen() {
   const teamAKeyPlayers = getKeyPlayers(teamASquad);
   const teamBKeyPlayers = getKeyPlayers(teamBSquad);
 
+  // Gate render until status-check API resolves to prevent flash-before-redirect.
+  if (!isStatusChecked) {
+    return <View style={{ flex: 1, backgroundColor: isDarkMode ? "#111827" : "#f9fafb" }} />;
+  }
+
   return (
     <SafeAreaView
       className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
@@ -109,7 +303,7 @@ export default function TossScreen() {
         }`}
       >
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           className="p-2 mr-2"
         >
           <Ionicons name="arrow-back" size={24} color="#2563EB" />
@@ -386,10 +580,16 @@ export default function TossScreen() {
         {winner && decision && (
           <TouchableOpacity
             onPress={proceedToMatch}
-            className="px-8 py-4 bg-blue-500 rounded-xl"
+            disabled={isSubmitting}
+            className={`px-8 py-4 rounded-xl flex-row items-center justify-center ${
+              isSubmitting ? "bg-blue-400" : "bg-blue-500"
+            }`}
           >
+            {isSubmitting && (
+              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+            )}
             <ThemedText className="text-white text-lg font-semibold">
-              Start Match
+              {isSubmitting ? "Saving Toss..." : "Select Players"}
             </ThemedText>
           </TouchableOpacity>
         )}

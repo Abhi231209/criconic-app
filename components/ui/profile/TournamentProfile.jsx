@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   ScrollView,
@@ -6,6 +6,7 @@ import {
   Image,
   useColorScheme,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -15,6 +16,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
 import SwipeableTabs from "../custom/SwipeableTab";
 import SCREENS from "@/screens";
+import { tournamentsApi, request } from "@/utils/api";
 
 export default function TournamentProfile() {
    const navigation = useNavigation();
@@ -27,6 +29,8 @@ export default function TournamentProfile() {
     bowling: false
   });
 
+  // HARDCODED TOURNAMENT DATA - COMMENTED OUT (API ONLY)
+  /*
   // Sample tournament data
   const tournament = {
     id: "1",
@@ -230,6 +234,92 @@ export default function TournamentProfile() {
       average: 20.1,
     },
   ];
+  */
+
+  // LIVE API STATE
+  const passedTournament = route.params?.tournament || null;
+  const tournamentId = route.params?.tournamentId || passedTournament?._id || passedTournament?.id || route.params?.id;
+
+  const [tournamentData, setTournamentData] = useState(passedTournament);
+  const [matchesList, setMatchesList] = useState([]);
+  const [teamsList, setTeamsList] = useState(passedTournament?.teams || []);
+  const [pointsTable, setPointsTable] = useState([]);
+  const [battingLeaderboard, setBattingLeaderboard] = useState([]);
+  const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!tournamentId) return;
+    let isMounted = true;
+    setIsLoading(true);
+
+    Promise.allSettled([
+      tournamentsApi.getTournamentById(tournamentId),
+      tournamentsApi.getMatchesByTournament(tournamentId),
+      tournamentsApi.getPointsTable(tournamentId),
+      request(`api/tournaments/leaderboard/${tournamentId}?type=batting`).catch(() => null),
+      request(`api/tournaments/leaderboard/${tournamentId}?type=fielding`).catch(() => null),
+    ]).then(([tournRes, matchesRes, pointsRes, batLeadRes, bowlLeadRes]) => {
+      if (!isMounted) return;
+      setIsLoading(false);
+
+      if (tournRes.status === "fulfilled" && tournRes.value) {
+        const tData = tournRes.value.tournament || tournRes.value.data || tournRes.value;
+        if (tData) {
+          setTournamentData(tData);
+          if (Array.isArray(tData.teams)) {
+            setTeamsList(tData.teams);
+          }
+        }
+      }
+
+      if (matchesRes.status === "fulfilled" && matchesRes.value) {
+        const mData = matchesRes.value.matches || matchesRes.value.data || (Array.isArray(matchesRes.value) ? matchesRes.value : []);
+        setMatchesList(Array.isArray(mData) ? mData : []);
+      }
+
+      if (pointsRes.status === "fulfilled" && pointsRes.value) {
+        const ptData = pointsRes.value.pointsTable || pointsRes.value.data || (Array.isArray(pointsRes.value) ? pointsRes.value : []);
+        setPointsTable(Array.isArray(ptData) ? ptData : []);
+      }
+
+      if (batLeadRes.status === "fulfilled" && batLeadRes.value?.stats) {
+        setBattingLeaderboard(Array.isArray(batLeadRes.value.stats) ? batLeadRes.value.stats : []);
+      }
+
+      if (bowlLeadRes.status === "fulfilled" && bowlLeadRes.value?.stats) {
+        setBowlingLeaderboard(Array.isArray(bowlLeadRes.value.stats) ? bowlLeadRes.value.stats : []);
+      }
+    }).catch((err) => {
+      if (isMounted) setIsLoading(false);
+      console.log("Error loading tournament details:", err);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tournamentId]);
+
+  // Derived tournament object
+  const tournament = {
+    id: tournamentData?._id || tournamentData?.id || tournamentId || "",
+    name: tournamentData?.title || tournamentData?.name || "Tournament",
+    shortName: tournamentData?.slug || tournamentData?.shortName || (tournamentData?.title ? tournamentData.title.substring(0, 4).toUpperCase() : "TMT"),
+    logo: tournamentData?.logoImage || tournamentData?.bannerImage || tournamentData?.logo || null,
+    startDate: tournamentData?.date?.start ? new Date(tournamentData.date.start).toLocaleDateString() : (tournamentData?.startDate || "TBD"),
+    endDate: tournamentData?.date?.end ? new Date(tournamentData.date.end).toLocaleDateString() : (tournamentData?.endDate || "TBD"),
+    location: tournamentData?.location || tournamentData?.city || "Not specified",
+    organizer: typeof tournamentData?.organizer === "string" ? tournamentData.organizer : (tournamentData?.organizer?.[0]?.username || tournamentData?.organizerName || "Organizer"),
+    teams: (tournamentData?.teams && tournamentData.teams.length) || teamsList.length || 0,
+    status: tournamentData?.status || "upcoming",
+    format: tournamentData?.format || "Standard",
+    prizeMoney: tournamentData?.prizeMoney || "Not Specified",
+    ballType: tournamentData?.ballType || "Standard",
+  };
+
+  const liveMatches = matchesList.filter((m) => m.status === "live" || m.isLive);
+  const upcomingMatches = matchesList.filter((m) => m.status === "upcoming");
+  const recentMatches = matchesList.filter((m) => m.status === "completed" || m.status === "finished");
 
   const tabs = [
     {
@@ -288,7 +378,7 @@ export default function TournamentProfile() {
 
   const renderLeaderboardItem = (item, index, type) => (
     <View
-      key={item.id}
+      key={item.id || item._id || index}
       className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}
     >
       <View className="flex-row justify-between items-center">
@@ -310,14 +400,14 @@ export default function TournamentProfile() {
                 isDarkMode ? "text-white" : "text-gray-900"
               }`}
             >
-              {item.name}
+              {item.name || item.player?.username || item.playerId?.username || "Player"}
             </ThemedText>
             <ThemedText
               className={`text-xs ${
                 isDarkMode ? "text-gray-400" : "text-gray-600"
               }`}
             >
-              {item.team}
+              {item.team || item.teamName || item.teamId?.shortName || item.teamId?.title || ""}
             </ThemedText>
           </View>
         </View>
@@ -333,8 +423,8 @@ export default function TournamentProfile() {
                 ? "text-blue-400"
                 : "text-blue-600"
             }`}
-            >
-            {type === "batting" ? `${item.runs} runs` : `${item.wickets} wickets`}
+          >
+            {type === "batting" ? `${item.runs ?? item.totalRuns ?? 0} runs` : `${item.wickets ?? item.totalWickets ?? 0} wickets`}
           </ThemedText>
           <ThemedText
             className={`text-xs ${
@@ -342,8 +432,8 @@ export default function TournamentProfile() {
             }`}
           >
             {type === "batting"
-              ? `Avg: ${item.average} • SR: ${item.strikeRate}`
-              : `Eco: ${item.economy} • Avg: ${item.average}`}
+              ? `Avg: ${item.average ?? item.avg ?? "0.00"} • SR: ${item.strikeRate ?? item.sr ?? "0.00"}`
+              : `Eco: ${item.economy ?? item.econ ?? "0.00"} • Avg: ${item.average ?? item.avg ?? "0.00"}`}
           </ThemedText>
         </View>
       </View>
@@ -643,8 +733,16 @@ export default function TournamentProfile() {
 
           {expandedSections.batting && (
             <View className="max-h-64">
-              {battingLeaderboard.map((item, index) => 
-                renderLeaderboardItem(item, index, "batting")
+              {battingLeaderboard.length > 0 ? (
+                battingLeaderboard.map((item, index) => 
+                  renderLeaderboardItem(item, index, "batting")
+                )
+              ) : (
+                <View className="p-4 items-center">
+                  <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    No batting stats recorded yet
+                  </ThemedText>
+                </View>
               )}
             </View>
           )}
@@ -679,8 +777,16 @@ export default function TournamentProfile() {
 
           {expandedSections.bowling && (
             <View className="max-h-64">
-              {bowlingLeaderboard.map((item, index) => 
-                renderLeaderboardItem(item, index, "bowling")
+              {bowlingLeaderboard.length > 0 ? (
+                bowlingLeaderboard.map((item, index) => 
+                  renderLeaderboardItem(item, index, "bowling")
+                )
+              ) : (
+                <View className="p-4 items-center">
+                  <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    No bowling stats recorded yet
+                  </ThemedText>
+                </View>
               )}
             </View>
           )}
@@ -707,10 +813,10 @@ export default function TournamentProfile() {
           </ThemedText>
 
           {liveMatches.map((match) => (
-            <View key={match.id} className="mb-4 w-full max-w-md">
+            <View key={match._id || match.id} className="mb-4 w-full max-w-md">
               <ScoreCard
                 match={match}
-                onPress={() => console.log("Live match pressed:", match.id)}
+                onPress={() => console.log("Live match pressed:", match._id || match.id)}
               />
             </View>
           ))}
@@ -718,72 +824,89 @@ export default function TournamentProfile() {
       )}
 
       {/* Upcoming Matches */}
-      <ThemedText
-        className={`text-lg font-bold mb-4 ${
-          isDarkMode ? "text-white" : "text-gray-900"
-        }`}
-      >
-        ⏰ Upcoming Matches
-      </ThemedText>
+      {upcomingMatches.length > 0 && (
+        <>
+          <ThemedText
+            className={`text-lg font-bold mb-4 ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            ⏰ Upcoming Matches
+          </ThemedText>
 
-      {upcomingMatches.map((match) => (
-        <TouchableOpacity
-          key={match.id}
-          className={`p-4 rounded-xl mb-3 w-full max-w-md ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          }`}
-        >
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`font-bold ${
-                isDarkMode ? "text-white" : "text-gray-900"
+          {upcomingMatches.map((match) => (
+            <TouchableOpacity
+              key={match._id || match.id}
+              className={`p-4 rounded-xl mb-3 w-full max-w-md ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
               }`}
             >
-              {match.team1} vs {match.team2}
-            </ThemedText>
-            <Ionicons
-              name="notifications-outline"
-              size={20}
-              color={isDarkMode ? "#9CA3AF" : "#666"}
-            />
-          </View>
+              <View className="flex-row justify-between items-center mb-2">
+                <ThemedText
+                  className={`font-bold ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {match.team1?.title || match.team1 || "Team 1"} vs {match.team2?.title || match.team2 || "Team 2"}
+                </ThemedText>
+                <Ionicons
+                  name="notifications-outline"
+                  size={20}
+                  color={isDarkMode ? "#9CA3AF" : "#666"}
+                />
+              </View>
 
-          <View className="flex-row justify-between">
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              📅 {match.date}
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              🏟️ {match.venue}
-            </ThemedText>
-          </View>
-        </TouchableOpacity>
-      ))}
+              <View className="flex-row justify-between">
+                <ThemedText
+                  className={`text-sm ${
+                    isDarkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  📅 {match.date ? new Date(match.date).toLocaleDateString() : (match.date || "Upcoming")}
+                </ThemedText>
+                <ThemedText
+                  className={`text-sm ${
+                    isDarkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  🏟️ {match.venue || match.location || "Ground"}
+                </ThemedText>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
 
       {/* Recent Matches */}
-      <ThemedText
-        className={`text-lg font-bold mb-4 mt-6 ${
-          isDarkMode ? "text-white" : "text-gray-900"
-        }`}
-      >
-        📊 Recent Matches
-      </ThemedText>
+      {recentMatches.length > 0 && (
+        <>
+          <ThemedText
+            className={`text-lg font-bold mb-4 mt-6 ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            📊 Recent Matches
+          </ThemedText>
 
-      {recentMatches.map((match) => (
-        <View key={match.id} className="mb-4 w-full max-w-md">
-          <ScoreCard
-            match={match}
-            onPress={() => console.log("Recent match pressed:", match.id)}
-          />
+          {recentMatches.map((match) => (
+            <View key={match._id || match.id} className="mb-4 w-full max-w-md">
+              <ScoreCard
+                match={match}
+                onPress={() => console.log("Recent match pressed:", match._id || match.id)}
+              />
+            </View>
+          ))}
+        </>
+      )}
+
+      {liveMatches.length === 0 && upcomingMatches.length === 0 && recentMatches.length === 0 && (
+        <View className="py-12 items-center justify-center">
+          <Ionicons name="baseball-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-center mt-3 font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No matches scheduled or played yet
+          </ThemedText>
         </View>
-      ))}
+      )}
     </ScrollView>
   );
 
@@ -793,171 +916,209 @@ export default function TournamentProfile() {
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
     >
-      <FlatList
-        data={teams}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            className={`p-4 rounded-lg mb-3 ${
-              isDarkMode ? "bg-gray-800" : "bg-white"
-            } shadow-sm`}
-          >
-            <View className="flex-row justify-between items-center">
-              <View className="flex-1">
-                <ThemedText
-                  className={`font-semibold text-lg ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {item.name}
-                </ThemedText>
-                <ThemedText
-                  className={`text-sm ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  ({item.shortName})
-                </ThemedText>
-              </View>
-
-              <View className="items-end">
-                <ThemedText
-                  className={`text-sm ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {item.matches} matches
-                </ThemedText>
-                <ThemedText
-                  className={`text-xs ${
-                    isDarkMode ? "text-blue-400" : "text-blue-600"
-                  }`}
-                >
-                  {item.wins} wins • {item.losses} losses
-                </ThemedText>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-    </ScrollView>
-  );
-
-  const renderStandings = () => (
-    <ScrollView
-      className="flex-1"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
-    >
-      <FlatList
-        data={teams.sort((a, b) => b.points - a.points)}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        renderItem={({ item, index }) => (
-          <View
-            className={`p-4 rounded-lg mb-3 ${
-              isDarkMode ? "bg-gray-800" : "bg-white"
-            }`}
-          >
-            <View className="flex-row justify-between items-center mb-3">
-              <View className="flex-row items-center">
-                <ThemedText
-                  className={`text-lg font-bold mr-3 ${
-                    index < 4
-                      ? "text-yellow-600"
-                      : isDarkMode
-                      ? "text-gray-400"
-                      : "text-gray-600"
-                  }`}
-                >
-                  #{index + 1}
-                </ThemedText>
-                <View>
-                  <ThemedText
-                    className={`font-semibold ${
-                      isDarkMode ? "text-white" : "text-gray-900"
-                    }`}
-                  >
-                    {item.name}
-                  </ThemedText>
-                  <ThemedText
-                    className={`text-xs ${
-                      isDarkMode ? "text-gray-400" : "text-gray-600"
-                    }`}
-                  >
-                    {item.shortName}
-                  </ThemedText>
-                </View>
-              </View>
-
-              <View className="items-end">
-                <ThemedText
-                  className={`text-sm font-semibold ${
-                    isDarkMode ? "text-green-400" : "text-green-600"
-                  }`}
-                >
-                  {item.points} pts
-                </ThemedText>
-              </View>
-            </View>
-
-            <View className="flex-row justify-between mb-2">
-              <ThemedText
-                className={`text-sm ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
+      {teamsList.length > 0 ? (
+        <FlatList
+          data={teamsList}
+          keyExtractor={(item, index) => item.teamId?._id || item._id || item.id || String(index)}
+          scrollEnabled={false}
+          renderItem={({ item }) => {
+            const teamTitle = item.teamId?.title || item.title || item.name || "Team";
+            const teamShort = item.teamId?.shortName || item.shortName || (typeof teamTitle === 'string' ? teamTitle.substring(0, 3).toUpperCase() : "TM");
+            return (
+              <TouchableOpacity
+                className={`p-4 rounded-lg mb-3 ${
+                  isDarkMode ? "bg-gray-800" : "bg-white"
+                } shadow-sm`}
               >
-                Matches: {item.matches}
-              </ThemedText>
-              <ThemedText
-                className={`text-sm ${
-                  isDarkMode ? "text-green-400" : "text-green-600"
-                }`}
-              >
-                Wins: {item.wins}
-              </ThemedText>
-              <ThemedText
-                className={`text-sm ${
-                  isDarkMode ? "text-red-400" : "text-red-600"
-                }`}
-              >
-                Losses: {item.losses}
-              </ThemedText>
-            </View>
-
-            <View className="flex-row justify-between">
-              <ThemedText
-                className={`text-sm ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                NRR: {item.netRunRate}
-              </ThemedText>
-              <View className="flex-row">
-                {item.recentForm.map((form, idx) => (
-                  <View
-                    key={idx}
-                    className={`w-5 h-5 rounded-full mx-1 items-center justify-center ${
-                      form === "W" ? "bg-green-100" : "bg-red-100"
-                    }`}
-                  >
+                <View className="flex-row justify-between items-center">
+                  <View className="flex-1">
                     <ThemedText
-                      className={`text-xs ${
-                        form === "W" ? "text-green-800" : "text-red-800"
+                      className={`font-semibold text-lg ${
+                        isDarkMode ? "text-white" : "text-gray-900"
                       }`}
                     >
-                      {form}
+                      {teamTitle}
+                    </ThemedText>
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-gray-400" : "text-gray-600"
+                      }`}
+                    >
+                      ({teamShort})
                     </ThemedText>
                   </View>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-      />
+
+                  <View className="items-end">
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-gray-400" : "text-gray-600"
+                      }`}
+                    >
+                      {item.matches ?? 0} matches
+                    </ThemedText>
+                    <ThemedText
+                      className={`text-xs ${
+                        isDarkMode ? "text-blue-400" : "text-blue-600"
+                      }`}
+                    >
+                      {item.wins ?? 0} wins • {item.losses ?? 0} losses
+                    </ThemedText>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      ) : (
+        <View className="py-12 items-center justify-center">
+          <Ionicons name="people-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-center mt-3 font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No teams registered in this tournament yet
+          </ThemedText>
+        </View>
+      )}
     </ScrollView>
   );
+
+  const renderStandings = () => {
+    const standingsData = pointsTable.length > 0 ? pointsTable : teamsList;
+    return (
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      >
+        {standingsData.length > 0 ? (
+          <FlatList
+            data={standingsData}
+            keyExtractor={(item, index) => item.team?._id || item.teamId?._id || item._id || item.id || String(index)}
+            scrollEnabled={false}
+            renderItem={({ item, index }) => {
+              const teamName = item.team?.title || item.teamId?.title || item.title || item.name || "Team";
+              const shortName = item.team?.shortName || item.teamId?.shortName || item.shortName || (typeof teamName === 'string' ? teamName.substring(0, 3).toUpperCase() : "TM");
+              const pts = item.points ?? item.pts ?? 0;
+              const matchesPlayed = item.matches ?? item.played ?? item.p ?? 0;
+              const wins = item.wins ?? item.w ?? 0;
+              const losses = item.losses ?? item.l ?? 0;
+              const nrr = item.netRunRate ?? item.nrr ?? "0.000";
+              const form = Array.isArray(item.recentForm) ? item.recentForm : [];
+
+              return (
+                <View
+                  className={`p-4 rounded-lg mb-3 ${
+                    isDarkMode ? "bg-gray-800" : "bg-white"
+                  }`}
+                >
+                  <View className="flex-row justify-between items-center mb-3">
+                    <View className="flex-row items-center">
+                      <ThemedText
+                        className={`text-lg font-bold mr-3 ${
+                          index < 4
+                            ? "text-yellow-600"
+                            : isDarkMode
+                            ? "text-gray-400"
+                            : "text-gray-600"
+                        }`}
+                      >
+                        #{index + 1}
+                      </ThemedText>
+                      <View>
+                        <ThemedText
+                          className={`font-semibold ${
+                            isDarkMode ? "text-white" : "text-gray-900"
+                          }`}
+                        >
+                          {teamName}
+                        </ThemedText>
+                        <ThemedText
+                          className={`text-xs ${
+                            isDarkMode ? "text-gray-400" : "text-gray-600"
+                          }`}
+                        >
+                          {shortName}
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <View className="items-end">
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-green-400" : "text-green-600"
+                        }`}
+                      >
+                        {pts} pts
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  <View className="flex-row justify-between mb-2">
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-gray-400" : "text-gray-600"
+                      }`}
+                    >
+                      Matches: {matchesPlayed}
+                    </ThemedText>
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-green-400" : "text-green-600"
+                      }`}
+                    >
+                      Wins: {wins}
+                    </ThemedText>
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-red-400" : "text-red-600"
+                      }`}
+                    >
+                      Losses: {losses}
+                    </ThemedText>
+                  </View>
+
+                  <View className="flex-row justify-between">
+                    <ThemedText
+                      className={`text-sm ${
+                        isDarkMode ? "text-gray-400" : "text-gray-600"
+                      }`}
+                    >
+                      NRR: {nrr}
+                    </ThemedText>
+                    {form.length > 0 && (
+                      <View className="flex-row">
+                        {form.map((f, idx) => (
+                          <View
+                            key={idx}
+                            className={`w-5 h-5 rounded-full mx-1 items-center justify-center ${
+                              f === "W" ? "bg-green-100" : "bg-red-100"
+                            }`}
+                          >
+                            <ThemedText
+                              className={`text-xs ${
+                                f === "W" ? "text-green-800" : "text-red-800"
+                              }`}
+                            >
+                              {f}
+                            </ThemedText>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            }}
+          />
+        ) : (
+          <View className="py-12 items-center justify-center">
+            <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+            <ThemedText className={`text-center mt-3 font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              Standings will be updated once matches are played
+            </ThemedText>
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
 
   const renderLeaderboard = () => (
     <ScrollView
@@ -974,63 +1135,17 @@ export default function TournamentProfile() {
         🏏 Batting Leaderboard
       </ThemedText>
 
-      {battingLeaderboard.map((player, index) => (
-        <View
-          key={player.id}
-          className={`p-3 rounded-lg mb-2 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          }`}
-        >
-          <View className="flex-row justify-between items-center">
-            <View className="flex-row items-center">
-              <ThemedText
-                className={`text-lg font-bold mr-3 ${
-                  index < 3
-                    ? "text-yellow-600"
-                    : isDarkMode
-                    ? "text-gray-400"
-                    : "text-gray-600"
-                }`}
-              >
-                #{index + 1}
-              </ThemedText>
-              <View>
-                <ThemedText
-                  className={`font-semibold ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {player.name}
-                </ThemedText>
-                <ThemedText
-                  className={`text-xs ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {player.team}
-                </ThemedText>
-              </View>
-            </View>
-
-            <View className="items-end">
-              <ThemedText
-                className={`text-sm font-semibold ${
-                  isDarkMode ? "text-green-400" : "text-green-600"
-                }`}
-              >
-                {player.runs} runs
-              </ThemedText>
-              <ThemedText
-                className={`text-xs ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                Avg: {player.average} • SR: {player.strikeRate}
-              </ThemedText>
-            </View>
-          </View>
+      {battingLeaderboard.length > 0 ? (
+        battingLeaderboard.map((player, index) =>
+          renderLeaderboardItem(player, index, "batting")
+        )
+      ) : (
+        <View className="py-6 items-center justify-center">
+          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No batting statistics available yet
+          </ThemedText>
         </View>
-      ))}
+      )}
 
       {/* Bowling Leaderboard */}
       <ThemedText
@@ -1041,63 +1156,17 @@ export default function TournamentProfile() {
         🎯 Bowling Leaderboard
       </ThemedText>
 
-      {bowlingLeaderboard.map((player, index) => (
-        <View
-          key={player.id}
-          className={`p-3 rounded-lg mb-2 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          }`}
-        >
-          <View className="flex-row justify-between items-center">
-            <View className="flex-row items-center">
-              <ThemedText
-                className={`text-lg font-bold mr-3 ${
-                  index < 3
-                    ? "text-yellow-600"
-                    : isDarkMode
-                    ? "text-gray-400"
-                    : "text-gray-600"
-                }`}
-              >
-                #{index + 1}
-              </ThemedText>
-              <View>
-                <ThemedText
-                  className={`font-semibold ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {player.name}
-                </ThemedText>
-                <ThemedText
-                  className={`text-xs ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {player.team}
-                </ThemedText>
-              </View>
-            </View>
-
-            <View className="items-end">
-              <ThemedText
-                className={`text-sm font-semibold ${
-                  isDarkMode ? "text-blue-400" : "text-blue-600"
-                }`}
-              >
-                {player.wickets} wickets
-              </ThemedText>
-              <ThemedText
-                className={`text-xs ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                Eco: {player.economy} • Avg: {player.average}
-              </ThemedText>
-            </View>
-          </View>
+      {bowlingLeaderboard.length > 0 ? (
+        bowlingLeaderboard.map((player, index) =>
+          renderLeaderboardItem(player, index, "bowling")
+        )
+      ) : (
+        <View className="py-6 items-center justify-center">
+          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No bowling statistics available yet
+          </ThemedText>
         </View>
-      ))}
+      )}
     </ScrollView>
   );
 
@@ -1122,7 +1191,7 @@ export default function TournamentProfile() {
         </ThemedText>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate(SCREENS.EditTournament, { tournament })}
+          onPress={() => navigation.navigate(SCREENS.EditTournament, { tournament: tournamentData || tournament })}
           className="p-2"
         >
           <Ionicons name="create-outline" size={24} color="#2563EB" />

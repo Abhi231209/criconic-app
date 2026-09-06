@@ -13,6 +13,7 @@ import {
   BottomSheetView,
   BottomSheetKeyboardAvoidingView,
 } from "@gorhom/bottom-sheet";
+import useAppTheme from "@/hooks/useAppTheme";
 
 const BottomSheetContext = createContext({
   openSheet: () => {},
@@ -20,6 +21,7 @@ const BottomSheetContext = createContext({
 });
 
 export const BottomSheetProvider = ({ children }) => {
+  const { isDark, colors } = useAppTheme();
   const bottomSheetModalRef = useRef(null);
   const [content, setContent] = useState(null);
 
@@ -39,6 +41,8 @@ export const BottomSheetProvider = ({ children }) => {
     setTimeout(() => setContent(null), 300);
   }, []);
 
+  const sheetBg = isDark ? "#1E293B" : "#FFFFFF";
+
   return (
     <BottomSheetContext.Provider value={{ openSheet, closeSheet }}>
       {children}
@@ -47,11 +51,13 @@ export const BottomSheetProvider = ({ children }) => {
         ref={bottomSheetModalRef}
         index={0}
         snapPoints={["60%", "80%"]}
-        backgroundStyle={{ backgroundColor: "white" }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? "#64748B" : "#CBD5E1" }}
       >
-        <BottomSheetView style={styles.contentContainer}>
+        <BottomSheetView
+          style={[styles.contentContainer, { backgroundColor: sheetBg }]}
+        >
           {content}
-          {/* <View style={styles.container}></View> */}
         </BottomSheetView>
       </BottomSheetModal>
     </BottomSheetContext.Provider>
@@ -61,14 +67,8 @@ export const BottomSheetProvider = ({ children }) => {
 export const useBottomSheet = () => useContext(BottomSheetContext);
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    // you can replace with className if you prefer nativewind
-    backgroundColor: "#fff",
-  },
+  container: {},
   contentContainer: {
     flex: 1,
-    alignItems: "center",
   },
 });

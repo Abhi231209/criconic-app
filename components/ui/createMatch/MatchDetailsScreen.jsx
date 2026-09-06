@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,18 +9,37 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  Alert,
+  ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
+import { matchesApi, userApi } from "@/utils/api";
+import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import debounce from "lodash/debounce";
 
 export default function MatchDetailsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { teamA, teamB, teamASquad, teamBSquad } = route.params;
+  const { teamA: initialTeamA, teamB: initialTeamB, teamASquad: initialTeamASquad, teamBSquad: initialTeamBSquad } = route.params || {};
+  const matchId =
+    route.params?.matchId ||
+    route.params?.matchID ||
+    route.params?.matchDetails?._id ||
+    route.params?.matchDetails?.id ||
+    route.params?.match?._id;
+
+  const [teamA, setTeamA] = useState(initialTeamA);
+  const [teamB, setTeamB] = useState(initialTeamB);
+  const [teamASquad, setTeamASquad] = useState(initialTeamASquad || []);
+  const [teamBSquad, setTeamBSquad] = useState(initialTeamBSquad || []);
+  const [fetchedMatch, setFetchedMatch] = useState(null);
+
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -31,6 +50,7 @@ export default function MatchDetailsScreen() {
     overs: 20,
     powerplay: 6,
     location: "",
+    locationId: "",
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -38,10 +58,128 @@ export default function MatchDetailsScreen() {
   const [showCustomOvers, setShowCustomOvers] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const scrollViewRef = useRef();
   const customOversInputRef = useRef();
   const locationInputRef = useRef();
+  const isLocationFocusedRef = useRef(false);
+  const isLeavingRef = useRef(false);
+
+  useEffect(() => {
+    if (matchId) {
+      matchesApi
+        .getMatchById(matchId, { params: { private: 1 } })
+        .then((res) => {
+          const m = res?.data;
+          if (m) {
+            setFetchedMatch(m);
+            if (
+              m.status &&
+              m.status !== MATCH_STATUS.MATCH_CREATED &&
+              m.status !== MATCH_STATUS.MATCH_SCHEDULED
+            ) {
+              isLeavingRef.current = true;
+              const target = matchRedirectBasedOnStatus(matchId, m.status);
+              navigation.replace(target.screen, target.params);
+              return;
+            }
+            if (m.teams && m.teams.length >= 2) {
+              if (!teamA) setTeamA({ name: m.teams[0].title, _id: m.teams[0].teamId, id: m.teams[0].teamId });
+              if (!teamB) setTeamB({ name: m.teams[1].title, _id: m.teams[1].teamId, id: m.teams[1].teamId });
+              if (teamASquad.length === 0 && m.teams[0].players) setTeamASquad(m.teams[0].players);
+              if (teamBSquad.length === 0 && m.teams[1].players) setTeamBSquad(m.teams[1].players);
+            }
+            if (m.totalOvers) handleInputChange("overs", m.totalOvers);
+            if (m.type) handleInputChange("matchType", m.type);
+            if (m.ballType) handleInputChange("ballType", m.ballType);
+            if (m.location || m.address) handleInputChange("location", m.location || m.address);
+            if (m.locationId) handleInputChange("locationId", m.locationId);
+            if (m.powerplayOvers) handleInputChange("powerplay", m.powerplayOvers);
+          }
+        })
+        .catch((err) => console.warn("[MatchDetailsScreen] Error loading match:", err));
+    }
+  }, [matchId]);
+
+  // Google Places Autocomplete search matching sports-arena
+  const debouncedLocationSearch = useCallback(
+    debounce(async (text) => {
+      try {
+        const res = await userApi.searchLocation(text);
+        const predictions =
+          res?.data?.data?.predictions ||
+          res?.data?.predictions ||
+          res?.data?.data ||
+          [];
+        setLocationSuggestions(Array.isArray(predictions) ? predictions : []);
+        setShowLocationSuggestions(true);
+      } catch (err) {
+        console.warn("[MatchDetailsScreen] searchLocation error:", err);
+        setLocationSuggestions([]);
+      } finally {
+        setIsLoadingLocation(false);
+      }
+    }, 300),
+    []
+  );
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      if (isLocationFocusedRef.current) {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 50);
+      }
+    });
+    return () => {
+      showSub.remove();
+      debouncedLocationSearch.cancel();
+    };
+  }, [debouncedLocationSearch]);
+
+  const handleBack = () => {
+    if (matchId) {
+      saveMatchDetails(MATCH_STATUS.MATCH_DETAILS_ENTERED).catch((e) =>
+        console.warn("[MatchDetailsScreen] auto-save on back error:", e)
+      );
+    }
+    confirmLeavePreScore({
+      navigation,
+      route,
+      onLeave: () => {
+        isLeavingRef.current = true;
+      },
+    });
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      isLeavingRef.current = false;
+
+      const backAction = () => {
+        if (!navigation.isFocused()) return false;
+        handleBack();
+        return true;
+      };
+
+      const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+
+      const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+        const actionType = e.data?.action?.type;
+        if (actionType !== "GO_BACK" && actionType !== "POP") return;
+        if (isLeavingRef.current || !navigation.isFocused()) return;
+        e.preventDefault();
+        handleBack();
+      });
+
+      return () => {
+        backHandler.remove();
+        unsubscribe();
+      };
+    }, [navigation, fetchedMatch, route.params])
+  );
 
   const handleInputChange = (field, value) => {
     setMatchDetails(prev => ({
@@ -59,70 +197,232 @@ export default function MatchDetailsScreen() {
 
   const handleCustomOversSubmit = () => {
     const oversValue = parseInt(customOvers);
-    if (oversValue > 0 && oversValue <= 50) { // Reasonable limit for cricket overs
+    if (oversValue > 0 && oversValue <= 50) {
       handleInputChange("overs", oversValue);
       setShowCustomOvers(false);
       setCustomOvers("");
     } else {
-      alert("Please enter a valid number of overs (1-50)");
+      Alert.alert("Notice", "Please enter a valid number of overs (1-50)");
     }
   };
 
   const handleLocationSearch = (text) => {
     handleInputChange("location", text);
-    setShowLocationSuggestions(text.length > 2);
-    
-    // Mock location suggestions - replace with actual API call
-    if (text.length > 2) {
-      const mockSuggestions = [
-        "Mumbai Cricket Ground",
-        "Delhi Sports Complex",
-        "Bangalore Cricket Stadium",
-        "Chennai MA Chidambaram Stadium",
-        "Kolkata Eden Gardens",
-        "Hyderabad Cricket Association",
-        "Pune Cricket Club",
-        "Ahmedabad Narendra Modi Stadium"
-      ].filter(location => 
-        location.toLowerCase().includes(text.toLowerCase())
-      );
-      setLocationSuggestions(mockSuggestions);
-    } else {
+    handleInputChange("locationId", "");
+    if (!text || text.trim().length < 3) {
       setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      setIsLoadingLocation(false);
+      debouncedLocationSearch.cancel();
+      return;
     }
+    setIsLoadingLocation(true);
+    debouncedLocationSearch(text.trim());
   };
 
-  const selectLocation = (location) => {
-    handleInputChange("location", location);
+  const selectLocation = (item) => {
+    const locationText =
+      item?.description ||
+      item?.formatted_address ||
+      (typeof item === "string" ? item : "");
+    const placeId = item?.place_id || "";
+    setMatchDetails((prev) => ({
+      ...prev,
+      location: locationText,
+      locationId: placeId,
+    }));
     setShowLocationSuggestions(false);
+    setLocationSuggestions([]);
     Keyboard.dismiss();
   };
 
-  const handleCreateMatch = () => {
-    if (!matchDetails.location) {
-      alert("Please enter a location for the match");
-      return;
+  const clearLocation = () => {
+    setMatchDetails((prev) => ({
+      ...prev,
+      location: "",
+      locationId: "",
+    }));
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
+  };
+
+  const saveMatchDetails = async (targetStatus) => {
+    setIsSubmitting(true);
+    try {
+      let targetMatchId = matchId;
+
+      const startDate = (
+        matchDetails.date instanceof Date
+          ? matchDetails.date
+          : new Date(matchDetails.date || Date.now())
+      ).toISOString();
+
+      const updatePayload = {
+        type: matchDetails.matchType,
+        ballType: matchDetails.ballType,
+        totalOvers: Number(matchDetails.overs),
+        startDate,
+        powerplayOvers: Number(matchDetails.powerplay || 0),
+        status: targetStatus,
+      };
+      if (matchDetails.location?.trim()) {
+        updatePayload.location = matchDetails.location.trim();
+      }
+      if (matchDetails.locationId && matchDetails.locationId.trim()) {
+        updatePayload.locationId = matchDetails.locationId.trim();
+      }
+
+      if (targetMatchId) {
+        // Update existing match
+        const updateRes = await matchesApi.updateMatch(targetMatchId, {
+          updateField: updatePayload,
+        });
+
+        if (
+          !updateRes?.data?.success &&
+          updateRes?.status !== 200 &&
+          updateRes?.status !== 202
+        ) {
+          const errMsg =
+            updateRes?.data?.message ||
+            updateRes?.data?.error?.[0]?.message ||
+            updateRes?.data?.error?.[0] ||
+            "Failed to save match details on server";
+          throw new Error(String(errMsg));
+        }
+      } else {
+        // Fallback: create match on server first
+        const isValidObjectId = (id) =>
+          typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
+
+        const sanitizePlayer = (p) => {
+          const rawId = p?.id?._id || p?.id || p?._id;
+          const idStr =
+            rawId && typeof rawId === "object"
+              ? String(rawId._id || rawId.id || "")
+              : String(rawId || "");
+          const playerObj = {
+            username: p?.username || p?.name || "Player",
+          };
+          if (isValidObjectId(idStr)) {
+            playerObj.id = idStr;
+          }
+          return playerObj;
+        };
+
+        const teamAId = String(teamA?._id || teamA?.id || teamA?.teamId || "");
+        const teamBId = String(teamB?._id || teamB?.id || teamB?.teamId || "");
+
+        const teams = [
+          {
+            teamId: teamAId,
+            teamName: teamA?.name || teamA?.title || "Team A",
+            teamLogo: teamA?.image || teamA?.logo,
+            players: (teamASquad || []).map(sanitizePlayer),
+          },
+          {
+            teamId: teamBId,
+            teamName: teamB?.name || teamB?.title || "Team B",
+            teamLogo: teamB?.image || teamB?.logo,
+            players: (teamBSquad || []).map(sanitizePlayer),
+          },
+        ];
+
+        const dataToSend = { teams };
+        if (route.params?.tournamentId || route.params?.tournamentID) {
+          dataToSend.tournamentID =
+            route.params?.tournamentId || route.params?.tournamentID;
+        }
+
+        const res = await matchesApi.createMatch(dataToSend);
+        targetMatchId =
+          res?.data?.data?.matchID ||
+          res?.data?.data?._id ||
+          res?.data?.matchID ||
+          res?.data?._id;
+
+        if (!targetMatchId) {
+          const errMsg =
+            res?.data?.message ||
+            res?.data?.error?.[0]?.message ||
+            res?.data?.error?.[0] ||
+            res?.data?.reason ||
+            "Failed to create match on server";
+          throw new Error(String(errMsg));
+        }
+
+        // Now persist match details via PUT
+        const updateRes = await matchesApi.updateMatch(targetMatchId, {
+          updateField: updatePayload,
+        });
+
+        if (
+          !updateRes?.data?.success &&
+          updateRes?.status !== 200 &&
+          updateRes?.status !== 202
+        ) {
+          const errMsg =
+            updateRes?.data?.message ||
+            updateRes?.data?.error?.[0]?.message ||
+            "Failed to save match details on server";
+          throw new Error(String(errMsg));
+        }
+      }
+
+      return targetMatchId;
+    } catch (error) {
+      console.warn("[MatchDetailsScreen] Save error:", error);
+      const errorMsg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error?.[0]?.message ||
+        error?.response?.data?.error?.[0] ||
+        error?.message ||
+        "Failed to save match details. Please try again.";
+      Alert.alert("Error", String(errorMsg));
+      return null;
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    // Here you would typically save the match details and navigate to the match screen
-    console.log("Match Details:", {
+  };
+
+  const handleStartMatch = async () => {
+    const savedMatchId = await saveMatchDetails(
+      MATCH_STATUS.MATCH_DETAILS_ENTERED
+    );
+    if (!savedMatchId) return;
+
+    isLeavingRef.current = true;
+    navigation.navigate(SCREENS.TossScreen, {
+      matchId: savedMatchId,
       teamA,
       teamB,
       teamASquad,
       teamBSquad,
-      ...matchDetails
+      matchDetails,
+      fromMatchDetails: true,
+      returnScreen: route.params?.returnScreen,
+      tournamentId: route.params?.tournamentId || route.params?.tournamentID,
     });
-    
-    // Navigate to the match screen or dashboard
-    // navigation.navigate(SCREENS.MatchScreen, { matchData: {...} });
-    alert("Match created successfully!");
-    // navigation.goBack();
-    navigation.navigate(SCREENS.TossScreen , {
-        teamA,
-        teamB,
-        teamASquad,
-        teamBSquad
-      });
+  };
+
+  const handleScheduleMatch = async () => {
+    const savedMatchId = await saveMatchDetails(MATCH_STATUS.MATCH_SCHEDULED);
+    if (!savedMatchId) return;
+
+    isLeavingRef.current = true;
+    Alert.alert("Success", "Match has been scheduled successfully!");
+
+    const tId = route.params?.tournamentId || route.params?.tournamentID;
+    if (tId) {
+      navigation.navigate(SCREENS.TournamentProfile, { tournamentId: tId });
+    } else if (
+      route.params?.returnScreen &&
+      route.params?.returnScreen !== SCREENS.CreateMatch
+    ) {
+      navigation.navigate(route.params.returnScreen);
+    } else {
+      navigation.navigate(SCREENS.MyCricket);
+    }
   };
 
   const formatDate = (date) => {
@@ -141,15 +441,15 @@ export default function MatchDetailsScreen() {
     setShowCustomOvers(true);
     setTimeout(() => {
       customOversInputRef.current?.focus();
-      scrollToInput(400); // Adjust this value based on your layout
-    }, 100);
+      scrollToInput(380);
+    }, 150);
   };
 
   const focusLocationInput = () => {
+    isLocationFocusedRef.current = true;
     setTimeout(() => {
-      locationInputRef.current?.focus();
-      scrollToInput(600); // Adjust this value based on your layout
-    }, 100);
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   };
 
   const renderOptionButton = (value, label, icon, isSelected) => (
@@ -212,7 +512,7 @@ export default function MatchDetailsScreen() {
         }`}
       >
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           className="p-2 mr-2"
         >
           <Ionicons name="arrow-back" size={24} color="#2563EB" />
@@ -223,7 +523,7 @@ export default function MatchDetailsScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
@@ -231,6 +531,7 @@ export default function MatchDetailsScreen() {
           ref={scrollViewRef}
           className="flex-1 p-4" 
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 260 }}
           showsVerticalScrollIndicator={true}
         >
           {/* Teams Preview */}
@@ -463,71 +764,168 @@ export default function MatchDetailsScreen() {
             </View>
           </View>
 
-          {/* Location Input with Search */}
+          {/* Location Input with Google Places Autocomplete */}
           <View className="mb-6">
             <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Location
+              Location / Ground
             </ThemedText>
             <View className="relative">
-              <TextInput
-                ref={locationInputRef}
-                placeholder="Search for location..."
-                placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                value={matchDetails.location}
-                onChangeText={handleLocationSearch}
-                onFocus={focusLocationInput}
-                className={`p-4 rounded-xl ${
-                  isDarkMode ? "bg-gray-800 text-white" : "bg-white text-gray-900"
-                } border ${
-                  isDarkMode ? "border-gray-700" : "border-gray-200"
-                }`}
-                style={{ fontSize: 16 }}
-              />
-              
-              {showLocationSuggestions && locationSuggestions.length > 0 && (
-                <View className={`absolute top-full left-0 right-0 mt-1 rounded-xl z-10 max-h-40 ${
+              <View
+                className={`flex-row items-center px-4 py-3 rounded-xl border ${
                   isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                } border shadow-lg`}>
-                  <ScrollView keyboardShouldPersistTaps="always">
-                    {locationSuggestions.map((location, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        onPress={() => selectLocation(location)}
-                        className={`p-3 border-b ${
-                          isDarkMode ? "border-gray-700" : "border-gray-200"
-                        }`}
-                      >
-                        <ThemedText className="text-gray-900 dark:text-white">
-                          {location}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    ))}
+                }`}
+              >
+                <Ionicons
+                  name="location"
+                  size={20}
+                  color={matchDetails.location ? "#2563EB" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={locationInputRef}
+                  placeholder="Search for ground or city location..."
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  value={matchDetails.location}
+                  onChangeText={handleLocationSearch}
+                  onFocus={focusLocationInput}
+                  onBlur={() => {
+                    isLocationFocusedRef.current = false;
+                  }}
+                  className={`flex-1 text-base ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                  style={{ fontSize: 15 }}
+                />
+                {isLoadingLocation && (
+                  <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 6 }} />
+                )}
+                {matchDetails.location ? (
+                  <TouchableOpacity onPress={clearLocation} className="p-1">
+                    <Ionicons
+                      name="close-circle"
+                      size={20}
+                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {/* Suggestions dropdown */}
+              {showLocationSuggestions && locationSuggestions.length > 0 && (
+                <View
+                  className={`mt-2 rounded-xl z-20 max-h-56 ${
+                    isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                  } border shadow-lg overflow-hidden`}
+                >
+                  <ScrollView
+                    keyboardShouldPersistTaps="always"
+                    nestedScrollEnabled={true}
+                    className="max-h-56"
+                  >
+                    {locationSuggestions.map((item, index) => {
+                      const mainText =
+                        item?.structured_formatting?.main_text ||
+                        item?.description ||
+                        (typeof item === "string" ? item : "Location");
+                      const secondaryText = item?.structured_formatting?.secondary_text || "";
+
+                      return (
+                        <TouchableOpacity
+                          key={item?.place_id || index}
+                          onPress={() => selectLocation(item)}
+                          className={`p-3.5 border-b flex-row items-center ${
+                            isDarkMode
+                              ? "border-gray-700 active:bg-gray-700"
+                              : "border-gray-100 active:bg-blue-50"
+                          }`}
+                        >
+                          <Ionicons
+                            name="location-outline"
+                            size={18}
+                            color="#2563EB"
+                            style={{ marginRight: 10 }}
+                          />
+                          <View className="flex-1">
+                            <ThemedText
+                              numberOfLines={1}
+                              className={`text-sm font-semibold ${
+                                isDarkMode ? "text-white" : "text-gray-900"
+                              }`}
+                            >
+                              {mainText}
+                            </ThemedText>
+                            {secondaryText ? (
+                              <ThemedText
+                                numberOfLines={1}
+                                className={`text-xs mt-0.5 ${
+                                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                                }`}
+                              >
+                                {secondaryText}
+                              </ThemedText>
+                            ) : null}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </ScrollView>
                 </View>
               )}
+
+              {/* No results notice */}
+              {showLocationSuggestions &&
+                !isLoadingLocation &&
+                locationSuggestions.length === 0 &&
+                matchDetails.location?.trim()?.length >= 3 && (
+                  <View
+                    className={`mt-2 p-3 rounded-xl ${
+                      isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                    } border`}
+                  >
+                    <ThemedText className="text-xs text-center text-gray-500 dark:text-gray-400">
+                      No Google places found. Your typed location will be used.
+                    </ThemedText>
+                  </View>
+                )}
             </View>
           </View>
 
-          {/* Create Match Button */}
-          <TouchableOpacity
-            onPress={handleCreateMatch}
-            disabled={!matchDetails.location}
-            className={`p-4 rounded-xl mt-4 mb-8 ${
-              !matchDetails.location
-                ? "bg-gray-400"
-                : "bg-blue-500"
-            }`}
-          >
-            <ThemedText className="text-white text-center text-lg font-semibold">
-              Create Match
-            </ThemedText>
-          </TouchableOpacity>
+          {/* Action Buttons: Schedule and Start Match (matching sports-arena MatchDetails) */}
+          <View className="flex-row items-center gap-3 mt-6 mb-8">
+            <TouchableOpacity
+              onPress={handleScheduleMatch}
+              disabled={isSubmitting}
+              className={`flex-1 p-4 rounded-xl items-center justify-center border ${
+                isDarkMode
+                  ? "border-blue-500/40 bg-gray-800"
+                  : "border-blue-400 bg-white"
+              } ${isSubmitting ? "opacity-50" : ""}`}
+            >
+              <ThemedText
+                className={`text-base font-bold ${
+                  isDarkMode ? "text-blue-400" : "text-blue-600"
+                }`}
+              >
+                Schedule
+              </ThemedText>
+            </TouchableOpacity>
 
-          {!matchDetails.location && (
-            <ThemedText className="text-red-500 text-center mt-2 mb-8">
-              Please enter a location to create the match
-            </ThemedText>
-          )}
+            <TouchableOpacity
+              onPress={handleStartMatch}
+              disabled={isSubmitting}
+              className={`flex-1 p-4 rounded-xl items-center justify-center bg-blue-600 ${
+                isSubmitting ? "bg-blue-400" : ""
+              }`}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <ThemedText className="text-white text-base font-bold">
+                  Start Match
+                </ThemedText>
+              )}
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

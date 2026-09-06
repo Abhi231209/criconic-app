@@ -15,6 +15,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
 import SwipeableTabs from "../custom/SwipeableTab";
 import SCREENS from "@/screens";
+import { useSelector } from "react-redux";
 
 export default function PlayerProfile() {
   const navigation = useNavigation();
@@ -30,7 +31,34 @@ export default function PlayerProfile() {
     achievements: false
   });
 
-  // Sample player data
+  const routePlayer = route?.params?.player;
+  const authUser = useSelector((state) => state?.auth?.user);
+
+  // Dynamic player data derived from route params or Redux auth user
+  const player = {
+    id: routePlayer?._id || routePlayer?.id || authUser?._id || authUser?.id || "1",
+    name: routePlayer?.username || routePlayer?.name || authUser?.username || "Player",
+    shortName: routePlayer?.shortName || routePlayer?.username || authUser?.username || "Player",
+    team: routePlayer?.team || "Unassigned",
+    nationality: routePlayer?.nationality || routePlayer?.location || "India",
+    age: routePlayer?.age || "-",
+    role: routePlayer?.role || authUser?.role || "Player",
+    battingStyle: routePlayer?.battingStyle || "Right Handed",
+    bowlingStyle: routePlayer?.bowlingStyle || "Right Arm Medium",
+    photo: routePlayer?.profileImage || routePlayer?.photo || authUser?.profileImage || null,
+    debut: routePlayer?.debut || "-",
+    matches: routePlayer?.matches || 0,
+    runs: routePlayer?.runs || 0,
+    wickets: routePlayer?.wickets || 0,
+    highestScore: routePlayer?.highestScore || 0,
+    bestBowling: routePlayer?.bestBowling || "-",
+    average: routePlayer?.average || 0,
+    strikeRate: routePlayer?.strikeRate || 0,
+    economy: routePlayer?.economy || 0,
+  };
+
+  // HARDCODED SAMPLE PLAYER DATA - COMMENTED OUT (API ONLY)
+  /*
   const player = {
     id: "1",
     name: "Virat Kohli",
@@ -231,6 +259,90 @@ export default function PlayerProfile() {
       description: "Reached 5000 runs in 157 innings"
     },
   ];
+  */
+
+  const battingStats = {
+    all: {
+      matches: player.matches,
+      innings: player.matches,
+      runs: player.runs,
+      average: player.average,
+      strikeRate: player.strikeRate,
+      highest: player.highestScore,
+      centuries: 0,
+      fifties: 0,
+      fours: 0,
+      sixes: 0,
+    },
+    leather: {
+      matches: 0,
+      innings: 0,
+      runs: 0,
+      average: 0,
+      strikeRate: 0,
+      highest: 0,
+      centuries: 0,
+      fifties: 0,
+      fours: 0,
+      sixes: 0,
+    },
+    tennis: {
+      matches: 0,
+      innings: 0,
+      runs: 0,
+      average: 0,
+      strikeRate: 0,
+      highest: 0,
+      centuries: 0,
+      fifties: 0,
+      fours: 0,
+      sixes: 0,
+    },
+  };
+
+  const bowlingStats = {
+    all: {
+      matches: player.matches,
+      innings: 0,
+      wickets: player.wickets,
+      average: player.average,
+      economy: player.economy,
+      bestBowling: player.bestBowling,
+      strikeRate: 0,
+      maidens: 0,
+      fourWickets: 0,
+      fiveWickets: 0,
+    },
+    leather: {
+      matches: 0,
+      innings: 0,
+      wickets: 0,
+      average: 0,
+      economy: 0,
+      bestBowling: "-",
+      strikeRate: 0,
+      maidens: 0,
+      fourWickets: 0,
+      fiveWickets: 0,
+    },
+    tennis: {
+      matches: 0,
+      innings: 0,
+      wickets: 0,
+      average: 0,
+      economy: 0,
+      bestBowling: "-",
+      strikeRate: 0,
+      maidens: 0,
+      fourWickets: 0,
+      fiveWickets: 0,
+    },
+  };
+
+  const liveMatches = [];
+  const recentMatches = [];
+  const teams = [];
+  const achievements = [];
 
   const tabs = [
     {
@@ -684,94 +796,107 @@ export default function PlayerProfile() {
       )}
 
       {/* Recent Matches */}
-      <ThemedText
-        className={`text-lg font-bold mb-4 mt-6 ${
-          isDarkMode ? "text-white" : "text-gray-900"
-        }`}
-      >
-        📊 Recent Matches
-      </ThemedText>
-
-      {recentMatches.map((match) => (
-        <TouchableOpacity
-          key={match.id}
-          className={`p-4 rounded-xl mb-3 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } shadow-sm`}
-          onPress={() => {
-            // Navigate to match details
-          }}
-        >
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`text-sm font-medium ${
-                isDarkMode ? "text-gray-400" : "text-gray-500"
-              }`}
-            >
-              {match.date}
-            </ThemedText>
-            <View className="flex-row items-center">
-              <Ionicons
-                name="chevron-forward-outline"
-                size={16}
-                color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-              />
-            </View>
-          </View>
-
+      {recentMatches.length > 0 && (
+        <>
           <ThemedText
-            className={`text-base font-semibold mb-1 ${
+            className={`text-lg font-bold mb-4 mt-6 ${
               isDarkMode ? "text-white" : "text-gray-900"
             }`}
           >
-            {match.team1} vs {match.team2}
+            📊 Recent Matches
           </ThemedText>
 
-          <ThemedText
-            className={`text-sm mb-2 ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            {match.score}
-          </ThemedText>
-
-          <View className="flex-row justify-between items-center">
-            <ThemedText
-              className={`text-sm ${
-                match.result.includes("won")
-                  ? "text-green-600"
-                  : "text-red-600"
-              }`}
+          {recentMatches.map((match) => (
+            <TouchableOpacity
+              key={match.id}
+              className={`p-4 rounded-xl mb-3 ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
+              } shadow-sm`}
+              onPress={() => {
+                // Navigate to match details
+              }}
             >
-              {match.result}
-            </ThemedText>
+              <View className="flex-row justify-between items-center mb-2">
+                <ThemedText
+                  className={`text-sm font-medium ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  {match.date}
+                </ThemedText>
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="chevron-forward-outline"
+                    size={16}
+                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  />
+                </View>
+              </View>
+
+              <ThemedText
+                className={`text-base font-semibold mb-1 ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {match.team1} vs {match.team2}
+              </ThemedText>
+
+              <ThemedText
+                className={`text-sm mb-2 ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                {match.score}
+              </ThemedText>
+
+              <View className="flex-row justify-between items-center">
+                <ThemedText
+                  className={`text-sm ${
+                    match.result.includes("won")
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {match.result}
+                </ThemedText>
+                <ThemedText
+                  className={`text-sm font-medium ${
+                    isDarkMode ? "text-blue-400" : "text-blue-600"
+                  }`}
+                >
+                  {match.playerPerformance}
+                </ThemedText>
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity
+            className={`p-4 rounded-xl items-center mt-2 ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            } shadow-sm`}
+            onPress={() => {
+              // Navigate to all matches
+            }}
+          >
             <ThemedText
-              className={`text-sm font-medium ${
+              className={`text-blue-600 font-medium ${
                 isDarkMode ? "text-blue-400" : "text-blue-600"
               }`}
             >
-              {match.playerPerformance}
+              View All Matches
             </ThemedText>
-          </View>
-        </TouchableOpacity>
-      ))}
+          </TouchableOpacity>
+        </>
+      )}
 
-      <TouchableOpacity
-        className={`p-4 rounded-xl items-center mt-2 ${
-          isDarkMode ? "bg-gray-800" : "bg-white"
-        } shadow-sm`}
-        onPress={() => {
-          // Navigate to all matches
-        }}
-      >
-        <ThemedText
-          className={`text-blue-600 font-medium ${
-            isDarkMode ? "text-blue-400" : "text-blue-600"
-          }`}
-        >
-          View All Matches
-        </ThemedText>
-      </TouchableOpacity>
+      {liveMatches.length === 0 && recentMatches.length === 0 && (
+        <View className="items-center justify-center py-12">
+          <Ionicons name="calendar-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No match records found
+          </ThemedText>
+        </View>
+      )}
     </ScrollView>
   );
 
@@ -789,102 +914,111 @@ export default function PlayerProfile() {
         Teams Played For
       </ThemedText>
 
-      {teams.map((team) => (
-        <TouchableOpacity
-          key={team.id}
-          className={`p-4 rounded-xl mb-3 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } shadow-sm`}
-          onPress={() => {
-            // Navigate to team details
-          }}
-        >
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`text-lg font-semibold ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {team.name}
-            </ThemedText>
-            <View className="flex-row items-center">
-              <Ionicons
-                name="chevron-forward-outline"
-                size={16}
-                color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-              />
+      {teams.length === 0 ? (
+        <View className="items-center justify-center py-12">
+          <Ionicons name="shirt-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No team history available
+          </ThemedText>
+        </View>
+      ) : (
+        teams.map((team) => (
+          <TouchableOpacity
+            key={team.id}
+            className={`p-4 rounded-xl mb-3 ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            } shadow-sm`}
+            onPress={() => {
+              // Navigate to team details
+            }}
+          >
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText
+                className={`text-lg font-semibold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {team.name}
+              </ThemedText>
+              <View className="flex-row items-center">
+                <Ionicons
+                  name="chevron-forward-outline"
+                  size={16}
+                  color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                />
+              </View>
             </View>
-          </View>
 
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              Seasons
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {team.seasons}
-            </ThemedText>
-          </View>
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                Seasons
+              </ThemedText>
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {team.seasons}
+              </ThemedText>
+            </View>
 
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              Matches
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {team.matches}
-            </ThemedText>
-          </View>
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                Matches
+              </ThemedText>
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {team.matches}
+              </ThemedText>
+            </View>
 
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              Role
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {team.role}
-            </ThemedText>
-          </View>
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                Role
+              </ThemedText>
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {team.role}
+              </ThemedText>
+            </View>
 
-          <View className="flex-row justify-between items-center">
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              Runs/Wickets
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {team.runs} / {team.wickets}
-            </ThemedText>
-          </View>
-        </TouchableOpacity>
-      ))}
+            <View className="flex-row justify-between items-center">
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                Runs/Wickets
+              </ThemedText>
+              <ThemedText
+                className={`text-sm ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {team.runs} / {team.wickets}
+              </ThemedText>
+            </View>
+          </TouchableOpacity>
+        ))
+      )}
     </ScrollView>
   );
 
@@ -902,43 +1036,52 @@ export default function PlayerProfile() {
         Player Achievements
       </ThemedText>
 
-      {achievements.map((achievement) => (
-        <View
-          key={achievement.id}
-          className={`p-4 rounded-xl mb-3 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } shadow-sm`}
-        >
-          <View className="flex-row items-start mb-2">
-            <View className="w-8 h-8 bg-yellow-100 rounded-full items-center justify-center mr-3 mt-1">
-              <Ionicons name="trophy-outline" size={16} color="#F59E0B" />
-            </View>
-            <View className="flex-1">
-              <ThemedText
-                className={`text-lg font-semibold ${
-                  isDarkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {achievement.title}
-              </ThemedText>
-              <ThemedText
-                className={`text-sm font-medium mb-1 ${
-                  isDarkMode ? "text-yellow-400" : "text-yellow-600"
-                }`}
-              >
-                {achievement.tournament}
-              </ThemedText>
-              <ThemedText
-                className={`text-sm ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                {achievement.description}
-              </ThemedText>
+      {achievements.length === 0 ? (
+        <View className="items-center justify-center py-12">
+          <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No achievements recorded
+          </ThemedText>
+        </View>
+      ) : (
+        achievements.map((achievement) => (
+          <View
+            key={achievement.id}
+            className={`p-4 rounded-xl mb-3 ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            } shadow-sm`}
+          >
+            <View className="flex-row items-start mb-2">
+              <View className="w-8 h-8 bg-yellow-100 rounded-full items-center justify-center mr-3 mt-1">
+                <Ionicons name="trophy-outline" size={16} color="#F59E0B" />
+              </View>
+              <View className="flex-1">
+                <ThemedText
+                  className={`text-lg font-semibold ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {achievement.title}
+                </ThemedText>
+                <ThemedText
+                  className={`text-sm font-medium mb-1 ${
+                    isDarkMode ? "text-yellow-400" : "text-yellow-600"
+                  }`}
+                >
+                  {achievement.tournament}
+                </ThemedText>
+                <ThemedText
+                  className={`text-sm ${
+                    isDarkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  {achievement.description}
+                </ThemedText>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
+        ))
+      )}
     </ScrollView>
   );
 

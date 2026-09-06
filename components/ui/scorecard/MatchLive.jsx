@@ -40,6 +40,8 @@ export default function MatchLive({ score }) {
     border: isDark ? "#334155" : "#e2e8f0",
   };
 
+  // HARDCODED SAMPLE DATA - COMMENTED OUT (API ONLY)
+  /*
   // Sample data
   const recentOvers = [
     { over: 18.1, balls: ["1", "1", "1", "4", "2", "W"] },
@@ -65,6 +67,34 @@ export default function MatchLive({ score }) {
     { over: 18.1, ball: 5, comment: "Pushed to deep midwicket, they take two" },
     { over: 18.1, ball: 6, comment: "OUT! Caught behind! The bowler gets the breakthrough" },
   ];
+  */
+
+  const recentOvers = score?.recentOvers || (score?.currentOver ? [{ over: score?.batting?.score?.over || "Current", balls: score.currentOver }] : []);
+
+  const currentBatsmen = (score?.batsman || []).map((b) => ({
+    name: b.name || "Batter",
+    runs: b.runs ?? 0,
+    balls: b.ballsFaced ?? 0,
+    fours: b.fours ?? 0,
+    sixes: b.sixes ?? 0,
+    sr: b.sr ?? (b.ballsFaced ? ((b.runs / b.ballsFaced) * 100).toFixed(1) : "0.00"),
+    isBatting: !!b.isStrikeEnd
+  }));
+
+  const bObj = score?.bowler || score?.bowling?.lastTwoBowlers?.[0] || {};
+  const currentBowler = {
+    name: bObj.name || "Bowler",
+    wickets: bObj.wicketsTaken ?? 0,
+    runs: bObj.runsGiven ?? 0,
+    balls: bObj.balls ?? 0,
+    economy: bObj.eco ?? "0.00"
+  };
+
+  const commentaryData = (score?.commentary || []).map((c, idx) => ({
+    over: c.over || String(idx + 1),
+    ball: "",
+    comment: c.message || c.comment || ""
+  }));
 
   const BallIndicator = ({ ball, index }) => (
     <View
@@ -263,10 +293,10 @@ export default function MatchLive({ score }) {
             isDark ? "border-gray-600" : "border-gray-300"
           }`}>
             <ThemedText className={isDark ? "text-gray-400 text-xs" : "text-gray-500 text-xs"}>
-              P'ship: 3(3)
+              P'ship: {score?.partnerships?.totalRuns ?? 0}({score?.partnerships?.balls ?? 0})
             </ThemedText>
             <ThemedText className={isDark ? "text-gray-400 text-xs" : "text-gray-500 text-xs"}>
-              Last Wkt: Ellyse Perry 55(43)
+              Last Wkt: {score?.prompt?.[2] || "None"}
             </ThemedText>
           </View>
         </View>
@@ -345,27 +375,14 @@ export default function MatchLive({ score }) {
               Current
             </ThemedText>
             <ThemedText className="text-green-500 font-semibold">
-              5.84*
+              {score?.batting?.score?.CRR || "0.00"}*
             </ThemedText>
           </View>
           
-          <View className="flex-row justify-between mb-4">
-            {[5.5, 6.0, 6.5].map((rate, index) => (
-              <View key={index} className="items-center">
-                <ThemedText className={isDark ? "text-gray-400 text-xs" : "text-gray-600 text-xs"}>
-                  RR {rate}
-                </ThemedText>
-                <ThemedText className={isDark ? "text-white font-semibold" : "text-gray-900 font-semibold"}>
-                  {Math.round(120 * (rate/5.84))}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-
-          <ThemedText className={`text-xs text-center ${
+          <ThemedText className={`text-xs text-center mt-2 ${
             isDark ? "text-gray-400" : "text-gray-600"
           }`}>
-            Projected Score as per current Run Rate: 120
+            Projected Score as per current Run Rate: {score?.batting?.score?.projectedScore || "-"}
           </ThemedText>
         </View>
       </View>

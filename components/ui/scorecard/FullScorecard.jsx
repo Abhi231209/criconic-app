@@ -44,7 +44,8 @@ export default function FullScoreCard({
     mutedForeground: isDark ? "#94a3b8" : "#64748b",
   };
 
-  // Sample data structure for both innings
+  // HARDCODED SAMPLE DATA FOR BOTH INNINGS - COMMENTED OUT (API ONLY)
+  /*
   const sampleInning1 = {
     batting: {
       battingTeam: "WF-W",
@@ -117,13 +118,62 @@ export default function FullScoreCard({
     inningNumber: 2,
     description: "BP-W 2nd Innings - Target: 146"
   };
+  */
 
-  // Use provided score or sample data
-  const inning1Data = inning_I || sampleInning1;
-  const inning2Data = score || sampleInning2;
+  const emptyInning = {
+    batting: {
+      battingTeam: "Team 1",
+      score: {
+        runs: 0,
+        wicket: 0,
+        over: "0.0",
+        CRR: "0.00",
+        projectedScore: 0
+      },
+      isSuperOver: false
+    },
+    playedBatsman: [],
+    extras: 0,
+    batsmanUpcoming: [],
+    bowling: {
+      allBowlers: []
+    },
+    fallOfWickets: [],
+    inningNumber: 1,
+    description: ""
+  };
+
+  const getInningData = (rawInning, fallbackTeam) => {
+    if (!rawInning) return { ...emptyInning, batting: { ...emptyInning.batting, battingTeam: fallbackTeam } };
+    return {
+      batting: {
+        battingTeam: rawInning.batting?.battingTeam || rawInning.battingTeam || fallbackTeam,
+        score: {
+          runs: rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0,
+          wicket: rawInning.batting?.score?.wicket ?? rawInning.score?.wicket ?? rawInning.wickets ?? 0,
+          over: rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0",
+          CRR: rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00",
+          projectedScore: rawInning.batting?.score?.projectedScore ?? rawInning.score?.projectedScore ?? 0,
+        },
+        isSuperOver: rawInning.isSuperOver || false,
+      },
+      playedBatsman: Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : (Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
+      extras: rawInning.extras ?? 0,
+      batsmanUpcoming: Array.isArray(rawInning.batsmanUpcoming) ? rawInning.batsmanUpcoming : [],
+      bowling: {
+        allBowlers: Array.isArray(rawInning.bowling?.allBowlers) ? rawInning.bowling.allBowlers : (Array.isArray(rawInning.bowling?.bowlers) ? rawInning.bowling.bowlers : (Array.isArray(rawInning.bowlers) ? rawInning.bowlers : [])),
+      },
+      fallOfWickets: Array.isArray(rawInning.fallOfWickets) ? rawInning.fallOfWickets : [],
+      inningNumber: rawInning.inningNumber || 1,
+      description: rawInning.description || "",
+    };
+  };
+
+  const inning1Data = getInningData(inning_I || (score?.inning && score.inning[0]), score?.teams?.[0]?.title || "Inning 1");
+  const inning2Data = getInningData((score?.inning && score.inning[1]) || (score?.inning ? null : score), score?.teams?.[1]?.title || "Inning 2");
   
   const currentInning = activeInning === 1 ? inning1Data : inning2Data;
-  const isSecondInningComplete = inning2Data.batting.score.wicket === 9 || 
+  const isSecondInningComplete = (inning2Data.batting.score.wicket >= 10) || 
                                  inning2Data.batting.score.over === "20.0";
 
   // Function to get batsman description

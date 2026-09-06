@@ -5,6 +5,7 @@ import authReducer from "./authSlice";
 import userReducer from "./userSlice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persistReducer, persistStore } from "redux-persist";
+import User from "@/utils/User";
 import {
   FLUSH,
   REHYDRATE,
@@ -29,7 +30,7 @@ export const store = configureStore({
     theme: themeReducer,
     device: deviceReducer,
     auth: persistedAuthReducer,
-    user: userReducer
+    user: userReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -42,5 +43,11 @@ export const store = configureStore({
 });
 
 export const persistor = persistStore(store, null, () => {
-  console.log('Rehydration complete');
+  const state = store.getState();
+  if (state?.auth?.user) {
+    User.login(state.auth.user);
+    console.log("Rehydration complete - User initialized:", User.id, User.name);
+  } else {
+    console.log("Rehydration complete - No saved user");
+  }
 });

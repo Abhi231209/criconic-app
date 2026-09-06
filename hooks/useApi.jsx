@@ -10,7 +10,20 @@ import { Alert } from "react-native";
 // import toast from "react-hot-toast";
 // import { v4 as uuidv4 } from "uuid";
 
-export const  apiUrl = "https://devapi.criconic.com/";
+export {
+  apiUrl,
+  request,
+  upload,
+  authApi,
+  teamsApi,
+  tournamentsApi,
+  matchesApi,
+  searchApi,
+  configApi,
+  userApi,
+} from "../utils/api";
+import requestDefault from "../utils/api";
+export default requestDefault;
 
 // --------------------------------------------
 // GET Request Hook

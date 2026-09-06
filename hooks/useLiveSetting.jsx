@@ -10,7 +10,7 @@ import {
   Alert,
   Linking
 } from "react-native";
-import { Copy, ExternalLink, Users, BarChart3, Trophy, Stream } from "lucide-react-native";
+import { Copy, ExternalLink, Users, BarChart3, Trophy, Radio } from "lucide-react-native";
 // import { ScorerScreenContext } from "./ScorerScreen";
 // import request from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
@@ -18,29 +18,7 @@ import { LiveSettings, MatchSettingEnum, settingToHideIfNoLive } from "@/utils/C
 import * as Clipboard from 'expo-clipboard';
 import { useAxiosGet } from "./useApi";
 import ThemedText from "@/components/ui/custom/ThemedText";
-
-const COLORS = {
-  primary: '#3B82F6',
-  primaryDark: '#2563EB',
-  secondary: '#10B981',
-  accent: '#8B5CF6',
-  danger: '#EF4444',
-  warning: '#F59E0B',
-  light: {
-    background: '#F5F5F5',
-    card: '#FFFFFF',
-    text: '#1F2937',
-    textSecondary: '#6B7280',
-    border: '#E5E7EB',
-  },
-  dark: {
-    background: '#121212',
-    card: '#1E1E1E',
-    text: '#FFFFFF',
-    textSecondary: '#D1D5DB',
-    border: '#374151',
-  }
-};
+import { COLORS } from "@/theme/colors";
 
 const request =() =>{
     
@@ -177,7 +155,7 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
                 navigation.navigate(SCREENS.ThemeConfig);
               }}
             >
-              <Stream size={20} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
+              <Radio size={20} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
               <ThemedText style={[styles.buttonText, isDarkMode ? styles.darkText : styles.lightText]}>
                 Overlay Setup
               </ThemedText>

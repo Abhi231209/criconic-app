@@ -22,9 +22,11 @@ export default function CustomRunModal({
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
+  const defaultRuns = (type === "bye" || type === "lb") ? 1 : 0;
+  const runsValue = runsEnter === "" ? defaultRuns : (parseInt(runsEnter, 10) || 0);
+
   let description = "";
   let prams = {};
-  const runsValue = parseInt(runsEnter) || 0;
 
   switch (type) {
     case "nb":
@@ -48,6 +50,7 @@ export default function CustomRunModal({
       prams = { bowler: runsValue };
       break;
     case "cr":
+      description = `${runsValue} Run(s)`;
       prams = { runs: runsValue, runType: runsType, ballType: "ball" };
       break;
     default:
@@ -74,21 +77,27 @@ export default function CustomRunModal({
       style={styles.radioContainer}
       onPress={() => setRunsType(value)}
     >
-      <View style={[
-        styles.radioOuter,
-        { borderColor: isDark ? "#666" : "#ccc" }
-      ]}>
+      <View
+        style={[
+          styles.radioOuter,
+          { borderColor: isDark ? "#666" : "#ccc" },
+        ]}
+      >
         {selected && (
-          <View style={[
-            styles.radioInner,
-            { backgroundColor: isDark ? "#60a5fa" : "#3b82f6" }
-          ]} />
+          <View
+            style={[
+              styles.radioInner,
+              { backgroundColor: isDark ? "#60a5fa" : "#3b82f6" },
+            ]}
+          />
         )}
       </View>
-      <Text style={[
-        styles.radioLabel,
-        { color: isDark ? "#e5e5e5" : "#1f2937" }
-      ]}>
+      <Text
+        style={[
+          styles.radioLabel,
+          { color: isDark ? "#e5e5e5" : "#1f2937" },
+        ]}
+      >
         {label}
       </Text>
     </TouchableOpacity>
@@ -102,19 +111,25 @@ export default function CustomRunModal({
       onRequestClose={handleCancel}
     >
       <View style={styles.backdrop}>
-        <View style={[
-          styles.modalContent,
-          { backgroundColor: isDark ? "#1f2937" : "#ffffff" }
-        ]}>
+        <View
+          style={[
+            styles.modalContent,
+            { backgroundColor: isDark ? "#1f2937" : "#ffffff" },
+          ]}
+        >
           {/* Header */}
-          <View style={[
-            styles.header,
-            { borderBottomColor: isDark ? "#374151" : "#e5e7eb" }
-          ]}>
-            <Text style={[
-              styles.title,
-              { color: isDark ? "#f9fafb" : "#111827" }
-            ]}>
+          <View
+            style={[
+              styles.header,
+              { borderBottomColor: isDark ? "#374151" : "#e5e7eb" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.title,
+                { color: isDark ? "#f9fafb" : "#111827" },
+              ]}
+            >
               {title}
             </Text>
           </View>
@@ -123,13 +138,56 @@ export default function CustomRunModal({
           <ScrollView style={styles.body}>
             <View style={styles.bodyContent}>
               {!restrictDiscription && description && (
-                <Text style={[
-                  styles.description,
-                  { color: isDark ? "#9ca3af" : "#6b7280" }
-                ]}>
+                <Text
+                  style={[
+                    styles.description,
+                    { color: isDark ? "#9ca3af" : "#6b7280" },
+                  ]}
+                >
                   {description}
                 </Text>
               )}
+
+              {/* Quick Run Selection Chips */}
+              <View style={styles.quickRunsRow}>
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((num) => {
+                  const isSelected = runsValue === num;
+                  return (
+                    <TouchableOpacity
+                      key={num}
+                      style={[
+                        styles.quickRunChip,
+                        {
+                          backgroundColor: isSelected
+                            ? isDark
+                              ? "#3b82f6"
+                              : "#2563eb"
+                            : isDark
+                            ? "#374151"
+                            : "#e5e7eb",
+                        },
+                      ]}
+                      onPress={() => setRunsEnter(num.toString())}
+                    >
+                      <Text
+                        style={[
+                          styles.quickRunText,
+                          {
+                            color: isSelected
+                              ? "#ffffff"
+                              : isDark
+                              ? "#d1d5db"
+                              : "#374151",
+                            fontWeight: isSelected ? "700" : "500",
+                          },
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
               <TextInput
                 style={[
@@ -138,17 +196,18 @@ export default function CustomRunModal({
                     backgroundColor: isDark ? "#374151" : "#f9fafb",
                     borderColor: isDark ? "#4b5563" : "#d1d5db",
                     color: isDark ? "#f9fafb" : "#111827",
-                  }
+                  },
                 ]}
-                placeholder="Enter runs"
+                placeholder="Or enter custom runs"
                 placeholderTextColor={isDark ? "#9ca3af" : "#9ca3af"}
                 keyboardType="numeric"
                 value={runsEnter}
                 onChangeText={(text) => {
-                  const num = Math.abs(Math.ceil(parseFloat(text) || 0));
-                  setRunsEnter(num > 0 ? num.toString() : "");
+                  const num = text.replace(/[^0-9]/g, "");
+                  setRunsEnter(num);
                 }}
               />
+
 
               {showRadioGroup && (
                 <View style={styles.radioGroup}>
@@ -252,6 +311,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
   },
+  quickRunsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  quickRunChip: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  quickRunText: {
+    fontSize: 15,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 8,
@@ -262,6 +338,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 8,
   },
+
   radioContainer: {
     flexDirection: "row",
     alignItems: "center",

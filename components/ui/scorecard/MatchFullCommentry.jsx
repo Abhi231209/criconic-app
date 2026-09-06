@@ -13,10 +13,11 @@ import {
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
 import { useColorScheme } from "react-native";
+import { matchesApi } from "@/utils/api";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export default function MatchFullCommentary({ matchId }) {
+export default function MatchFullCommentary({ matchId, score }) {
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
@@ -38,6 +39,8 @@ export default function MatchFullCommentary({ matchId }) {
     border: isDark ? "#334155" : "#e2e8f0",
   };
 
+  // HARDCODED SAMPLE COMMENTARY DATA - COMMENTED OUT (API ONLY)
+  /*
   // Sample commentary data - current page
   const currentCommentary = [
     { id: 1, over: 19.6, event: "wicket", description: "OUT! Caught by Taylor! Ismail gets her third wicket.", runs: "W", batsman: "M Schutt", bowler: "S Ismail" },
@@ -64,8 +67,6 @@ export default function MatchFullCommentary({ matchId }) {
     { id: 18, over: 17.1, event: "dot", description: "Defended back to the bowler.", runs: "0", batsman: "A Sutherland", bowler: "M Taylor" },
   ];
 
-  const [commentaryData, setCommentaryData] = useState(currentCommentary);
-
   // Match info
   const matchInfo = {
     team1: "WF-W",
@@ -75,39 +76,86 @@ export default function MatchFullCommentary({ matchId }) {
     currentBatsmen: ["A Gardner", "A Sutherland"],
     currentBowler: "S Ismail"
   };
+  */
+
+  // Map incoming score commentary as initial fallback
+  const initialList = (score?.fullCommentary || score?.commentary || []).map((c, idx) => ({
+    id: c._id || idx + 1,
+    over: c.ballNumber || c.over || "",
+    event: c.runs === "W" || c.type === "wicket" ? "wicket" : (c.runs === 4 || c.runs === "4" ? "boundary" : (c.runs === 6 || c.runs === "6" ? "six" : "run")),
+    description: c.comment || c.message || "",
+    runs: c.runs || "",
+    batsman: c.batsman || "Batter",
+    bowler: c.bowler || "Bowler"
+  }));
+
+  const [commentaryData, setCommentaryData] = useState(initialList);
+
+  const inn = score?.inning?.[score?.inning?.length - 1] || score;
+  const matchInfo = {
+    team1: score?.teams?.[0]?.title || "Team 1",
+    team2: score?.teams?.[1]?.title || "Team 2",
+    score: `${inn?.batting?.score?.runs ?? 0}/${inn?.batting?.score?.wicket ?? 0}`,
+    over: inn?.batting?.score?.over || "0.0",
+    currentBatsmen: (score?.batsman || []).map((b) => b.name || "Batter"),
+    currentBowler: score?.bowler?.name || score?.bowling?.lastTwoBowlers?.[0]?.name || "Bowler"
+  };
+
+  // Fetch live commentary from API
+  const fetchCommentary = useCallback(async (pageNum = 1, append = false) => {
+    if (!matchId) return;
+    try {
+      setLoading(true);
+      const res = await matchesApi.getCommentary(matchId, pageNum, 20);
+      const comments = res?.comments || res?.data?.comments || (Array.isArray(res) ? res : []);
+      const formatted = comments.map((c, idx) => ({
+        id: c._id || `${pageNum}-${idx}`,
+        over: c.ballNumber || c.over || "",
+        event: c.runs === "W" || c.type === "wicket" ? "wicket" : (c.runs === 4 || c.runs === "4" ? "boundary" : (c.runs === 6 || c.runs === "6" ? "six" : "run")),
+        description: c.comment || c.message || "",
+        runs: c.runs || "",
+        batsman: c.batsman || "Batter",
+        bowler: c.bowler || "Bowler"
+      }));
+
+      if (append) {
+        setCommentaryData((prev) => [...prev, ...formatted]);
+      } else {
+        setCommentaryData(formatted);
+      }
+
+      const totalPage = res?.totalPage || 1;
+      setHasMore(pageNum < totalPage && formatted.length > 0);
+      setLoading(false);
+    } catch (err) {
+      console.log("Error loading commentary:", err);
+      setLoading(false);
+    }
+  }, [matchId]);
+
+  React.useEffect(() => {
+    if (matchId) {
+      fetchCommentary(1, false);
+    }
+  }, [matchId, fetchCommentary]);
 
   // Load older commentary
   const loadOlderCommentary = useCallback(() => {
-    if (loading || !hasMore) return;
-    
-    setLoading(true);
-    
-    // Simulate API call delay
-    setTimeout(() => {
-      if (page >= 3) {
-        // No more data to load
-        setHasMore(false);
-      } else {
-        // Add older commentary to the beginning of the list
-        setCommentaryData(prev => [...olderCommentary, ...prev]);
-        setPage(prev => prev + 1);
-      }
-      setLoading(false);
-    }, 1000);
-  }, [loading, hasMore, page]);
+    if (loading || !hasMore || !matchId) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchCommentary(nextPage, true);
+  }, [loading, hasMore, matchId, page, fetchCommentary]);
 
   // Refresh commentary
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    
-    // Simulate refresh delay
-    setTimeout(() => {
-      setCommentaryData(currentCommentary);
-      setPage(1);
-      setHasMore(true);
-      setRefreshing(false);
-    }, 1000);
-  }, []);
+    setPage(1);
+    if (matchId) {
+      await fetchCommentary(1, false);
+    }
+    setRefreshing(false);
+  }, [matchId, fetchCommentary]);
 
   // Filter commentary based on selection
   const filteredCommentary = commentaryData.filter(item => {

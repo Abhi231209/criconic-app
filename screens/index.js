@@ -32,6 +32,7 @@ const SCREENS = {
   ChangeSquad: "ChangeSquad",
   ChangeBowler: "ChangeBowler",
   ThemeConfig: "ThemeConfig",
+  GoLiveSetup: "GoLiveSetup",
 };
 
 export default SCREENS;

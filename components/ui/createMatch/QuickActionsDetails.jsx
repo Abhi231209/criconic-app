@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Linking } from "react-native";
+import { View, TouchableOpacity, Linking } from "react-native";
+import ThemedText from "../custom/ThemedText";
 // Option 1: Using Expo Vector Icons (recommended)
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,8 +17,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import SCREENS from "@/screens";
 import ReplaceBatterPopup from "./ReplaceBatterPopUp";
-import EditOver from "./EditOver"
-import BonusRuns from "./BonusRuns"
+import EditOver from "./EditOver";
+import BonusRuns from "./BonusRuns";
+import useAppTheme from "@/hooks/useAppTheme";
 
 export default function QuickActionDetails({
   isScorerScreen = false,
@@ -31,6 +33,8 @@ export default function QuickActionDetails({
   setOpen,
   navigation
 }) {
+  const { isDark } = useAppTheme();
+
   const handleNeedHelp = () => {
     Linking.openURL("mailto:support@criconic.com").catch((e) =>
       console.warn("Could not open mail client", e)
@@ -42,19 +46,31 @@ export default function QuickActionDetails({
      const [showBonusRunsPopup, setShowBonusRunsPopup] = useState(false);
 
 
-  // Mock data - replace with your actual data
+  // HARDCODED MOCK PLAYERS - COMMENTED OUT (API ONLY)
+  /*
   const players = [
     { playerId: 1, name: "Virat Kohli" },
     { playerId: 2, name: "Rohit Sharma" },
     { playerId: 3, name: "KL Rahul" },
     { playerId: 4, name: "Shubman Gill" },
   ];
+  const team = "team123";
+  */
+
+  const activePlayers = (Array.isArray(batsmen) && batsmen.length > 0) ? batsmen : [];
+  const activeTeam =
+    battingTeam?.battingId ||
+    battingTeam?.teamId ||
+    battingTeam?._id ||
+    battingTeam?.id ||
+    "";
+
   const handleSuccess = () => {
-    // Refresh your match data or update UI
+    handleClosePopup();
+    setOpen?.(false);
+    cb?.();
     console.log("Bonus runs added successfully");
   };
-
-  const team = "team123";
 
   const handleOpenPopup = () => {
     setShowReplacePopup(true);
@@ -70,7 +86,6 @@ export default function QuickActionDetails({
     {
       Name: "Need Help",
       Icon: "help-circle-outline",
-      // GluestackIcon: HelpCircleIcon, // Uncomment if using Gluestack
       handleFunction: handleNeedHelp,
       hide: isScorerScreen,
       href: `mailto:support@criconic.com`,
@@ -78,93 +93,91 @@ export default function QuickActionDetails({
     {
       Name: "Change Team (Bowl)",
       Icon: "swap-horizontal-outline",
-      // GluestackIcon: RepeatIcon, // Uncomment if using Gluestack
-      navigationScreen: SCREENS.ChangeSquad,
+      handleFunction: () => {
+        setOpen?.(false);
+        const bId =
+          bowlingTeam?.teamId ||
+          bowlingTeam?.bowlingId ||
+          bowlingTeam?._id ||
+          bowlingTeam?.id;
+        navigation?.navigate?.(SCREENS.ChangeSquad, {
+          teamId: bId,
+          matchId: matchID,
+          team: bowlingTeam,
+          squad: bowlingTeam?.players,
+          cb,
+        });
+      },
     },
     {
       Name: "Change Team (Bat)",
       Icon: "swap-horizontal-outline",
-      // GluestackIcon: RepeatIcon, // Uncomment if using Gluestack
-      // href: `${SCREENS.CHANGESQUADS}/${battingTeam?.teamId}/${matchID}`,
+      handleFunction: () => {
+        setOpen?.(false);
+        const batId =
+          battingTeam?.teamId ||
+          battingTeam?.battingId ||
+          battingTeam?._id ||
+          battingTeam?.id ||
+          activeTeam;
+        navigation?.navigate?.(SCREENS.ChangeSquad, {
+          teamId: batId,
+          matchId: matchID,
+          team: battingTeam,
+          squad: battingTeam?.players,
+          cb,
+        });
+      },
     },
     {
       Name: "Full Scorecard",
       Icon: "stats-chart-outline",
-      // GluestackIcon: BarChart3Icon, // Uncomment if using Gluestack
-      openInNewTab: true,
-      // href: `${SCREENS.SCORECARD_WITH_VIDEO}${matchID}`,
-      hide: isScorerScreen,
+      handleFunction: () => {
+        setOpen?.(false);
+        navigation?.navigate?.(SCREENS.MatchScoreCard, { matchId: matchID });
+      },
     },
     {
       Name: "Match Over",
       Icon: "time-outline",
-      // GluestackIcon: ClockIcon, // Uncomment if using Gluestack
       handleFunction: () => {
-        setOpen?.(false);
         setShowEditOverPopup(true);
-        // alert.show({
-        //   componentProps: {
-        //     matchID,
-        //     currentOver,
-        //     close: () => {
-        //       cb?.();
-        //       alert.close();
-        //     },
-        //   },
-        // });
       },
       hide: isScorerScreen,
     },
     {
       Name: "Change Bowler",
       Icon: "person-outline",
-      // GluestackIcon: UserIcon, // Uncomment if using Gluestack
-
-      navigationScreen: SCREENS.ChangeBowler,
-      // handleFunction: () => {
-      //   navigation.navigate(SCREENS.ChangeBowler, {
-      //     teamId: bowlingTeam?.teamId,
-      //     matchId: matchID,
-      //     playerId: bowler?.playerId,
-      //   });
-      // },
+      handleFunction: () => {
+        setOpen?.(false);
+        const bowlTeamId =
+          bowlingTeam?.teamId ||
+          bowlingTeam?.bowlingId ||
+          bowlingTeam?._id ||
+          bowlingTeam?.id ||
+          "";
+        navigation?.navigate?.(SCREENS.ChangeBowler, {
+          teamId: bowlTeamId,
+          matchId: matchID,
+          playerId: bowler?.playerId || bowler?.id || bowler?._id,
+          playerName: bowler?.name || bowler?.username,
+          squad: bowlingTeam?.players || bowlingTeam?.squad || [],
+          cb,
+        });
+      },
     },
     {
       Name: "Replace Batter",
       Icon: "repeat-outline",
-      // GluestackIcon: RefreshCwIcon, // Uncomment if using Gluestack
       handleFunction: () => {
-        setOpen?.(false);
         setShowReplacePopup(true);
-        // alert.show({
-        //   componentProps: {
-        //     players: batsmen,
-        //     team: battingTeam?.teamId,
-        //     matchID,
-        //     close: alert.close,
-        //   },
-        //   Component: require("./quickactionpopups/ReplaceBatterPoPup").default,
-        // });
       },
     },
     {
       Name: "Bonus Runs",
       Icon: "trophy-outline",
-      // GluestackIcon: TrophyIcon, // Uncomment if using Gluestack
       handleFunction: () => {
-        setOpen?.(false);
         setShowBonusRunsPopup(true);
-        
-        // alert.show({
-        //   componentProps: {
-        //     battingTeam,
-        //     bowlingTeam,
-        //     matchID,
-        //     close: alert.close,
-        //     cb,
-        //   },
-        //   Component: require("./quickactionpopups/BonusRuns").default,
-        // });
       },
       hide: isScorerScreen,
     },
@@ -174,14 +187,11 @@ export default function QuickActionDetails({
 
   // Function to render icon based on your preference
   const renderIcon = (data) => {
-    // Option 1: Using Expo Ionicons (Current)
-    console.log(data,"This data")
-    return <Ionicons name={data.Icon} size={30} />;
-
-    // Option 2: Using Gluestack Icons (Uncomment below and comment above)
-    // const IconComponent = data.GluestackIcon;
-    // return <IconComponent size="xl" color="white" />;
+    const iconColor = isDark ? "#F8FAFC" : "#1E293B";
+    return <Ionicons name={data.Icon} size={28} color={iconColor} />;
   };
+
+  const textColor = isDark ? "#F8FAFC" : "#1E293B";
 
   return (
     <View className={`${!isScorerScreen ? "pt-10" : ""}`}>
@@ -202,9 +212,6 @@ export default function QuickActionDetails({
                 );
               } else {
                 navigation.navigate(data.navigationScreen, {})
-                // Linking.openURL(data.href).catch((e) =>
-                //   console.warn("Cannot open URL:", e)
-                // );
               }
             } else {
               if(data.navigationScreen){
@@ -229,13 +236,21 @@ export default function QuickActionDetails({
               {!isScorerScreen && renderIcon(data)}
               {isScorerScreen ? (
                 <View className="w-full">
-                  <Text className="text-lg font-semibold text-gray-300">
+                  <ThemedText
+                    className="text-lg font-semibold"
+                    style={{ color: textColor }}
+                  >
                     {data.Name}
-                  </Text>
+                  </ThemedText>
                 </View>
               ) : (
                 <View className="h-12 justify-center">
-                  <Text className="text-sm text-center">{data.Name}</Text>
+                  <ThemedText
+                    className="text-sm font-semibold text-center"
+                    style={{ color: textColor }}
+                  >
+                    {data.Name}
+                  </ThemedText>
                 </View>
               )}
             </TouchableOpacity>
@@ -245,13 +260,33 @@ export default function QuickActionDetails({
       <ReplaceBatterPopup
         visible={showReplacePopup}
         onClose={handleClosePopup}
-        players={players}
-        team={team}
+        players={activePlayers}
+        team={activeTeam}
         matchID={matchID}
+        onSelect={(playerId) => {
+          setShowReplacePopup(false);
+          setOpen?.(false);
+          const chosen = activePlayers.find(
+            (p) => String(p.playerId || p.id || p._id) === String(playerId)
+          );
+          navigation?.navigate?.(SCREENS.ChangeBowler, {
+            teamId: activeTeam,
+            matchId: matchID,
+            playerId: playerId,
+            playerName: chosen?.name || chosen?.username,
+            squad: battingTeam?.players || battingTeam?.squad || [],
+            cb,
+          });
+        }}
       />
        <EditOver
         visible={showEditOverPopup}
         onClose={handleClosePopup}
+        onSuccess={() => {
+          handleClosePopup();
+          setOpen?.(false);
+          cb?.();
+        }}
         matchID={matchID}
         currentOver={currentOver}
       />

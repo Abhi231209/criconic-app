@@ -20,6 +20,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import { tournamentsApi, upload } from '@/utils/api';
 
 export default function CreateTournament() {
   const navigation = useNavigation();
@@ -126,22 +127,66 @@ export default function CreateTournament() {
       return;
     }
 
+    if (!formData.organizerPhone.trim()) {
+      Alert.alert('Error', 'Please enter organizer phone number');
+      return;
+    }
+
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false);
-      Alert.alert(
-        'Success',
-        'Tournament created successfully!',
-        [
+    try {
+      let logoUrl = formData.logo;
+      if (formData.logo && !formData.logo.startsWith('http')) {
+        const uploadRes = await upload(formData.logo, 'tournament');
+        if (uploadRes?.data?.url) {
+          logoUrl = uploadRes.data.url;
+        }
+      }
+
+      let bannerUrl = formData.coverImage;
+      if (formData.coverImage && !formData.coverImage.startsWith('http')) {
+        const uploadRes = await upload(formData.coverImage, 'tournament');
+        if (uploadRes?.data?.url) {
+          bannerUrl = uploadRes.data.url;
+        }
+      }
+
+      const payload = {
+        title: formData.tournamentName.trim(),
+        tournamentType: formData.tournamentType,
+        ballType: formData.ballType,
+        location: formData.venue?.trim() || '',
+        organizerName: formData.organizerName.trim(),
+        organizerNumber: formData.organizerPhone.trim(),
+        date: {
+          start: formData.startDate.toISOString(),
+          end: formData.endDate.toISOString(),
+        },
+        description: formData.description?.trim() || '',
+        rules: formData.rules?.trim() || '',
+        prizeMoney: formData.prizeMoney || '',
+        entryFee: formData.entryFee || '',
+        logo: logoUrl || '',
+        banner: bannerUrl || '',
+      };
+
+      const res = await tournamentsApi.createTournament(payload);
+      if (res?.data?.success || res?.status === 201 || res?.data?.tournament) {
+        Alert.alert('Success', 'Tournament created successfully!', [
           {
             text: 'OK',
             onPress: () => navigation.goBack(),
           },
-        ]
-      );
-    }, 1500);
+        ]);
+      } else {
+        const msg = res?.data?.message || 'Failed to create tournament';
+        Alert.alert('Notice', msg);
+      }
+    } catch (error) {
+      Alert.alert('Error', error?.message || 'Something went wrong');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const InputField = ({ label, value, onChange, placeholder, multiline = false, numberOfLines = 1, keyboardType = 'default' }) => (

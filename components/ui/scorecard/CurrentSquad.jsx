@@ -16,7 +16,7 @@ import { useColorScheme } from "react-native";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export default function CurrentSquad({ matchId }) {
+export default function CurrentSquad({ matchId, score }) {
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
@@ -35,6 +35,8 @@ export default function CurrentSquad({ matchId }) {
     border: isDark ? "#334155" : "#e2e8f0",
   };
 
+  // HARDCODED SAMPLE SQUAD DATA - COMMENTED OUT (API ONLY)
+  /*
   // Sample squad data
   const team1 = {
     name: "WF-W",
@@ -63,15 +65,53 @@ export default function CurrentSquad({ matchId }) {
       { id: 14, name: "Sarah Glenn", role: "Bowler", isCaptain: false, isWicketKeeper: false, battingStyle: "Right Handed", bowlingStyle: "Legbreak Googly", matches: 78, runs: 230, wickets: 102 },
     ]
   };
+  */
+
+  const squadTeam1 = score?.teams?.[0] || {};
+  const squadTeam2 = score?.teams?.[1] || {};
+
+  const team1 = {
+    name: squadTeam1.title || "Team 1",
+    shortName: squadTeam1.shortName || (typeof squadTeam1.title === 'string' ? squadTeam1.title.substring(0, 3).toUpperCase() : "T1"),
+    players: (squadTeam1.players || []).map((p, idx) => ({
+      id: p.id || p._id || idx + 1,
+      name: p.username || p.name || "Player",
+      role: p.role || "Player",
+      isCaptain: p.isCaptain || false,
+      isWicketKeeper: p.isWicketKeeper || false,
+      battingStyle: p.battingStyle || "Right Handed",
+      bowlingStyle: p.bowlingStyle || "Right Arm",
+      matches: p.matches || 0,
+      runs: p.runs || 0,
+      wickets: p.wickets || 0,
+    })),
+  };
+
+  const team2 = {
+    name: squadTeam2.title || "Team 2",
+    shortName: squadTeam2.shortName || (typeof squadTeam2.title === 'string' ? squadTeam2.title.substring(0, 3).toUpperCase() : "T2"),
+    players: (squadTeam2.players || []).map((p, idx) => ({
+      id: p.id || p._id || idx + 100,
+      name: p.username || p.name || "Player",
+      role: p.role || "Player",
+      isCaptain: p.isCaptain || false,
+      isWicketKeeper: p.isWicketKeeper || false,
+      battingStyle: p.battingStyle || "Right Handed",
+      bowlingStyle: p.bowlingStyle || "Right Arm",
+      matches: p.matches || 0,
+      runs: p.runs || 0,
+      wickets: p.wickets || 0,
+    })),
+  };
 
   const currentTeam = activeTeam === "team1" ? team1 : team2;
 
   // Filter players based on role
-  const filteredPlayers = currentTeam.players.filter(player => {
+  const filteredPlayers = (currentTeam?.players || []).filter(player => {
     if (activeRole === "all") return true;
-    if (activeRole === "batsmen") return player.role.includes("Batsman");
-    if (activeRole === "allRounders") return player.role === "All-rounder";
-    if (activeRole === "bowlers") return player.role === "Bowler";
+    if (activeRole === "batsmen") return (player.role || "").includes("Batsman");
+    if (activeRole === "allRounders") return (player.role || "") === "All-rounder";
+    if (activeRole === "bowlers") return (player.role || "") === "Bowler";
     if (activeRole === "wicketKeepers") return player.isWicketKeeper;
     return true;
   });

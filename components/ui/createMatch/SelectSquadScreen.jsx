@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,21 +10,27 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { StackActions } from "@react-navigation/native";
+import squadSelectionStore from "./squadSelectionStore";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import Checkbox from "expo-checkbox";
 import SwipeableTabs from "../custom/SwipeableTab";
 import AddPlayer from "../create/AddPlayer";
+import SCREENS from "@/screens";
+import { teamsApi } from "@/utils/api";
 
 export default function SelectSquadScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  let { team, teamType, onSquadSelect } = route.params;
+  const { team, teamType } = route.params || {};
 
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
-  const playersWithImages = [
+  // HARDCODED PLAYERS LIST - COMMENTED OUT (API ONLY)
+  /*
+  const mockPlayersWithImages = [
     {
       id: "1",
       name: "Virat Kohli",
@@ -148,8 +154,75 @@ export default function SelectSquadScreen() {
       rating: 3,
     },
   ];
+  */
 
-  const [selectedPlayers, setSelectedPlayers] = useState(["1", "2"]);
+  const isValidObjectId = (id) =>
+    typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
+
+  const [teamSquad, setTeamSquad] = useState(
+    Array.isArray(team?.players) ? team.players : []
+  );
+
+  useEffect(() => {
+    const teamId = team?._id || team?.id || team?.teamId;
+    if (teamId && (!teamSquad || teamSquad.length === 0)) {
+      teamsApi
+        .getTeamById(teamId)
+        .then((res) => {
+          const fetchedTeam = res?.data?.[0] || res?.data;
+          const players = fetchedTeam?.players;
+          if (Array.isArray(players) && players.length > 0) {
+            setTeamSquad(players);
+            setSelectedPlayers(
+              players.map((p, idx) => {
+                const rawId = p?.id?._id || p?.id || p?._id;
+                const idStr =
+                  rawId && typeof rawId === "object"
+                    ? String(rawId._id || rawId.id || "")
+                    : String(rawId || "");
+                return idStr || `p_${idx}`;
+              })
+            );
+          }
+        })
+        .catch((err) =>
+          console.warn("[SelectSquadScreen] Error fetching team players:", err)
+        );
+    }
+  }, [team]);
+
+  const playersWithImages = teamSquad.map((player, idx) => {
+    const rawId = player?.id?._id || player?.id || player?._id;
+    const idStr =
+      rawId && typeof rawId === "object"
+        ? String(rawId._id || rawId.id || "")
+        : String(rawId || "");
+    const validId = isValidObjectId(idStr) ? idStr : null;
+
+    return {
+      id: validId || idStr || `p_${idx}`,
+      objectId: validId,
+      name:
+        player.name ||
+        player.username ||
+        player.playerName ||
+        `Player ${idx + 1}`,
+      username:
+        player.username ||
+        player.name ||
+        player.playerName ||
+        `Player ${idx + 1}`,
+      image: player.image || player.profileImage || null,
+      position: player.role || player.position || "Player",
+      isCaptain: !!player.isCaptain,
+      isViceCaptain: !!player.isViceCaptain,
+      raw: player,
+    };
+  });
+
+  const [selectedPlayers, setSelectedPlayers] = useState(
+    playersWithImages.map((p) => p.id)
+  );
   const [activeTab, setActiveTab] = useState("mySquad");
 
   const togglePlayerSelection = (playerId) => {
@@ -173,7 +246,10 @@ export default function SelectSquadScreen() {
     const squad = playersWithImages.filter((player) =>
       selectedPlayers.includes(player.id)
     );
-    onSquadSelect(squad);
+    // Write result to module-level store then pop back 2 screens (SelectSquadScreen + SelectTeamScreen)
+    // so CreateMatch's useFocusEffect can pick it up without risk of pushing a new CreateMatch instance.
+    squadSelectionStore.pending = { selectedTeam: team, selectedSquad: squad, teamType };
+    navigation.dispatch(StackActions.pop(2));
   };
 
   const renderTabButton = (tabName, label, iconName) => (
@@ -347,12 +423,52 @@ export default function SelectSquadScreen() {
             renderItem={({ item }) =>
               renderPlayerCard({ item, isMySquad: false })
             }
+            ListEmptyComponent={
+              <View className="py-12 items-center justify-center">
+                <Ionicons name="people-outline" size={48} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                <ThemedText className={`text-base font-semibold mt-3 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                  No players in team yet
+                </ThemedText>
+                <ThemedText className={`text-xs text-center mt-1 px-8 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                  Switch to the "Add Player" tab above to add players to this squad.
+                </ThemedText>
+              </View>
+            }
           />
         )}
 
         {/* Add Player Tab */}
         {activeTab === "addPlayer" && (
-          <AddPlayer showHeader={false} />
+          <AddPlayer
+            showHeader={false}
+            teamID={team?._id || team?.id}
+            cb={(newPlayer) => {
+              const teamId = team?._id || team?.id || team?.teamId;
+              if (teamId) {
+                teamsApi
+                  .getTeamById(teamId)
+                  .then((res) => {
+                    const fetchedTeam = res?.data?.[0] || res?.data;
+                    const players = fetchedTeam?.players;
+                    if (Array.isArray(players) && players.length > 0) {
+                      setTeamSquad(players);
+                      setSelectedPlayers(
+                        players.map((p, idx) => {
+                          const rawId = p?.id?._id || p?.id || p?._id;
+                          const idStr =
+                            rawId && typeof rawId === "object"
+                              ? String(rawId._id || rawId.id || "")
+                              : String(rawId || "");
+                          return idStr || `p_${idx}`;
+                        })
+                      );
+                    }
+                  })
+                  .catch(() => {});
+              }
+              setActiveTab("mySquad");
+            }}
+          />
         )}
       </View>
 

@@ -1,100 +1,117 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useAxiosGet } from "./useApi";
-import axios from "axios";
+import { request } from "@/utils/api";
 
 function useMatches({
   playerId,
   teamId,
   initialCondition = { items: 10, page: 1 },
-  enableScroll = false, // New prop to enable/disable API calls on scroll
+  enableScroll = false,
 } = {}) {
+  const itemsPerPage = initialCondition?.items || 10;
   const [matchesIds, setMatchesIds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasData, setHasData] = useState(true);
   const [error, setError] = useState(null);
-  const [condition, setCondition] = useState(initialCondition);
+  const pageRef = useRef(initialCondition?.page || 1);
+  const isFetchingRef = useRef(false);
   const cache = useRef({});
 
-  // Helper to build API URL
-const SERVER_BASE_URL = "https://devapi.criconic.com/";
-  
-  const buildApiUrl = useCallback(() => {
-    const params = new URLSearchParams({
-      page: condition.page || 1,
-      items: condition.items,
-    });
-    if (playerId) params.append("playerId", playerId);
-    if (teamId) params.append("teamId", teamId);
-    return `api/matches/ids?${params.toString()}`;
-  }, [condition, playerId, teamId]);
+  const fetchPage = useCallback(
+    async (pageToFetch, isRefresh = false) => {
+      if (isFetchingRef.current) return;
+      if (!isRefresh && !hasData) return;
 
-  // Fetch matches
-  const fetchMatchIds = useCallback(async () => {
-    const apiUrl = buildApiUrl();
+      const params = new URLSearchParams({
+        page: pageToFetch,
+        items: itemsPerPage,
+      });
+      if (playerId) params.append("playerId", playerId);
+      if (teamId) params.append("teamId", teamId);
+      const apiUrl = `api/matches/ids?${params.toString()}`;
 
-    if (!hasData || cache.current[apiUrl]) return; // Prevent redundant calls or requests if data already loaded
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const config = {
-      url: SERVER_BASE_URL+ apiUrl ,
-      method : "GET",
-      headers : {
-        "Content-Type": "application/json",
-      },
-    };
-        
-      const res = await axios.request(config);
-      console.log("inside res ",res)
-      
-
-      const data = await res.data;
-      console.log("this is data ",res)
-      const content = data?.content || [];
-
-      // Cache results and update state
-      cache.current[apiUrl] = content;
-      setMatchesIds((prev) => [...prev, ...content]);
-
-      if (content.length < condition.items) {
-        setHasData(false); // No more data available
-      } else {
-        setCondition((prev) => ({ ...prev, page: prev.page + 1 }));
+      if (!isRefresh && cache.current[apiUrl]) {
+        return;
       }
-    } catch (err) {
-      console.error("Error fetching matches:", err);
-      setError("Failed to load matches. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [buildApiUrl, condition, hasData]);
 
-  // Effect to fetch matches on initialization
+      isFetchingRef.current = true;
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await request(apiUrl, { method: "GET", errorAlert: false });
+        const content = res?.data?.content || [];
+
+        cache.current[apiUrl] = content;
+        if (isRefresh) {
+          setMatchesIds(content);
+        } else {
+          setMatchesIds((prev) => {
+            // Deduplicate incoming IDs
+            const existing = new Set(
+              prev.map((item) => String(item?._id || item?.id || item))
+            );
+            const filtered = content.filter(
+              (item) => !existing.has(String(item?._id || item?.id || item))
+            );
+            return [...prev, ...filtered];
+          });
+        }
+
+        if (content.length < itemsPerPage) {
+          setHasData(false);
+        } else {
+          pageRef.current = pageToFetch + 1;
+        }
+      } catch (err) {
+        console.warn("[useMatches] Error fetching matches:", err);
+        setError("Failed to load matches. Please try again.");
+      } finally {
+        isFetchingRef.current = false;
+        setLoading(false);
+      }
+    },
+    [playerId, teamId, itemsPerPage, hasData]
+  );
+
+  // Initial fetch on mount or when filter params change
   useEffect(() => {
-    if (!enableScroll) {
-      fetchMatchIds();
-    }
-  }, [fetchMatchIds, enableScroll]);
+    pageRef.current = 1;
+    cache.current = {};
+    setHasData(true);
+    fetchPage(1, true);
+  }, [playerId, teamId, itemsPerPage]);
 
-  // Infinite scroll handler
+  const fetchMore = useCallback(() => {
+    if (!isFetchingRef.current && hasData) {
+      fetchPage(pageRef.current, false);
+    }
+  }, [fetchPage, hasData]);
+
   const handleScroll = useCallback(() => {
     if (
       enableScroll &&
+      typeof window !== "undefined" &&
+      typeof document !== "undefined" &&
       window.innerHeight + document.documentElement.scrollTop >=
         document.documentElement.offsetHeight - 200
     ) {
-      fetchMatchIds();
+      fetchMore();
     }
-  }, [fetchMatchIds, enableScroll]);
+  }, [fetchMore, enableScroll]);
 
   useEffect(() => {
-    if (enableScroll) {
+    if (enableScroll && typeof window !== "undefined") {
       window.addEventListener("scroll", handleScroll);
       return () => window.removeEventListener("scroll", handleScroll);
     }
   }, [handleScroll, enableScroll]);
+
+  const refresh = useCallback(async () => {
+    pageRef.current = 1;
+    cache.current = {};
+    setHasData(true);
+    await fetchPage(1, true);
+  }, [fetchPage]);
 
   return {
     matchesIds,
@@ -102,7 +119,8 @@ const SERVER_BASE_URL = "https://devapi.criconic.com/";
     hasData,
     error,
     setMatchesIds,
-    fetchMore: fetchMatchIds,
+    fetchMore,
+    refresh,
   };
 }
 

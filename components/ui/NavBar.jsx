@@ -71,96 +71,136 @@ export default function NavBar({ handleSearch }) {
   const navigation = useNavigation();
 
   return (
-    <View className={`px-4 py-3 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
-        <SafeAreaView edges={["top"]}>
-
-      <View className="flex-row justify-between items-center">
-        <TouchableOpacity
-              onPress={() => {
-                setIsLeftSheet(true);
-                navigation.openDrawer();
-              }}
-              className="ml-2"
-            >
-              <MaterialCommunityIcons 
-                name="menu" 
-                size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
-              />
-            </TouchableOpacity>
-
-        {!showInput && (
-          <TouchableOpacity onPress={() => navigation.navigate(SCREENS.Home)}>
-            <Image
-              source={
-                // isDarkMode 
-                // ? 
-                // require("../../assets/Logo-dark.png") 
-                // : 
-                require("../../assets/Logo.png")
-              }
-              className="w-20 h-10"
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        )}
-
-        <View className={`flex-row items-center ${showInput ? "flex-1" : ""}`}>
-          {showInput && (
-            <TextInput
-              value={searchValue}
-              onChangeText={(text) => {
-                setSearchValue(text);
-                handleSearchInput(text);
-              }}
-              placeholder="Search..."
-              placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
-              className={`flex-1 px-3 py-1 rounded-md ${
-                isDarkMode 
-                  ? 'bg-gray-800 text-white' 
-                  : 'bg-gray-200 text-black'
-              }`}
-            />
-          )}
-
+    <View
+      className={`px-4 pt-1 pb-3 border-b ${
+        isDarkMode
+          ? "bg-gray-900 border-gray-800"
+          : "bg-white border-gray-100"
+      }`}
+      style={{
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: isDarkMode ? 0.2 : 0.04,
+        shadowRadius: 3,
+        elevation: 2,
+      }}
+    >
+      <SafeAreaView edges={["top"]}>
+        <View className="flex-row justify-between items-center">
+          {/* Menu Drawer Toggle */}
           <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.SearchScreen)}
-            className="ml-2"
+            onPress={() => {
+              setIsLeftSheet(true);
+              navigation.openDrawer();
+            }}
+            activeOpacity={0.7}
+            className={`w-10 h-10 rounded-full items-center justify-center ${
+              isDarkMode ? "bg-gray-800" : "bg-gray-100"
+            }`}
           >
-            {showInput ? (
-              <AntDesign 
-                name="close" 
-                size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
-              />
-            ) : (
-              <Ionicons 
-                name="search" 
-                size={20} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
-              />
-            )}
+            <MaterialCommunityIcons
+              name="menu"
+              size={22}
+              color={isDarkMode ? "#FFFFFF" : "#1E293B"}
+            />
           </TouchableOpacity>
 
+          {/* Logo / Brand Name */}
           {!showInput && (
             <TouchableOpacity
-              onPress={() => {
-                setQRScanner(true);
-                bottomSheetHandler(true, "top");
-                navigation.openDrawer();
-              }}
-              className="ml-2"
+              onPress={() => navigation.navigate(SCREENS.Home)}
+              activeOpacity={0.8}
+              className="flex-row items-center"
             >
-              <Ionicons 
-                name="qr-code" 
-                size={24} 
-                color={isDarkMode ? "#FFFFFF" : "#000000"} 
+              <Image
+                source={require("../../assets/Logo.png")}
+                className="w-24 h-9"
+                resizeMode="contain"
               />
             </TouchableOpacity>
           )}
+
+          {/* Right Action Buttons */}
+          <View className={`flex-row items-center ${showInput ? "flex-1 ml-3" : ""}`}>
+            {showInput && (
+              <View
+                className={`flex-1 flex-row items-center px-3 py-1.5 rounded-full mr-2 ${
+                  isDarkMode ? "bg-gray-800" : "bg-gray-100"
+                }`}
+              >
+                <Ionicons
+                  name="search"
+                  size={16}
+                  color={isDarkMode ? "#9CA3AF" : "#64748B"}
+                />
+                <TextInput
+                  value={searchValue}
+                  onChangeText={(text) => {
+                    setSearchValue(text);
+                    handleSearchInput(text);
+                  }}
+                  autoFocus
+                  placeholder="Search matches, teams, tournaments..."
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#64748B"}
+                  className={`flex-1 ml-2 text-sm ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                />
+              </View>
+            )}
+
+            {/* Search Trigger / Close */}
+            <TouchableOpacity
+              onPress={() => {
+                if (showInput) {
+                  handleSearchFlag(false);
+                } else {
+                  navigation.navigate(SCREENS.SearchScreen);
+                }
+              }}
+              activeOpacity={0.7}
+              className={`w-10 h-10 rounded-full items-center justify-center ${
+                isDarkMode ? "bg-gray-800" : "bg-gray-100"
+              }`}
+            >
+              {showInput ? (
+                <AntDesign
+                  name="close"
+                  size={18}
+                  color={isDarkMode ? "#FFFFFF" : "#1E293B"}
+                />
+              ) : (
+                <Ionicons
+                  name="search-outline"
+                  size={20}
+                  color={isDarkMode ? "#FFFFFF" : "#1E293B"}
+                />
+              )}
+            </TouchableOpacity>
+
+            {/* QR Scanner Trigger */}
+            {!showInput && (
+              <TouchableOpacity
+                onPress={() => {
+                  setQRScanner(true);
+                  bottomSheetHandler(true, "top");
+                  navigation.openDrawer();
+                }}
+                activeOpacity={0.7}
+                className={`w-10 h-10 rounded-full items-center justify-center ml-2 ${
+                  isDarkMode ? "bg-gray-800" : "bg-gray-100"
+                }`}
+              >
+                <Ionicons
+                  name="qr-code-outline"
+                  size={20}
+                  color={isDarkMode ? "#FFFFFF" : "#1E293B"}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-      </View>
-        </SafeAreaView>
+      </SafeAreaView>
 
       {/* Bottom Sheet */}
       {/* <BottomSheetList

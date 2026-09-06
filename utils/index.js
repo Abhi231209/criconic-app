@@ -1,8 +1,9 @@
 import * as SecureStore from "expo-secure-store";
 // import * as Device from "expo-device";
-import { Platform } from "react-native";
+import { Platform, Alert } from "react-native";
 import { v4 as uuidv4 } from "uuid";
 import * as Crypto from 'expo-crypto';
+import SCREENS from "@/screens";
 
 export const formatNumber = (number) =>
   new Intl.NumberFormat("en-US").format(number);
@@ -32,13 +33,18 @@ function simpleUUID() {
   });
 }
 
+let cachedDeviceId = null;
+
 export const getDeviceId = async () => {
+  if (cachedDeviceId) return cachedDeviceId;
+
   if (Platform.OS === "web") {
     let deviceId = localStorage.getItem("deviceId");
     if (!deviceId) {
       deviceId = simpleUUID();
       localStorage.setItem("deviceId", deviceId);
     }
+    cachedDeviceId = deviceId;
     return deviceId;
   }
 
@@ -48,6 +54,7 @@ export const getDeviceId = async () => {
       deviceId = generateUUID();
       await SecureStore.setItemAsync("deviceId", deviceId);
     }
+    cachedDeviceId = deviceId;
     return deviceId;
   } catch (error) {
     return null;
@@ -126,21 +133,115 @@ export function getStatusClass(status) {
 }
 
 
-// export const matchRedirectBasedOnStatus = (matchId, status) => {
-//   let url = "";
-//   switch (status) {
-//     case MATCH_STATUS.TOSS:
-//       url = `${PATHS.MATCH_SELECT_PLAYING}?matchId=${matchId}`;
-//       break;
-//     case MATCH_STATUS.MATCH_CREATED || MATCH_STATUS.MATCH_STARTED:
-//       url = `${PATHS.MATCH_DETAILS}/${matchId}`;
-//       break;
-//     case MATCH_STATUS.MATCH_DETAILS_ENTERED:
-//       url = `${PATHS.MATCH_TOSS}/?matchId=${matchId}`;
-//       break;
-//     default:
-//       url = `/components/match/scorerScreen?matchId=${matchId}`;
-//   }
+export const MATCH_STATUS_STAGE = {
+  MATCH_CREATED: 0,
+  MATCH_DETAILS_ENTERED: 1,
+  TOSS: 2,
+  MATCH_OPENER_SELECTED: 3,
+  MATCH_START: 4,
+  INNINGS_I_ENDED: 5,
+};
 
-//   return url;
-// };
+export const matchRedirectBasedOnStatus = (matchId, status) => {
+  switch (status) {
+    case MATCH_STATUS.MATCH_SCHEDULED:
+    case MATCH_STATUS.MATCH_CREATED:
+      return { screen: SCREENS.MatchDetailsScreen, params: { matchId } };
+    case MATCH_STATUS.MATCH_DETAILS_ENTERED:
+      return { screen: SCREENS.TossScreen, params: { matchId } };
+    case MATCH_STATUS.TOSS:
+      return { screen: SCREENS.PlayerSelectionScreen, params: { matchId } };
+    case MATCH_STATUS.MATCH_OPENER_SELECTED:
+    case MATCH_STATUS.MATCH_STARTED:
+    case MATCH_STATUS.MATCH_IN_PROGRESS:
+    case MATCH_STATUS.INNINGS_I:
+    case MATCH_STATUS.INNINGS_II:
+    case MATCH_STATUS.INNINGS_I_ENDED:
+    case MATCH_STATUS.MATCH_RESUMED:
+    case MATCH_STATUS.MATCH_COMPLETED:
+    case MATCH_STATUS.MATCH_TIE:
+    case MATCH_STATUS.MATCH_ENDED:
+    default:
+      return { screen: SCREENS.ScorerScreen, params: { matchId } };
+  }
+};
+
+export const canNavigateBackTo = (currentScreen, matchStatus) => {
+  switch (currentScreen) {
+    case SCREENS.MatchDetailsScreen:
+      // Match not started, can go back to tournament or MyCricket
+      return true;
+    case SCREENS.TossScreen:
+      // If toss is not conducted, can return to MatchDetailsScreen. If completed, warn user.
+      return matchStatus === MATCH_STATUS.MATCH_DETAILS_ENTERED || !matchStatus;
+    case SCREENS.PlayerSelectionScreen:
+      // If openers not yet set, can return to TossScreen.
+      return matchStatus === MATCH_STATUS.TOSS;
+    case SCREENS.ScorerScreen:
+      // Scorer screen requires confirmation dialog before leaving to MyCricket/Home.
+      return false;
+    default:
+      return true;
+  }
+};
+
+export const exitPreScoreFlow = (navigation, params = {}) => {
+  const tournamentId =
+    params.tournamentId ||
+    params.tournamentID ||
+    params.tournament?._id ||
+    params.tournament;
+  if (tournamentId) {
+    navigation.navigate(SCREENS.TournamentProfile, { tournamentId });
+    return;
+  }
+
+  const returnScreen = params.returnScreen;
+  const preScoreScreens = [
+    SCREENS.CreateMatch,
+    SCREENS.SelectTeamScreen,
+    SCREENS.SelectSquadScreen,
+    SCREENS.MatchDetailsScreen,
+    SCREENS.TossScreen,
+    SCREENS.PlayerSelectionScreen,
+  ];
+
+  if (returnScreen && !preScoreScreens.includes(returnScreen)) {
+    navigation.navigate(returnScreen);
+    return;
+  }
+
+  const routes = navigation.getState?.()?.routes || [];
+  const priorRoute = [...routes].reverse().find((r) => !preScoreScreens.includes(r.name));
+  if (priorRoute) {
+    navigation.navigate(priorRoute.name, priorRoute.params);
+    return;
+  }
+
+  navigation.navigate(SCREENS.MyCricket);
+};
+
+export const confirmLeavePreScore = ({
+  navigation,
+  route,
+  onLeave,
+  title = "Leave Match Setup?",
+  message = "You will leave the match scoring screens. Are you sure you want to exit?",
+}) => {
+  Alert.alert(
+    title,
+    message,
+    [
+      { text: "Stay", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: () => {
+          if (onLeave) onLeave();
+          exitPreScoreFlow(navigation, route?.params || {});
+        },
+      },
+    ],
+    { cancelable: true }
+  );
+};

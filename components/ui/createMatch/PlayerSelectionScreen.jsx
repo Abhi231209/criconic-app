@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,45 +6,410 @@ import {
   useColorScheme,
   Modal,
   ScrollView,
+  Alert,
+  BackHandler,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
-import { BottomSheetModal, BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { matchesApi, request } from "@/utils/api";
+import { useSocket } from "@/contexts/SocketContext";
+import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import User from "@/utils/User";
+import { useSelector } from "react-redux";
 
 export default function PlayerSelectionScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { emit } = useSocket();
+  const authUser = useSelector((state) => state?.auth?.user);
+  const effectiveUserId = User.id || authUser?._id || authUser?.id;
+
   const { 
-    teamA, 
-    teamB, 
-    teamASquad, 
-    teamBSquad, 
+    teamA: initialTeamA, 
+    teamB: initialTeamB, 
+    teamASquad: initialTeamASquad, 
+    teamBSquad: initialTeamBSquad, 
     matchDetails, 
     tossWinner, 
     tossDecision 
-  } = route.params;
+  } = route.params || {};
+
+  const matchId =
+    route.params?.matchId ||
+    route.params?.matchID ||
+    matchDetails?._id ||
+    matchDetails?.id;
   
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
-  // Determine batting and bowling teams based on toss decision
-  const battingTeam = tossDecision === "Bat" ? tossWinner : (tossWinner.id === teamA.id ? teamB : teamA);
-  const bowlingTeam = tossDecision === "Bowl" ? tossWinner : (tossWinner.id === teamA.id ? teamB : teamA);
-  
-  const battingSquad = battingTeam.id === teamA.id ? teamASquad : teamBSquad;
-  const bowlingSquad = bowlingTeam.id === teamA.id ? teamASquad : teamBSquad;
+  const isValidObjectId = (id) =>
+    typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
+
+  const isSameTeam = (t1, t2) => {
+    if (!t1 || !t2) return false;
+    const id1 = String(t1._id || t1.id || t1.teamId?._id || t1.teamId || "");
+    const id2 = String(t2._id || t2.id || t2.teamId?._id || t2.teamId || "");
+    if (id1 && id2 && id1 === id2) return true;
+    const n1 = (t1.name || t1.title || t1.teamName || "").trim().toLowerCase();
+    const n2 = (t2.name || t2.title || t2.teamName || "").trim().toLowerCase();
+    if (n1 && n2 && n1 === n2) return true;
+    return false;
+  };
+
+  const normalizePlayer = (p, idx = 0) => {
+    if (!p) return null;
+    if (typeof p === "string") {
+      return { id: p, name: p, username: p, position: "Player" };
+    }
+    const rawId = p.id?._id || p.id?.id || p.id || p._id || p.playerId;
+    const id =
+      rawId && typeof rawId === "object"
+        ? String(rawId._id || rawId.id || "")
+        : String(rawId || `p_${idx}`);
+
+    const rawName =
+      p.name ||
+      p.username ||
+      p.playerName ||
+      p.id?.username ||
+      p.id?.name ||
+      p.id?.playerName ||
+      p.user?.username ||
+      p.user?.name ||
+      p.player?.username ||
+      p.player?.name ||
+      p.title ||
+      (typeof p.id === "string" && !isValidObjectId(p.id) ? p.id : null);
+
+    const name =
+      rawName && !String(rawName).startsWith("Player ")
+        ? String(rawName)
+        : rawName || `Player ${idx + 1}`;
+
+    const username =
+      p.username ||
+      p.name ||
+      p.id?.username ||
+      p.id?.name ||
+      p.user?.username ||
+      p.player?.username ||
+      name;
+
+    return {
+      ...p,
+      id,
+      name,
+      username,
+      position: p.role || p.position || "Player",
+    };
+  };
+
+  const normalizeSquad = (squad = []) => {
+    if (!Array.isArray(squad)) return [];
+    return squad.map((p, idx) => normalizePlayer(p, idx)).filter(Boolean);
+  };
+
+  const normTeamASquad = normalizeSquad(initialTeamASquad || initialTeamA?.players || []);
+  const normTeamBSquad = normalizeSquad(initialTeamBSquad || initialTeamB?.players || []);
+
+  const [teamA, setTeamA] = useState(initialTeamA || { name: "Team A" });
+  const [teamB, setTeamB] = useState(initialTeamB || { name: "Team B" });
+  const [teamASquad, setTeamASquad] = useState(normTeamASquad);
+  const [teamBSquad, setTeamBSquad] = useState(normTeamBSquad);
+
+  // Unambiguously determine batting & bowling teams based on toss winner and decision
+  const isWinnerTeamA = isSameTeam(tossWinner, initialTeamA);
+  const isWinnerBatting =
+    String(tossDecision).toUpperCase() === "BAT" ||
+    String(tossDecision).toLowerCase() === "bat";
+
+  const initialBattingTeam = isWinnerBatting
+    ? (isWinnerTeamA ? initialTeamA : initialTeamB)
+    : (isWinnerTeamA ? initialTeamB : initialTeamA);
+
+  const initialBowlingTeam = isWinnerBatting
+    ? (isWinnerTeamA ? initialTeamB : initialTeamA)
+    : (isWinnerTeamA ? initialTeamA : initialTeamB);
+
+  const isBattingTeamA = isSameTeam(initialBattingTeam, initialTeamA);
+
+  const [battingTeam, setBattingTeam] = useState(initialBattingTeam || initialTeamA);
+  const [bowlingTeam, setBowlingTeam] = useState(initialBowlingTeam || initialTeamB);
+
+  const [battingSquad, setBattingSquad] = useState(
+    isBattingTeamA ? normTeamASquad : normTeamBSquad
+  );
+  const [bowlingSquad, setBowlingSquad] = useState(
+    isBattingTeamA ? normTeamBSquad : normTeamASquad
+  );
 
   const [striker, setStriker] = useState(null);
   const [nonStriker, setNonStriker] = useState(null);
   const [bowler, setBowler] = useState(null);
   const [selectedRole, setSelectedRole] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openersCompleted, setOpenersCompleted] = useState(false);
+  const [isStatusChecked, setIsStatusChecked] = useState(false);
+  const isLeavingRef = useRef(false);
 
-  const bottomSheetModalRef = useRef(null);
-  const snapPoints = ['50%', '75%'];
+  // Status check on mount
+  useEffect(() => {
+    if (!matchId) {
+      setIsStatusChecked(true);
+      return;
+    }
+
+    matchesApi
+      .getMatchById(matchId)
+      .then(async (res) => {
+        const m = res?.data;
+        if (!m) {
+          setIsStatusChecked(true);
+          return;
+        }
+
+        if (m.status === MATCH_STATUS.MATCH_CREATED) {
+          isLeavingRef.current = true;
+          navigation.replace(SCREENS.MatchDetailsScreen, { matchId, ...route.params });
+          return; // do NOT setIsStatusChecked — redirecting away
+        }
+
+        if (m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED) {
+          isLeavingRef.current = true;
+          navigation.replace(SCREENS.TossScreen, { matchId, ...route.params });
+          return; // do NOT setIsStatusChecked — redirecting away
+        }
+
+        if (
+          m.status &&
+          m.status !== MATCH_STATUS.TOSS &&
+          m.status !== MATCH_STATUS.MATCH_CREATED &&
+          m.status !== MATCH_STATUS.MATCH_DETAILS_ENTERED
+        ) {
+          setOpenersCompleted(true);
+          const target = matchRedirectBasedOnStatus(matchId, m.status);
+          isLeavingRef.current = true;
+          navigation.replace(target.screen, target.params);
+          return; // do NOT setIsStatusChecked — redirecting away
+        }
+
+        if (m.teams && m.teams.length >= 2) {
+          const toss = m.score?.toss;
+          const currentInningsBattingTeam =
+            m.score?.innings_1?.battingTeam ||
+            (toss?.decision === "BAT"
+              ? toss.winningTeam
+              : String(m.teams[0]?.teamId?._id || m.teams[0]?.teamId) === String(toss?.winningTeam)
+              ? m.teams[1]?.teamId
+              : m.teams[0]?.teamId);
+
+          const batTeamIdStr = String(
+            currentInningsBattingTeam?._id ||
+            currentInningsBattingTeam?.id ||
+            currentInningsBattingTeam ||
+            ""
+          );
+
+          const batTeam =
+            m.teams.find((t) => {
+              const tid = String(t.teamId?._id || t.teamId?.id || t.teamId || "");
+              return tid && tid === batTeamIdStr;
+            }) || m.teams[0];
+
+          const bowlTeam =
+            m.teams.find((t) => {
+              const tid = String(t.teamId?._id || t.teamId?.id || t.teamId || "");
+              return tid && tid !== batTeamIdStr;
+            }) || m.teams[1] || m.teams[0];
+
+          setTeamA({
+            name: m.teams[0]?.title || m.teams[0]?.name || "Team A",
+            _id: m.teams[0]?.teamId?._id || m.teams[0]?.teamId,
+            id: m.teams[0]?.teamId?._id || m.teams[0]?.teamId,
+          });
+          setTeamB({
+            name: m.teams[1]?.title || m.teams[1]?.name || "Team B",
+            _id: m.teams[1]?.teamId?._id || m.teams[1]?.teamId,
+            id: m.teams[1]?.teamId?._id || m.teams[1]?.teamId,
+          });
+          setBattingTeam({
+            name: batTeam?.title || batTeam?.name || "Batting Team",
+            id: batTeam?.teamId?._id || batTeam?.teamId,
+            _id: batTeam?.teamId?._id || batTeam?.teamId,
+          });
+          setBowlingTeam({
+            name: bowlTeam?.title || bowlTeam?.name || "Bowling Team",
+            id: bowlTeam?.teamId?._id || bowlTeam?.teamId,
+            _id: bowlTeam?.teamId?._id || bowlTeam?.teamId,
+          });
+
+          const apiBatPlayers = normalizeSquad(batTeam?.players || []);
+          const apiBowlPlayers = normalizeSquad(bowlTeam?.players || []);
+
+          const teamIds = [
+            String(batTeam?.teamId?._id || batTeam?.teamId?.id || batTeam?.teamId || ""),
+            String(bowlTeam?.teamId?._id || bowlTeam?.teamId?.id || bowlTeam?.teamId || ""),
+          ].filter((id) => isValidObjectId(id));
+
+          let dbBatPlayers = [];
+          let dbBowlPlayers = [];
+          const playerMap = new Map();
+
+          const registerPlayerNames = (list) => {
+            if (!Array.isArray(list)) return;
+            list.forEach((p) => {
+              if (!p) return;
+              const pId = String(p.id?._id || p.id?.id || p.id || p._id || p.playerId || "");
+              const pName =
+                (p.name && !String(p.name).startsWith("Player ") ? p.name : null) ||
+                (p.username && !String(p.username).startsWith("Player ") ? p.username : null) ||
+                p.playerName ||
+                p.id?.username ||
+                p.id?.name ||
+                p.user?.username ||
+                p.user?.name ||
+                p.player?.username ||
+                p.player?.name ||
+                p.title;
+              if (pId && pName) {
+                playerMap.set(pId, String(pName));
+              }
+            });
+          };
+
+          registerPlayerNames(initialTeamASquad);
+          registerPlayerNames(initialTeamBSquad);
+          registerPlayerNames(normTeamASquad);
+          registerPlayerNames(normTeamBSquad);
+          registerPlayerNames(batTeam?.players);
+          registerPlayerNames(bowlTeam?.players);
+
+          if (teamIds.length > 0) {
+            try {
+              const teamsRes = await request("api/teams/getTeamsByIds", {
+                method: "POST",
+                data: { teamIds },
+              });
+              const dbTeams = teamsRes?.data || [];
+              if (Array.isArray(dbTeams) && dbTeams.length > 0) {
+                const dbBat =
+                  dbTeams.find(
+                    (t) =>
+                      String(t._id || t.id) ===
+                      String(batTeam?.teamId?._id || batTeam?.teamId?.id || batTeam?.teamId)
+                  ) || dbTeams[0];
+                const dbBowl =
+                  dbTeams.find(
+                    (t) =>
+                      String(t._id || t.id) ===
+                      String(bowlTeam?.teamId?._id || bowlTeam?.teamId?.id || bowlTeam?.teamId)
+                  ) ||
+                  dbTeams[1] ||
+                  dbTeams[0];
+
+                dbBatPlayers = normalizeSquad(dbBat?.players || []);
+                dbBowlPlayers = normalizeSquad(dbBowl?.players || []);
+
+                registerPlayerNames(dbBat?.players);
+                registerPlayerNames(dbBowl?.players);
+              }
+            } catch (err) {
+              console.warn("[PlayerSelectionScreen] Error fetching teams by IDs:", err);
+            }
+          }
+
+          const resolveSquad = (sourceCandidates, apiList, dbList) => {
+            const list =
+              sourceCandidates && sourceCandidates.length > 0
+                ? sourceCandidates
+                : apiList && apiList.length > 0
+                ? apiList
+                : dbList && dbList.length > 0
+                ? dbList
+                : [];
+
+            return list.map((p, idx) => {
+              const pId = String(
+                p.id?._id || p.id?.id || p.id || p._id || p.playerId || `p_${idx}`
+              );
+              const resolvedName =
+                playerMap.get(pId) ||
+                (p.name && !String(p.name).startsWith("Player ") ? p.name : null) ||
+                (p.username && !String(p.username).startsWith("Player ") ? p.username : null) ||
+                (p.playerName && !String(p.playerName).startsWith("Player ") ? p.playerName : null) ||
+                (apiList?.[idx]?.name && !String(apiList[idx].name).startsWith("Player ") ? apiList[idx].name : null) ||
+                (apiList?.[idx]?.username && !String(apiList[idx].username).startsWith("Player ") ? apiList[idx].username : null) ||
+                (dbList?.[idx]?.name && !String(dbList[idx].name).startsWith("Player ") ? dbList[idx].name : null) ||
+                (dbList?.[idx]?.username && !String(dbList[idx].username).startsWith("Player ") ? dbList[idx].username : null) ||
+                p.name ||
+                p.username ||
+                `Player ${idx + 1}`;
+
+              return {
+                ...p,
+                id: pId,
+                name: resolvedName,
+                username: resolvedName,
+              };
+            });
+          };
+
+          setBattingSquad((prev) => resolveSquad(prev, apiBatPlayers, dbBatPlayers));
+          setBowlingSquad((prev) => resolveSquad(prev, apiBowlPlayers, dbBowlPlayers));
+        }
+
+        // Status check done — safe to render PlayerSelectionScreen UI
+        setIsStatusChecked(true);
+      })
+      .catch((err) => {
+        console.warn("[PlayerSelectionScreen] Status check error:", err);
+        setIsStatusChecked(true); // ungate even on error
+      });
+  }, [matchId]);
+
+
+  const handleBack = () => {
+    confirmLeavePreScore({
+      navigation,
+      route,
+      onLeave: () => {
+        isLeavingRef.current = true;
+      },
+    });
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      isLeavingRef.current = false;
+
+      const backAction = () => {
+        if (!navigation.isFocused()) return false;
+        handleBack();
+        return true;
+      };
+
+      const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+
+      const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+        const actionType = e.data?.action?.type;
+        if (actionType !== "GO_BACK" && actionType !== "POP") return;
+        if (isLeavingRef.current || !navigation.isFocused()) return;
+        e.preventDefault();
+        handleBack();
+      });
+
+      return () => {
+        backHandler.remove();
+        unsubscribe();
+      };
+    }, [navigation, openersCompleted, matchId, teamA, teamB, teamASquad, teamBSquad, matchDetails, tossWinner, tossDecision])
+  );
 
   const openPlayerModal = (role) => {
     setSelectedRole(role);
@@ -71,51 +436,161 @@ export default function PlayerSelectionScreen() {
     closePlayerModal();
   };
 
-  const handleStartMatch = () => {
+  const handleStartMatch = async () => {
     if (!striker || !nonStriker || !bowler) {
-      alert("Please select all required players");
+      Alert.alert("Selection Required", "Please select Striker, Non-Striker, and Opening Bowler.");
       return;
     }
 
-    if (striker.id === nonStriker.id) {
-      alert("Striker and Non-Striker cannot be the same player");
+    const strikerId = getPlayerId(striker);
+    const nonStrikerId = getPlayerId(nonStriker);
+    const bowlerId = getPlayerId(bowler);
+
+    if (strikerId === nonStrikerId) {
+      Alert.alert("Invalid Selection", "Striker and Non-Striker cannot be the same player.");
       return;
     }
 
-    navigation.navigate(SCREENS.ScorerScreen, {
-      teamA,
-      teamB,
-      teamASquad,
-      teamBSquad,
-      matchDetails,
-      tossWinner,
-      tossDecision,
-      striker,
-      nonStriker,
-      bowler,
-      battingTeam,
-      bowlingTeam
-    });
+    setIsSubmitting(true);
+
+    try {
+      const openerPayload = {
+        matchID: matchId,
+        players: {
+          batsman: [
+            {
+              name: getPlayerName(striker),
+              playerId: strikerId,
+              battingPosition: 1,
+              isStrikeEnd: true,
+            },
+            {
+              name: getPlayerName(nonStriker),
+              playerId: nonStrikerId,
+              battingPosition: 2,
+              isStrikeEnd: false,
+            },
+          ],
+          bowler: {
+            name: getPlayerName(bowler),
+            playerId: bowlerId,
+          },
+        },
+      };
+
+      if (matchId) {
+        const res = await matchesApi.selectOpener(openerPayload);
+        if (!res?.data?.success && res?.status !== 200 && res?.status !== 202) {
+          console.warn("[PlayerSelection] selectOpener response:", res?.data);
+        }
+      }
+
+      // Emit socket start event
+      emit && emit("start", { matchId, userId: effectiveUserId });
+
+      setOpenersCompleted(true);
+      isLeavingRef.current = true;
+
+      navigation.navigate(SCREENS.ScorerScreen, {
+        matchId,
+        matchID: matchId,
+        teamA,
+        teamB,
+        teamASquad,
+        teamBSquad,
+        matchDetails,
+        tossWinner,
+        tossDecision,
+        striker,
+        nonStriker,
+        bowler,
+        battingTeam,
+        bowlingTeam,
+      });
+    } catch (error) {
+      console.warn("[PlayerSelection] Error submitting openers:", error);
+      Alert.alert("Notice", "Error saving openers. Continuing to Scorer Screen.");
+      isLeavingRef.current = true;
+      navigation.navigate(SCREENS.ScorerScreen, {
+        matchId,
+        matchID: matchId,
+        teamA,
+        teamB,
+        teamASquad,
+        teamBSquad,
+        matchDetails,
+        tossWinner,
+        tossDecision,
+        striker,
+        nonStriker,
+        bowler,
+        battingTeam,
+        bowlingTeam,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getPlayerName = (p) => {
+    if (!p) return "Player";
+    if (typeof p === "string") return p;
+    return (
+      (p.name && !String(p.name).startsWith("Player ") ? p.name : null) ||
+      (p.username && !String(p.username).startsWith("Player ") ? p.username : null) ||
+      p.playerName ||
+      p.id?.username ||
+      p.id?.name ||
+      p.user?.username ||
+      p.user?.name ||
+      p.player?.username ||
+      p.player?.name ||
+      p.title ||
+      p.name ||
+      p.username ||
+      "Player"
+    );
+  };
+
+  const getPlayerId = (p) => {
+    if (!p) return null;
+    if (typeof p === "string") return p;
+    const raw = p.id?._id || p.id?.id || p.id || p._id || p.playerId;
+    return raw && typeof raw === "object" ? String(raw._id || raw.id || "") : String(raw || "");
+  };
+
+  const getPlayerInitials = (p) => {
+    const nameStr = getPlayerName(p);
+    if (!nameStr || typeof nameStr !== "string") return "P";
+    const parts = nameStr.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "P";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
   const getAvailablePlayers = () => {
+    const strikerId = getPlayerId(striker);
     switch (selectedRole) {
       case 'striker':
-        return battingSquad;
+        return battingSquad || [];
       case 'nonStriker':
-        return battingSquad.filter(player => !striker || player.id !== striker.id);
+        return (battingSquad || []).filter(player => !strikerId || getPlayerId(player) !== strikerId);
       case 'bowler':
-        return bowlingSquad;
+        return bowlingSquad || [];
       default:
         return [];
     }
   };
 
-  const renderPlayerItem = (player) => {
-    const isDisabled = selectedRole === 'nonStriker' && striker && striker.id === player.id;
+  const renderPlayerItem = (player, index) => {
+    const pId = getPlayerId(player);
+    const pName = getPlayerName(player);
+    const sId = getPlayerId(striker);
+    const isDisabled = selectedRole === 'nonStriker' && !!sId && sId === pId;
     
     return (
       <TouchableOpacity
+        key={String(pId || pName || index)}
         onPress={() => !isDisabled && selectPlayer(player)}
         disabled={isDisabled}
         className={`p-4 rounded-xl mb-2 flex-row items-center ${
@@ -129,22 +604,20 @@ export default function PlayerSelectionScreen() {
         <View className={`w-10 h-10 rounded-full mr-3 ${
           isDarkMode ? "bg-gray-700" : "bg-gray-200"
         } items-center justify-center`}>
-          <ThemedText className="text-sm font-semibold text-gray-900 dark:text-white">
-            {player.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+          <ThemedText className="text-sm font-semibold" style={{ color: isDarkMode ? "#f8fafc" : "#111827" }}>
+            {getPlayerInitials(player)}
           </ThemedText>
         </View>
         
         <View className="flex-1">
-          <ThemedText className={`font-semibold ${
-            isDisabled ? "text-gray-500" : "text-gray-900 dark:text-white"
-          }`}>
-            {player.name}
+          <ThemedText className="font-semibold" style={{ color: isDisabled ? (isDarkMode ? "#9ca3af" : "#6b7280") : (isDarkMode ? "#f8fafc" : "#111827") }}>
+            {pName}
           </ThemedText>
-          <ThemedText className={`text-sm ${
-            isDisabled ? "text-gray-400" : "text-gray-500 dark:text-gray-400"
-          }`}>
-            {player.position} • ⭐{player.rating}/5
-          </ThemedText>
+          {player.position || player.rating ? (
+            <ThemedText className="text-sm" style={{ color: isDarkMode ? "#94a3b8" : "#64748b" }}>
+              {player.position || "Player"}{player.rating ? ` • ⭐${player.rating}/5` : ""}
+            </ThemedText>
+          ) : null}
         </View>
         
         {isDisabled && (
@@ -186,7 +659,7 @@ export default function PlayerSelectionScreen() {
             <ThemedText className={`text-sm ${
               isSelected ? "text-blue-100" : "text-gray-500 dark:text-gray-400"
             }`}>
-              {selectedPlayer.name}
+              {getPlayerName(selectedPlayer)}
             </ThemedText>
           ) : (
             <ThemedText className={`text-sm ${
@@ -206,11 +679,15 @@ export default function PlayerSelectionScreen() {
     );
   };
 
+  // Gate render until status-check API resolves to prevent flash-before-redirect.
+  if (!isStatusChecked) {
+    return <View style={{ flex: 1, backgroundColor: isDarkMode ? "#111827" : "#f9fafb" }} />;
+  }
+
   return (
-    <BottomSheetModalProvider>
-      <SafeAreaView
-        className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
-      >
+    <SafeAreaView
+      className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
+    >
         {/* Header */}
         <View
           className={`px-4 py-4 border-b flex-row items-center ${
@@ -220,7 +697,7 @@ export default function PlayerSelectionScreen() {
           }`}
         >
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             className="p-2 mr-2"
           >
             <Ionicons name="arrow-back" size={24} color="#2563EB" />
@@ -247,7 +724,7 @@ export default function PlayerSelectionScreen() {
                   Batting First
                 </ThemedText>
                 <ThemedText className="text-base font-semibold text-gray-900 dark:text-white text-center">
-                  {battingTeam.name}
+                  {battingTeam?.name || battingTeam?.title || "Batting Team"}
                 </ThemedText>
               </View>
               
@@ -256,13 +733,13 @@ export default function PlayerSelectionScreen() {
                   Bowling First
                 </ThemedText>
                 <ThemedText className="text-base font-semibold text-gray-900 dark:text-white text-center">
-                  {bowlingTeam.name}
+                  {bowlingTeam?.name || bowlingTeam?.title || "Bowling Team"}
                 </ThemedText>
               </View>
             </View>
             
             <ThemedText className="text-xs text-gray-500 dark:text-gray-400 text-center mt-3">
-              {tossWinner.name} won the toss and chose to {tossDecision.toLowerCase()} first
+              {(tossWinner?.name || tossWinner?.title || "Toss Winner")} won the toss and chose to {(tossDecision || "bat").toLowerCase()} first
             </ThemedText>
           </View>
 
@@ -287,15 +764,18 @@ export default function PlayerSelectionScreen() {
           {/* Start Match Button */}
           <TouchableOpacity
             onPress={handleStartMatch}
-            disabled={!striker || !nonStriker || !bowler}
-            className={`p-4 rounded-xl mt-4 ${
-              (!striker || !nonStriker || !bowler)
+            disabled={!striker || !nonStriker || !bowler || isSubmitting}
+            className={`p-4 rounded-xl mt-4 flex-row items-center justify-center ${
+              !striker || !nonStriker || !bowler || isSubmitting
                 ? "bg-gray-400"
                 : "bg-blue-500"
             }`}
           >
+            {isSubmitting && (
+              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+            )}
             <ThemedText className="text-white text-center text-lg font-semibold">
-              Start Match
+              {isSubmitting ? "Starting Match..." : "Start Match"}
             </ThemedText>
           </TouchableOpacity>
 
@@ -347,12 +827,17 @@ export default function PlayerSelectionScreen() {
               </View>
 
               <ScrollView className="max-h-96">
-                {getAvailablePlayers().map(player => renderPlayerItem(player))}
+                {getAvailablePlayers().length === 0 ? (
+                  <View className="py-8 items-center justify-center">
+                    <ThemedText className="text-gray-500 text-sm">No players available to select</ThemedText>
+                  </View>
+                ) : (
+                  getAvailablePlayers().map((player, idx) => renderPlayerItem(player, idx))
+                )}
               </ScrollView>
             </View>
           </View>
         </Modal>
       </SafeAreaView>
-    </BottomSheetModalProvider>
   );
 }

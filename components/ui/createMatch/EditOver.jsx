@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   Modal,
@@ -9,29 +8,10 @@ import {
   useColorScheme,
   ActivityIndicator,
 } from "react-native";
+import ThemedText from "../custom/ThemedText";
 import { X } from "lucide-react-native";
-
-const COLORS = {
-  primary: "#DC2626",
-  secondary: "#16A34A",
-  accent: "#EA580C",
-  light: {
-    background: "#FFFFFF",
-    card: "#F8FAFC",
-    text: "#1E293B",
-    textSecondary: "#64748B",
-    border: "#E2E8F0",
-    inputBackground: "#FFFFFF",
-  },
-  dark: {
-    background: "#0F172A",
-    card: "#1E293B",
-    text: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    border: "#334155",
-    inputBackground: "#1E293B",
-  },
-};
+import { request } from "@/utils/api";
+import { COLORS } from "@/theme/colors";
 
 // Button Component
 const ButtonNormal = ({ 
@@ -65,14 +45,14 @@ const ButtonNormal = ({
       {loading ? (
         <ActivityIndicator color={isOutline ? (isDarkMode ? COLORS.dark.text : COLORS.light.text) : "#FFFFFF"} size="small" />
       ) : (
-        <Text style={[
+        <ThemedText style={[
           styles.buttonText,
           isOutline 
             ? (isDarkMode ? styles.darkOutlineText : styles.lightOutlineText)
             : styles.primaryButtonText
         ]}>
           {children}
-        </Text>
+        </ThemedText>
       )}
     </TouchableOpacity>
   );
@@ -82,6 +62,7 @@ export default function EditOver({
   matchID, 
   visible = false, 
   onClose = () => {}, 
+  onSuccess = () => {},
   currentOver 
 }) {
   const colorScheme = useColorScheme();
@@ -120,27 +101,21 @@ export default function EditOver({
     setIsLoading(true);
 
     try {
-      // Replace with your actual API call
-      // const body = {
-      //   overToUpdate: newOver,
-      //   matchId: matchID,
-      // };
-      // const res = await request(`api/matches/changeOver`, {
-      //   method: "PUT",
-      //   data: body,
-      // });
+      const body = {
+        overToUpdate: newOver,
+        matchId: matchID,
+      };
+      const res = await request(`api/matches/changeOver`, {
+        method: "PUT",
+        data: body,
+      });
 
-      // Mock API call - replace with actual
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock success response
-      const mockSuccess = true; // Replace with: res.status == 200
-
-      if (mockSuccess) {
+      if (res?.status === 200 || res?.data?.success) {
         Alert.alert("Success", "Over updated successfully");
+        onSuccess?.();
         handleClose();
       } else {
-        Alert.alert("Error", "Failed to update over");
+        Alert.alert("Error", res?.data?.message || "Failed to update over");
       }
     } catch (error) {
       Alert.alert("Error", "Something went wrong");
@@ -185,18 +160,18 @@ export default function EditOver({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerContent}>
-              <Text style={[
+              <ThemedText style={[
                 styles.title,
                 isDarkMode ? styles.darkText : styles.lightText
               ]}>
                 Edit Over
-              </Text>
-              <Text style={[
+              </ThemedText>
+              <ThemedText style={[
                 styles.description,
                 isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
               ]}>
                 * You can only edit over in first inning
-              </Text>
+              </ThemedText>
             </View>
             <TouchableOpacity 
               onPress={handleClose} 
@@ -208,12 +183,12 @@ export default function EditOver({
 
           {/* Content */}
           <View style={styles.content}>
-            <Text style={[
+            <ThemedText style={[
               styles.currentOverText,
               isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
             ]}>
               Current Over: {currentOver}
-            </Text>
+            </ThemedText>
             
             <View style={styles.inputContainer}>
               <TextInput
@@ -231,7 +206,7 @@ export default function EditOver({
                 autoFocus={true}
               />
               {error ? (
-                <Text style={styles.errorText}>{error}</Text>
+                <ThemedText style={styles.errorText}>{error}</ThemedText>
               ) : null}
             </View>
           </View>

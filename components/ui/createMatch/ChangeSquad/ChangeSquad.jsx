@@ -1,44 +1,26 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
-  FlatList,
   Alert,
   useColorScheme,
   Modal,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, Plus, X, Check, ArrowLeft } from "lucide-react-native";
+import { Search, Plus, X, Check, ArrowLeft, Users, UserCheck } from "lucide-react-native";
 import * as lodash from "lodash";
 import ThemedText from "@/components/ui/custom/ThemedText";
-
-
-const COLORS = {
-  primary: "#DC2626",
-  secondary: "#16A34A",
-  accent: "#EA580C",
-  light: {
-    background: "#FFFFFF",
-    card: "#F8FAFC",
-    text: "#1E293B",
-    textSecondary: "#64748B",
-    border: "#E2E8F0",
-    inputBackground: "#FFFFFF",
-  },
-  dark: {
-    background: "#0F172A",
-    card: "#1E293B",
-    text: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    border: "#334155",
-    inputBackground: "#1E293B",
-  },
-};
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { request, teamsApi } from "@/utils/api";
+import SCREENS from "@/screens";
+import { COLORS } from "@/theme/colors";
 
 const BUTTON_ENUM = {
   ADD: 1,
@@ -46,7 +28,67 @@ const BUTTON_ENUM = {
   NONE: 3,
 };
 
-// Custom Components
+// Robust player ID extractor across backend/database models
+const extractPlayerId = (p) => {
+  if (!p) return "";
+  if (typeof p === "string") return p;
+  if (typeof p === "number") return String(p);
+  if (p.id) {
+    if (typeof p.id === "object") {
+      if (p.id._id) return String(p.id._id);
+      if (p.id.id) return String(p.id.id);
+    }
+    return String(p.id);
+  }
+  if (p._id) {
+    if (typeof p._id === "object") {
+      if (p._id._id) return String(p._id._id);
+      if (p._id.id) return String(p._id.id);
+    }
+    return String(p._id);
+  }
+  if (p.playerId) {
+    if (typeof p.playerId === "object") {
+      if (p.playerId._id) return String(p.playerId._id);
+      if (p.playerId.id) return String(p.playerId.id);
+    }
+    return String(p.playerId);
+  }
+  return "";
+};
+
+const getPlayerName = (p, fallback = "Player") => {
+  if (!p) return fallback;
+  if (typeof p.id === "object" && (p.id.name || p.id.username)) {
+    return p.id.name || p.id.username;
+  }
+  return p.name || p.username || p.playerName || fallback;
+};
+
+const getPlayerRole = (p, fallback = "Player") => {
+  if (!p) return fallback;
+  if (typeof p.id === "object" && p.id.role) {
+    return p.id.role;
+  }
+  return p.role || fallback;
+};
+
+const mergePlayers = (baseList = [], extraList = []) => {
+  const map = new Map();
+  (baseList || []).forEach((p) => {
+    const id = extractPlayerId(p);
+    if (id) map.set(id, p);
+  });
+  (extraList || []).forEach((p) => {
+    const id = extractPlayerId(p);
+    if (id && !map.has(id)) {
+      map.set(id, p);
+    }
+  });
+  return Array.from(map.values());
+};
+
+// Custom Search Bar
 const SearchBar = ({ placeholder, onChange, value, isDarkMode }) => (
   <View style={[
     styles.searchContainer,
@@ -66,72 +108,74 @@ const SearchBar = ({ placeholder, onChange, value, isDarkMode }) => (
   </View>
 );
 
+// Player Card
 const PlayerCard = ({ 
   player, 
   action, 
   onActionPress, 
   isDarkMode,
-  isPlayedPlayer 
+  isPlayedPlayer,
+  isInSquad = false
 }) => {
-  const getButtonConfig = () => {
-    switch (action) {
-      case BUTTON_ENUM.ADD:
-        return {
-          text: "Add",
-          style: styles.addButton,
-          textStyle: styles.addButtonText,
-          icon: Plus
-        };
-      case BUTTON_ENUM.REMOVE:
-        return {
-          text: "Remove",
-          style: styles.removeButton,
-          textStyle: styles.removeButtonText,
-          icon: X
-        };
-      default:
-        return null;
-    }
-  };
-
-  const buttonConfig = getButtonConfig();
+  const pName = getPlayerName(player);
+  const pRole = getPlayerRole(player);
 
   return (
     <View style={[
       styles.playerCard,
-      isDarkMode ? styles.darkPlayerCard : styles.lightPlayerCard
+      isDarkMode ? styles.darkPlayerCard : styles.lightPlayerCard,
+      isInSquad && (isDarkMode ? styles.darkSelectedPlayerCard : styles.lightSelectedPlayerCard)
     ]}>
       <View style={styles.playerInfo}>
-        <ThemedText style={[
-          styles.playerName,
-          isDarkMode ? styles.darkText : styles.lightText
-        ]}>
-          {player.name || player.username}
-        </ThemedText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <ThemedText style={[
+            styles.playerName,
+            isDarkMode ? styles.darkText : styles.lightText
+          ]}>
+            {pName}
+          </ThemedText>
+          {isInSquad && (
+            <View style={styles.inSquadBadge}>
+              <Check size={12} color="#16A34A" />
+              <ThemedText style={styles.inSquadBadgeText}>In Squad</ThemedText>
+            </View>
+          )}
+        </View>
         <ThemedText style={[
           styles.playerRole,
           isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
         ]}>
-          {player.role}
+          {pRole}
         </ThemedText>
       </View>
       
-      {buttonConfig && !isPlayedPlayer && (
-        <TouchableOpacity
-          style={[styles.actionButton, buttonConfig.style]}
-          onPress={() => onActionPress(player, action)}
-          activeOpacity={0.7}
-        >
-          <buttonConfig.icon size={16} color={action === BUTTON_ENUM.ADD ? "#FFFFFF" : COLORS.primary} />
-          <ThemedText style={buttonConfig.textStyle}>{buttonConfig.text}</ThemedText>
-        </TouchableOpacity>
-      )}
-      
-      {isPlayedPlayer && (
-        <View style={styles.playedBadge}>
-          <ThemedText style={styles.playedBadgeText}>Played</ThemedText>
-        </View>
-      )}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {isPlayedPlayer ? (
+          <View style={styles.playedBadge}>
+            <ThemedText style={styles.playedBadgeText}>Played</ThemedText>
+          </View>
+        ) : action === BUTTON_ENUM.REMOVE ? (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.removeButton]}
+            onPress={() => onActionPress(player, action)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <X size={15} color={COLORS.primary} />
+            <ThemedText style={styles.removeButtonText}>Remove</ThemedText>
+          </TouchableOpacity>
+        ) : action === BUTTON_ENUM.ADD ? (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.addButton]}
+            onPress={() => onActionPress(player, action)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Plus size={15} color="#FFFFFF" />
+            <ThemedText style={styles.addButtonText}>Add</ThemedText>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 };
@@ -159,6 +203,7 @@ const TabButton = ({ title, isActive, onPress, isDarkMode }) => (
 const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode }) => {
   const [playerName, setPlayerName] = useState("");
   const [playerRole, setPlayerRole] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const handleAddPlayer = async () => {
     if (!playerName.trim()) {
@@ -166,21 +211,31 @@ const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode })
       return;
     }
 
-    // Simulate API call - Replace with your actual API
     try {
-      // const response = await request(`api/teams/${teamID}/players`, {
-      //   method: "POST",
-      //   data: { name: playerName, role: playerRole }
-      // });
-      
-      // Mock success
+      setAdding(true);
+      if (teamsApi?.addPlayerToTeam) {
+        await teamsApi.addPlayerToTeam(teamID, {
+          name: playerName.trim(),
+          role: playerRole.trim() || "Player",
+        });
+      } else {
+        await request(`api/teams/${teamID}/players`, {
+          method: "POST",
+          data: { name: playerName.trim(), role: playerRole.trim() || "Player" },
+          errorAlert: false,
+        });
+      }
+
       Alert.alert("Success", "Player added successfully");
       setPlayerName("");
       setPlayerRole("");
-      onPlayerAdded();
-      onClose();
+      onPlayerAdded?.();
+      onClose?.();
     } catch (error) {
+      console.warn("[ChangeSquad] Failed to add player:", error);
       Alert.alert("Error", "Failed to add player");
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -189,6 +244,7 @@ const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode })
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
+      onRequestClose={onClose}
     >
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -204,7 +260,7 @@ const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode })
           ]}>
             Add New Player
           </ThemedText>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <X size={24} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
           </TouchableOpacity>
         </View>
@@ -235,12 +291,16 @@ const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode })
           />
 
           <TouchableOpacity
-            style={[styles.addPlayerButton, !playerName.trim() && styles.disabledButton]}
+            style={[styles.addPlayerButton, (!playerName.trim() || adding) && styles.disabledButton]}
             onPress={handleAddPlayer}
-            disabled={!playerName.trim()}
+            disabled={!playerName.trim() || adding}
             activeOpacity={0.8}
           >
-            <ThemedText style={styles.addPlayerButtonText}>Add Player</ThemedText>
+            {adding ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <ThemedText style={styles.addPlayerButtonText}>Add Player</ThemedText>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -248,77 +308,134 @@ const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode })
   );
 };
 
-// Mock API function - Replace with your actual API calls
-const request = async (url, options = {}) => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({ status: 200, data: {} });
-    }, 1000);
-  });
-};
-
-export default function ChangeSquad() {
+export default function ChangeSquad(props) {
+  const route = useRoute();
+  const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  // const router = useRouter();
   
-  // Get team and match data from route params or context
-  // For now, using mock data - replace with actual data fetching
-  const [teamId, setTeamId] = useState("1"); // Get from route params
-  const [matchId, setMatchId] = useState("1"); // Get from route params
-  const [teamData, setTeamData] = useState(null);
+  // Real team and match data from route params or props
+  const teamId =
+    route?.params?.teamId ||
+    route?.params?.team?.teamId ||
+    route?.params?.team?._id ||
+    route?.params?.team?.id ||
+    props?.route?.params?.teamId ||
+    props?.teamId ||
+    "1";
+
+  const matchId =
+    route?.params?.matchId ||
+    props?.route?.params?.matchId ||
+    props?.matchId ||
+    "1";
+
+  // Initial squad seed from navigation parameters
+  const initialSquad = route?.params?.squad || route?.params?.team?.players || [];
+
+  const [teamData, setTeamData] = useState(() => {
+    return route?.params?.team || props?.team || null;
+  });
   
   const [activeTab, setActiveTab] = useState(0);
+  const [filterTab, setFilterTab] = useState("ALL"); // ALL | SQUAD | BENCH
   const [searchTerm, setSearchTerm] = useState("");
-  const [teamPlayers, setTeamPlayers] = useState([]);
+  
+  // Initialize with initialSquad if provided so players appear immediately
+  const [selectedPlayer, setSelectedPlayer] = useState(() => {
+    const sel = {};
+    if (Array.isArray(initialSquad)) {
+      initialSquad.forEach((player) => {
+        const pId = extractPlayerId(player);
+        if (pId) sel[pId] = getPlayerName(player) || 1;
+      });
+    }
+    return sel;
+  });
+
+  const [teamPlayers, setTeamPlayers] = useState(() => {
+    return Array.isArray(initialSquad) ? initialSquad : [];
+  });
+
   const [playedPlayer, setPlayedPlayer] = useState({});
   const [filteredPlayers, setFilteredPlayers] = useState([]);
-  const [selectedPlayer, setSelectedPlayer] = useState({});
   const [playerToRemove, setPlayerToRemove] = useState({});
   const [playerToAdd, setPlayerToAdd] = useState({});
   const [addPlayerModalVisible, setAddPlayerModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Fetch team data and match data
+  // Resilient Back Navigation: guaranteed never to trap the user
+  const handleGoBack = useCallback(() => {
+    try {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+        return;
+      }
+      if (props?.navigation?.canGoBack && props.navigation.canGoBack()) {
+        props.navigation.goBack();
+        return;
+      }
+    } catch (e) {
+      console.warn("[ChangeSquad] navigation.goBack() check failed:", e);
+    }
+
+    // Fallback if canGoBack is false
+    if (matchId && matchId !== "1") {
+      (navigation || props?.navigation)?.navigate(SCREENS.ScorerScreen, { matchId });
+    } else if ((navigation || props?.navigation)?.navigate) {
+      (navigation || props?.navigation)?.navigate(SCREENS.Home);
+    }
+  }, [navigation, props?.navigation, matchId]);
+
+  // Hardware back press on Android
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (!navigation.isFocused()) return false;
+        handleGoBack();
+        return true;
+      };
+      const backSubscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => backSubscription.remove();
+    }, [navigation, handleGoBack])
+  );
+
+  // Fetch team data and match data on load
   useEffect(() => {
     fetchTeamData();
     fetchMatchPlayedPlayer();
-  }, []);
+  }, [teamId, matchId]);
 
+  // Filter players when search term or teamPlayers change
   useEffect(() => {
-    const filtered = teamPlayers.filter(player =>
-      (player?.name || player?.username || '')
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase())
-    );
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) {
+      setFilteredPlayers(teamPlayers);
+      return;
+    }
+    const filtered = teamPlayers.filter((player) => {
+      const name = getPlayerName(player, "").toLowerCase();
+      const role = getPlayerRole(player, "").toLowerCase();
+      return name.includes(query) || role.includes(query);
+    });
     setFilteredPlayers(filtered);
   }, [searchTerm, teamPlayers]);
 
   const fetchTeamData = async () => {
     try {
       setLoading(true);
-      // Replace with your actual API call
-      // const res = await request(`api/teams/${teamId}`, { method: "GET" });
-      
-      // Mock data
-      const mockTeamData = {
-        id: "1",
-        name: "Team A",
-        players: [
-          { id: 1, name: "Virat Kohli", role: "Batsman", username: "vkohli" },
-          { id: 2, name: "MS Dhoni", role: "Wicketkeeper", username: "msdhoni" },
-          { id: 3, name: "Rohit Sharma", role: "Batsman", username: "rsharma" },
-          { id: 4, name: "Jasprit Bumrah", role: "Bowler", username: "jbumrah" },
-          { id: 5, name: "Ravindra Jadeja", role: "All-rounder", username: "rjadeja" },
-          { id: 6, name: "Hardik Pandya", role: "All-rounder", username: "hpandya" },
-        ]
-      };
-      
-      setTeamData(mockTeamData);
-      setTeamPlayers(mockTeamData.players);
+      const res = await request(`api/teams/${teamId}`, { method: "GET", errorAlert: false });
+      if (res?.data) {
+        const teamObj = Array.isArray(res.data) ? res.data[0] : (res.data?.content || res.data);
+        if (teamObj) {
+          setTeamData((prev) => prev || teamObj);
+          const fetchedPlayers = teamObj?.players || [];
+          setTeamPlayers((prev) => mergePlayers(fetchedPlayers, prev));
+        }
+      }
     } catch (error) {
-      Alert.alert("Error", "Failed to load team data");
+      console.warn("[ChangeSquad] Failed to load team data:", error);
     } finally {
       setLoading(false);
     }
@@ -326,23 +443,45 @@ export default function ChangeSquad() {
 
   const fetchMatchPlayedPlayer = async () => {
     try {
-      // Replace with your actual API call
-      // const res = await request(`api/matches/getPlayedPlayer/${matchId}/${teamId}`, { method: "GET" });
-      
-      // Mock data
-      const mockPlayedPlayers = { 1: true, 2: true }; // Players who have already played
-      setPlayedPlayer(mockPlayedPlayers);
-      
-      const mockSelectedPlayers = { 1: "Virat Kohli", 2: "MS Dhoni", 3: "Rohit Sharma" };
-      setSelectedPlayer(mockSelectedPlayers);
+      const res = await request(`api/matches/getPlayedPlayer/${matchId}/${teamId}`, {
+        method: "GET",
+        errorAlert: false,
+      });
+      if (res?.data) {
+        const cannotRemove =
+          res.data?.content?.cannotRemove ||
+          res.data?.playedPlayers ||
+          res.data?.cannotRemove ||
+          {};
+        const normalizedCannotRemove = {};
+        Object.keys(cannotRemove).forEach((k) => {
+          normalizedCannotRemove[String(k)] = 1;
+        });
+        setPlayedPlayer(normalizedCannotRemove);
+
+        const squadList = res.data?.content?.selectedSquad || res.data?.selectedSquad;
+        if (Array.isArray(squadList) && squadList.length > 0) {
+          const sel = {};
+          squadList.forEach((player) => {
+            const pId = extractPlayerId(player);
+            if (pId) sel[pId] = getPlayerName(player) || 1;
+          });
+          setSelectedPlayer(sel);
+          // Merge match squad into teamPlayers so none are ever missing
+          setTeamPlayers((prev) => mergePlayers(prev, squadList));
+        } else if (res.data?.selectedPlayers) {
+          setSelectedPlayer(res.data.selectedPlayers);
+        }
+      }
     } catch (error) {
-      Alert.alert("Error", "Failed to load match data");
+      console.warn("[ChangeSquad] Failed to load match player data:", error);
     }
   };
 
   const handleRemove = (playerInfo) => {
-    const playerId = playerInfo.id;
-    const playerName = playerInfo.username || playerInfo.name;
+    const playerId = extractPlayerId(playerInfo);
+    const playerName = getPlayerName(playerInfo);
+    if (!playerId) return;
 
     if (playerToAdd[playerId]) {
       const playerToAddClone = lodash.cloneDeep(playerToAdd);
@@ -362,8 +501,9 @@ export default function ChangeSquad() {
   };
 
   const handleAdd = (playerInfo) => {
-    const playerId = playerInfo.id;
-    const playerName = playerInfo.username || playerInfo.name;
+    const playerId = extractPlayerId(playerInfo);
+    const playerName = getPlayerName(playerInfo);
+    if (!playerId) return;
 
     if (playerToRemove[playerId]) {
       const playerToRemoveClone = lodash.cloneDeep(playerToRemove);
@@ -391,12 +531,13 @@ export default function ChangeSquad() {
         handleAdd(playerInfo);
         break;
       default:
-        console.log("No action");
+        break;
     }
   };
 
   const handleAddRemovePlayer = async () => {
     try {
+      setIsSaving(true);
       const body = {
         playerToAdd,
         playerToRemove,
@@ -404,30 +545,33 @@ export default function ChangeSquad() {
         teamId,
       };
       
-      // Replace with your actual API call
-      // const res = await request(`api/matches/addRemovePlayer`, {
-      //   method: "PUT",
-      //   data: body,
-      // });
+      const res = await request(`api/matches/addRemovePlayer`, {
+        method: "PUT",
+        data: body,
+      });
 
-      if (true) { // Replace with actual response check
+      if (res?.status === 200 || res?.data?.success || res?.data) {
         setPlayerToRemove({});
         setPlayerToAdd({});
         Alert.alert("Success", "Squad updated successfully");
-        // Optionally navigate back or refresh data
-        // router.back();
+        props?.cb?.();
+        route?.params?.cb?.();
+        handleGoBack();
+      } else {
+        Alert.alert("Error", res?.data?.message || "Failed to update squad");
       }
     } catch (error) {
+      console.warn("[ChangeSquad] Save squad error:", error);
       Alert.alert("Error", "Failed to update squad");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDone = async () => {
     if (activeTab === 1) {
-      // Add player logic - handled by modal
       return;
     } else {
-      // Save squad changes
       if (lodash.size(playerToRemove) > 0 || lodash.size(playerToAdd) > 0) {
         await handleAddRemovePlayer();
       } else {
@@ -437,32 +581,39 @@ export default function ChangeSquad() {
   };
 
   const hasChanges = lodash.size(playerToRemove) > 0 || lodash.size(playerToAdd) > 0;
+  const changesCount = lodash.size(playerToRemove) + lodash.size(playerToAdd);
 
-  if (loading) {
-    return (
-      <SafeAreaView style={[
-        styles.container,
-        isDarkMode ? styles.darkContainer : styles.lightContainer,
-        styles.centered
-      ]}>
-        <ThemedText style={isDarkMode ? styles.darkText : styles.lightText}>
-          Loading...
-        </ThemedText>
-      </SafeAreaView>
-    );
-  }
+  // Partition players into Selected (In Squad) vs Available (Bench)
+  const { inSquadPlayers, benchPlayers } = useMemo(() => {
+    const inSquad = [];
+    const bench = [];
+    (filteredPlayers || []).forEach((player) => {
+      const pId = extractPlayerId(player);
+      if (selectedPlayer[pId]) {
+        inSquad.push(player);
+      } else {
+        bench.push(player);
+      }
+    });
+    return { inSquadPlayers: inSquad, benchPlayers: bench };
+  }, [filteredPlayers, selectedPlayer]);
+
+  const selectedCount = Object.keys(selectedPlayer).length;
 
   return (
     <SafeAreaView style={[
       styles.container,
       isDarkMode ? styles.darkContainer : styles.lightContainer
     ]}>
-      {/* Header */}
+      {/* Persistent Header with Large Touch Target */}
       <View style={styles.header}>
         <TouchableOpacity 
-          // onPress={() => router.back()} 
+          onPress={handleGoBack} 
           style={styles.backButton}
-          activeOpacity={0.7}
+          activeOpacity={0.6}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <ArrowLeft size={24} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
         </TouchableOpacity>
@@ -475,19 +626,19 @@ export default function ChangeSquad() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Team Info */}
+      {/* Team Info Banner */}
       <View style={styles.teamInfo}>
         <ThemedText style={[
           styles.teamName,
           isDarkMode ? styles.darkText : styles.lightText
         ]}>
-          {teamData?.name}
+          {teamData?.name || teamData?.title || "Match Squad"}
         </ThemedText>
         <ThemedText style={[
           styles.teamStats,
           isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
         ]}>
-          {teamPlayers.length} players • {Object.keys(selectedPlayer).length} in squad
+          {teamPlayers.length} Total Players • <Text style={{ color: COLORS.secondary, fontWeight: "700" }}>{selectedCount} in Squad</Text>
         </ThemedText>
       </View>
 
@@ -512,9 +663,10 @@ export default function ChangeSquad() {
         {activeTab === 0 ? (
           // My Squad Tab
           <View style={styles.tabContent}>
+            {/* Quick Search and Add Player Button */}
             <View style={styles.searchSection}>
               <SearchBar
-                placeholder="Quick Search"
+                placeholder="Quick Search players..."
                 onChange={setSearchTerm}
                 value={searchTerm}
                 isDarkMode={isDarkMode}
@@ -527,47 +679,169 @@ export default function ChangeSquad() {
                 onPress={() => setAddPlayerModalVisible(true)}
                 activeOpacity={0.7}
               >
-                <Plus size={20} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
+                <Plus size={18} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
                 <ThemedText style={[
                   styles.addButtonText,
                   isDarkMode ? styles.darkText : styles.lightText
                 ]}>
-                  Add Player
+                  New
                 </ThemedText>
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={filteredPlayers}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={({ item }) => {
-                const action = !selectedPlayer[item.id]
-                  ? BUTTON_ENUM.ADD
-                  : !playedPlayer[item.id]
-                  ? BUTTON_ENUM.REMOVE
-                  : BUTTON_ENUM.NONE;
-
-                return (
-                  <PlayerCard
-                    player={item}
-                    action={action}
-                    onActionPress={handleButtonAction}
-                    isDarkMode={isDarkMode}
-                    isPlayedPlayer={playedPlayer[item.id]}
-                  />
-                );
-              }}
-              contentContainerStyle={styles.playersList}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
+            {/* Filter Pills */}
+            <View style={styles.filterContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  filterTab === "ALL" ? styles.filterChipActive : (isDarkMode ? styles.darkFilterChip : styles.lightFilterChip)
+                ]}
+                onPress={() => setFilterTab("ALL")}
+                activeOpacity={0.7}
+              >
                 <ThemedText style={[
-                  styles.emptyText,
-                  isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                  styles.filterChipText,
+                  filterTab === "ALL" ? styles.filterChipTextActive : (isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary)
                 ]}>
-                  No players found
+                  All ({filteredPlayers.length})
                 </ThemedText>
-              }
-            />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  filterTab === "SQUAD" ? styles.filterChipActive : (isDarkMode ? styles.darkFilterChip : styles.lightFilterChip)
+                ]}
+                onPress={() => setFilterTab("SQUAD")}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={[
+                  styles.filterChipText,
+                  filterTab === "SQUAD" ? styles.filterChipTextActive : (isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary)
+                ]}>
+                  In Squad ({inSquadPlayers.length})
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  filterTab === "BENCH" ? styles.filterChipActive : (isDarkMode ? styles.darkFilterChip : styles.lightFilterChip)
+                ]}
+                onPress={() => setFilterTab("BENCH")}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={[
+                  styles.filterChipText,
+                  filterTab === "BENCH" ? styles.filterChipTextActive : (isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary)
+                ]}>
+                  Bench ({benchPlayers.length})
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {loading && teamPlayers.length === 0 ? (
+              <View style={[styles.centered, { flex: 1, paddingVertical: 40 }]}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ThemedText style={[{ marginTop: 12 }, isDarkMode ? styles.darkText : styles.lightText]}>
+                  Loading squad players...
+                </ThemedText>
+              </View>
+            ) : (
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={styles.playersList}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* SECTION 1: IN SQUAD / PLAYING XI */}
+                {(filterTab === "ALL" || filterTab === "SQUAD") && (
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionHeaderTitleRow}>
+                        <UserCheck size={16} color={COLORS.secondary} />
+                        <ThemedText style={[styles.sectionHeaderTitle, isDarkMode ? styles.darkText : styles.lightText]}>
+                          PLAYING SQUAD
+                        </ThemedText>
+                        <View style={[styles.sectionCountBadge, styles.sectionCountBadgeActive]}>
+                          <ThemedText style={[styles.sectionCountText, { color: COLORS.secondary }]}>
+                            {inSquadPlayers.length}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    </View>
+
+                    {inSquadPlayers.length === 0 ? (
+                      <ThemedText style={[
+                        styles.emptySectionText,
+                        isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                      ]}>
+                        {searchTerm ? "No matching squad players" : "No players in squad. Add from bench below."}
+                      </ThemedText>
+                    ) : (
+                      inSquadPlayers.map((item) => {
+                        const pId = extractPlayerId(item);
+                        const isPlayed = !!playedPlayer[pId];
+                        const action = !isPlayed ? BUTTON_ENUM.REMOVE : BUTTON_ENUM.NONE;
+                        return (
+                          <PlayerCard
+                            key={`squad-${pId || Math.random()}`}
+                            player={item}
+                            action={action}
+                            onActionPress={handleButtonAction}
+                            isDarkMode={isDarkMode}
+                            isPlayedPlayer={isPlayed}
+                            isInSquad={true}
+                          />
+                        );
+                      })
+                    )}
+                  </View>
+                )}
+
+                {/* SECTION 2: BENCH / AVAILABLE PLAYERS */}
+                {(filterTab === "ALL" || filterTab === "BENCH") && (
+                  <View style={{ marginBottom: 24 }}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionHeaderTitleRow}>
+                        <Users size={16} color={isDarkMode ? COLORS.dark.textSecondary : COLORS.light.textSecondary} />
+                        <ThemedText style={[styles.sectionHeaderTitle, isDarkMode ? styles.darkText : styles.lightText]}>
+                          BENCH / AVAILABLE
+                        </ThemedText>
+                        <View style={styles.sectionCountBadge}>
+                          <ThemedText style={[styles.sectionCountText, isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary]}>
+                            {benchPlayers.length}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    </View>
+
+                    {benchPlayers.length === 0 ? (
+                      <ThemedText style={[
+                        styles.emptySectionText,
+                        isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                      ]}>
+                        {searchTerm ? "No matching bench players" : "No bench players available."}
+                      </ThemedText>
+                    ) : (
+                      benchPlayers.map((item) => {
+                        const pId = extractPlayerId(item);
+                        return (
+                          <PlayerCard
+                            key={`bench-${pId || Math.random()}`}
+                            player={item}
+                            action={BUTTON_ENUM.ADD}
+                            onActionPress={handleButtonAction}
+                            isDarkMode={isDarkMode}
+                            isPlayedPlayer={false}
+                            isInSquad={false}
+                          />
+                        );
+                      })
+                    )}
+                  </View>
+                )}
+              </ScrollView>
+            )}
           </View>
         ) : (
           // Add Player Tab
@@ -583,7 +857,7 @@ export default function ChangeSquad() {
                 styles.addPlayerDescription,
                 isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
               ]}>
-                Click the button below to add new players to your team
+                Click the button below to register a new player to your team and squad
               </ThemedText>
               
               <TouchableOpacity
@@ -591,7 +865,7 @@ export default function ChangeSquad() {
                 onPress={() => setAddPlayerModalVisible(true)}
                 activeOpacity={0.8}
               >
-                <Plus size={24} color="#FFFFFF" />
+                <Plus size={22} color="#FFFFFF" />
                 <ThemedText style={styles.addPlayerCtaText}>Add New Player</ThemedText>
               </TouchableOpacity>
             </View>
@@ -599,17 +873,22 @@ export default function ChangeSquad() {
         )}
       </View>
 
-      {/* Done Button */}
+      {/* Done / Save Changes Floating Footer */}
       {hasChanges && activeTab === 0 && (
-        <View style={styles.footer}>
+        <View style={[styles.footer, isDarkMode ? styles.darkFooter : styles.lightFooter]}>
           <TouchableOpacity
-            style={styles.doneButton}
+            style={[styles.doneButton, isSaving && styles.disabledButton]}
             onPress={handleDone}
+            disabled={isSaving}
             activeOpacity={0.8}
           >
-            <ThemedText style={styles.doneButtonText}>
-              Save Changes
-            </ThemedText>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <ThemedText style={styles.doneButtonText}>
+                Save Changes ({changesCount})
+              </ThemedText>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -631,8 +910,8 @@ const styles = {
     flex: 1,
   },
   centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   lightContainer: {
     backgroundColor: COLORS.light.background,
@@ -641,45 +920,53 @@ const styles = {
     backgroundColor: COLORS.dark.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    borderBottomColor: "rgba(0,0,0,0.08)",
   },
   backButton: {
-    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
+    fontWeight: "700",
+    textAlign: "center",
   },
   headerSpacer: {
-    width: 32,
+    width: 44,
   },
   teamInfo: {
-    padding: 16,
-    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
   },
   teamName: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: "700",
     marginBottom: 4,
   },
   teamStats: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   tabContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 16,
   },
   tabButton: {
     flex: 1,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
     borderBottomWidth: 2,
   },
   lightTabButton: {
@@ -693,28 +980,29 @@ const styles = {
   },
   tabButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   activeTabButtonText: {
     color: COLORS.primary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   content: {
     flex: 1,
   },
   tabContent: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   searchSection: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
   },
   searchContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 8,
@@ -732,15 +1020,15 @@ const styles = {
   searchInput: {
     flex: 1,
     paddingVertical: 10,
-    fontSize: 16,
+    fontSize: 15,
   },
   addButtonLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
   },
   lightAddButton: {
     backgroundColor: COLORS.light.card,
@@ -753,19 +1041,87 @@ const styles = {
     borderColor: COLORS.dark.border,
   },
   addButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  filterContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  filterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  lightFilterChip: {
+    borderColor: COLORS.light.border,
+    backgroundColor: COLORS.light.card,
+  },
+  darkFilterChip: {
+    borderColor: COLORS.dark.border,
+    backgroundColor: COLORS.dark.card,
+  },
+  filterChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.06)",
+  },
+  sectionHeaderTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sectionHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  sectionCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  sectionCountBadgeActive: {
+    backgroundColor: "rgba(22, 163, 74, 0.15)",
+  },
+  sectionCountText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  emptySectionText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   playersList: {
-    gap: 8,
-    paddingBottom: 16,
+    paddingBottom: 32,
   },
   playerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 14,
+    borderRadius: 10,
     marginBottom: 8,
   },
   lightPlayerCard: {
@@ -778,122 +1134,150 @@ const styles = {
     borderWidth: 1,
     borderColor: COLORS.dark.border,
   },
+  lightSelectedPlayerCard: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+  },
+  darkSelectedPlayerCard: {
+    backgroundColor: "rgba(22, 163, 74, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(22, 163, 74, 0.4)",
+  },
+  inSquadBadge: {
+    backgroundColor: "rgba(22, 163, 74, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "rgba(22, 163, 74, 0.3)",
+  },
+  inSquadBadgeText: {
+    color: "#16A34A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   playerInfo: {
     flex: 1,
+    marginRight: 8,
   },
   playerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
   },
   playerRole: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: "500",
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 6,
-    gap: 6,
+    gap: 5,
   },
   addButton: {
     backgroundColor: COLORS.primary,
   },
   removeButton: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
   addButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   removeButtonText: {
     color: COLORS.primary,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   playedBadge: {
     backgroundColor: COLORS.secondary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   playedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '600',
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
   addPlayerContent: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   addPlayerTitle: {
     fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
+    fontWeight: "700",
+    textAlign: "center",
     marginBottom: 8,
   },
   addPlayerDescription: {
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 24,
   },
   addPlayerCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
   },
   addPlayerCtaText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   footer: {
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  lightFooter: {
+    backgroundColor: COLORS.light.background,
+    borderTopColor: COLORS.light.border,
+  },
+  darkFooter: {
+    backgroundColor: COLORS.dark.background,
+    borderTopColor: COLORS.dark.border,
   },
   doneButton: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center",
   },
   doneButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "700",
   },
-  emptyText: {
-    textAlign: 'center',
-    fontSize: 16,
-    marginTop: 20,
-  },
-  // Modal Styles
   modalContainer: {
     flex: 1,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    borderBottomColor: "rgba(0,0,0,0.1)",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   closeButton: {
     padding: 4,
@@ -905,8 +1289,8 @@ const styles = {
   input: {
     borderWidth: 1,
     borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
+    padding: 14,
+    fontSize: 15,
   },
   lightInput: {
     borderColor: COLORS.light.border,
@@ -918,19 +1302,18 @@ const styles = {
   },
   addPlayerButton: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   disabledButton: {
     opacity: 0.6,
   },
   addPlayerButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
-  // Text Styles
   lightText: {
     color: COLORS.light.text,
   },

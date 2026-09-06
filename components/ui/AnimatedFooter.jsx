@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
@@ -6,16 +6,16 @@ import {
   Animated,
   Dimensions,
   StyleSheet,
-} from 'react-native';
+  Platform,
+} from "react-native";
 import {
   Box,
   HStack,
   VStack,
   Center,
-  useColorMode,
   LinearGradient,
-} from '@gluestack-ui/themed';
-import Svg, { Path } from 'react-native-svg';
+} from "@gluestack-ui/themed";
+import Svg, { Path } from "react-native-svg";
 import {
   Home,
   Search,
@@ -24,117 +24,229 @@ import {
   Users,
   Trophy,
   Calendar,
-} from 'lucide-react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import SCREENS from '@/screens';
+  Sparkles,
+  X,
+  ArrowRight,
+  Activity,
+} from "lucide-react-native";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import SCREENS from "@/screens";
 import { useNavigation } from "@react-navigation/native";
+import { BlurView } from "expo-blur";
+import ThemedText from "./custom/ThemedText";
+import useAppTheme from "@/hooks/useAppTheme";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-const AnimatedFooter = ({ onNavigate }) => {
-    const navigation = useNavigation();
-  const { colorMode } = useColorMode();
-  const [activeTab, setActiveTab] = useState('Home');
+const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
+  const itemAnimation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (showCreateMenu) {
+      Animated.spring(itemAnimation, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+        delay: index * 80,
+      }).start();
+    } else {
+      itemAnimation.setValue(0);
+    }
+  }, [showCreateMenu, index]);
+
+  const translateY = itemAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [30, 0],
+  });
+  const opacity = itemAnimation;
+
+  return (
+    <Animated.View
+      style={[
+        styles.createMenuItemWrapper,
+        {
+          transform: [{ translateY }],
+          opacity,
+        },
+      ]}
+    >
+      <TouchableOpacity
+        onPress={() => item.onPress?.()}
+        style={[
+          styles.createMenuItem,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+        activeOpacity={0.8}
+      >
+        <LinearGradient
+          colors={[item.color, colors.primary]}
+          style={styles.createMenuItemIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          {typeof item.icon === "function" ? (
+            <item.icon size={22} color={item.color} />
+          ) : (
+            <item.icon size={22} color={item.color} />
+          )}
+        </LinearGradient>
+
+        <View style={styles.createMenuItemInfo}>
+          <ThemedText
+            style={[styles.createMenuItemTitle, { color: colors.text }]}
+          >
+            {item.title}
+          </ThemedText>
+          <ThemedText
+            style={[
+              styles.createMenuItemSubtitle,
+              { color: colors.textSecondary },
+            ]}
+          >
+            {item.subtitle}
+          </ThemedText>
+        </View>
+
+        <View
+          style={[
+            styles.createMenuItemArrow,
+            { backgroundColor: `${colors.primary}15` },
+          ]}
+        >
+          <ArrowRight size={16} color={colors.primary} />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const AnimatedFooter = ({ onNavigate, currentTab }) => {
+  const navigation = useNavigation();
+  const { theme, isDark } = useAppTheme();
+  const [activeTab, setActiveTab] = useState(currentTab || "Home");
   const [showCreateMenu, setShowCreateMenu] = useState(false);
-  
+  const menuItemAnimations = useRef([]).current;
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const isDark = colorMode === 'dark';
+  const colors = theme;
 
-  const colors = {
-    background: isDark ? '#1a1a1a' : '#ffffff',
-    text: isDark ? '#ffffff' : '#000000',
-    textSecondary: isDark ? '#a0a0a0' : '#666666',
-    primary: '#6366f1',
-    border: isDark ? '#333333' : '#e5e7eb',
-    overlay: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)',
-    menuBg: isDark ? '#2a2a2a' : '#ffffff',
-    shadow: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+  const navigateToScreen = (screenName, params) => {
+    const currentRoutes = navigation.getState?.()?.routeNames || [];
+    if (currentRoutes.includes(screenName)) {
+      navigation.navigate(screenName, params);
+      return;
+    }
+
+    const parentNavigation = navigation.getParent?.();
+    const parentRoutes = parentNavigation?.getState?.()?.routeNames || [];
+    if (parentRoutes.includes(screenName)) {
+      parentNavigation.navigate(screenName, params);
+      return;
+    }
+
+    // Fallback: if nested under MainDrawer stack route, target it explicitly.
+    parentNavigation?.navigate?.(SCREENS.MainDrawer, {
+      screen: screenName,
+      params,
+    });
   };
 
   const footerItems = [
-    { name: 'Home', icon: Home },
-    { name: 'Tournament', icon: Trophy },
-    { name: 'Create', icon: Plus, isCreate: true },
-    { name: 'My Cricket', icon: (props) => <MaterialCommunityIcons name="cricket" {...props} /> },
-    { name: 'Profile', icon: User },
+    { name: "Home", icon: Home },
+    { name: "Tournament", icon: Trophy },
+    { name: "Create", icon: Plus, isCreate: true },
+    {
+      name: "My Cricket",
+      icon: (props) => <MaterialCommunityIcons name="cricket" {...props} />,
+    },
+    { name: "Profile", icon: User },
   ];
 
   const createMenuItems = [
-  {
-    title: 'Create Tournament',
-    subtitle: 'Organize a cricket tournament with teams and fixtures.',
-    icon: Trophy,
-    color: '#3b82f6'
-  },
-  {
-    title: 'Create Match',
-    subtitle: 'Schedule a single match between two teams.',
-    icon: (props) => <MaterialCommunityIcons name="cricket" {...props} />,
-    color: '#22c55e'
-  },
-  {
-    title: 'Create Team',
-    subtitle: 'Build a new cricket team with players.',
-    icon: Users,
-    color: '#f59e0b'
-  }
-];
+    {
+      title: "Create Tournament",
+      subtitle: "Organize a cricket tournament with teams and fixtures.",
+      icon: Trophy,
+      color: colors.primary,
+      onPress: () => navigateToScreen(SCREENS.CreateTournament),
+    },
+    {
+      title: "Create Match",
+      subtitle: "Schedule a single match between two teams.",
+      icon: (props) => <MaterialCommunityIcons name="cricket" {...props} />,
+      color: colors.primary,
+      onPress: () => navigateToScreen(SCREENS.CreateMatch),
+    },
+    {
+      title: "Create Team",
+      subtitle: "Build a new cricket team with players.",
+      icon: Users,
+      color: colors.primary,
+      onPress: () => navigateToScreen(SCREENS.CreateTeam),
+    },
+  ];
 
+  const toggleCreateMenu = () => {
+    const toValue = showCreateMenu ? 0 : 1;
+    setShowCreateMenu(!showCreateMenu);
 
-const toggleCreateMenu = () => {
-  const toValue = showCreateMenu ? 0 : 1;
-  setShowCreateMenu(!showCreateMenu);
-
-  Animated.parallel([
-    Animated.spring(fadeAnim, { toValue, useNativeDriver: true }),
-    Animated.spring(scaleAnim, { toValue, useNativeDriver: true }),
-    Animated.timing(rotateAnim, { toValue, duration: 300, useNativeDriver: true }),
-    Animated.spring(slideAnim, { toValue, useNativeDriver: true }),
-  ]).start();
-};
-
-
+    Animated.parallel([
+      Animated.spring(fadeAnim, { toValue, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue, useNativeDriver: true }),
+      Animated.timing(rotateAnim, {
+        toValue,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, { toValue, useNativeDriver: true }),
+    ]).start();
+  };
 
   const handleTabPress = (tabName) => {
-    if (tabName === 'Create') {
+    if (tabName === "Create") {
       toggleCreateMenu();
     } else {
       setActiveTab(tabName);
       if (showCreateMenu) {
         toggleCreateMenu();
       }
-    //   onNavigate?.(tabName);
-    navigation.navigate(SCREENS.AllTournaments)
+      if (tabName === "Home") {
+        navigateToScreen(SCREENS.Home);
+      } else if (tabName === "Tournament") {
+        navigateToScreen(SCREENS.AllTournaments);
+      } else if (tabName === "My Cricket") {
+        navigateToScreen(SCREENS.MyCricket);
+      } else if (tabName === "Profile") {
+        navigateToScreen(SCREENS.PlayerProfile);
+      }
     }
-  };
-
-  const handleCreateMenuPress = (itemName) => {
-    console.log(`Create ${itemName} pressed`);
-    toggleCreateMenu();
-    onNavigate?.(itemName);
   };
 
   const rotation = rotateAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '45deg'],
+    outputRange: ["0deg", "45deg"],
   });
 
   // Create the custom footer shape with circular cutout
-const createFooterPath = () => {
-  const footerWidth = width;
-  const footerHeight = 70;
-  const centerX = footerWidth / 2;
+  const createFooterPath = () => {
+    const footerWidth = width;
+    const footerHeight = 70;
+    const centerX = footerWidth / 2;
 
-  const notchWidth = 80;   // total width of cutout
-  const notchDepth = 30;   // how deep it goes down
-  const curveControl = 20; // controls smoothness at edges
+    const notchWidth = 80; // total width of cutout
+    const notchDepth = 30; // how deep it goes down
+    const curveControl = 20; // controls smoothness at edges
 
-  return `
+    return `
     M0,0
     H${centerX - notchWidth / 2 - curveControl}
     C${centerX - notchWidth / 2},0 ${centerX - notchWidth / 2},${notchDepth} ${centerX},${notchDepth}
@@ -144,12 +256,7 @@ const createFooterPath = () => {
     H0
     Z
   `;
-};
-
-
-
-
-
+  };
 
   const renderFooterItem = (item, index) => {
     const IconComponent = item.icon;
@@ -160,10 +267,7 @@ const createFooterPath = () => {
       <TouchableOpacity
         key={item.name}
         onPress={() => handleTabPress(item.name)}
-        style={[
-          styles.tabItem,
-          isCreate && styles.createTabItem
-        ]}
+        style={[styles.tabItem, isCreate && styles.createTabItem]}
         activeOpacity={0.7}
       >
         <Center>
@@ -175,11 +279,7 @@ const createFooterPath = () => {
                 { transform: [{ rotate: rotation }] },
               ]}
             >
-              <IconComponent
-                size={24}
-                color="#ffffff"
-                strokeWidth={2.5}
-              />
+              <IconComponent size={24} color={colors.white} strokeWidth={2.5} />
             </Animated.View>
           ) : (
             <View style={styles.regularTab}>
@@ -196,7 +296,7 @@ const createFooterPath = () => {
                 styles.tabLabel,
                 {
                   color: isActive ? colors.primary : colors.textSecondary,
-                  fontWeight: isActive ? '600' : '400',
+                  fontWeight: isActive ? "600" : "400",
                 },
               ]}
             >
@@ -209,82 +309,198 @@ const createFooterPath = () => {
   };
 
   const renderCreateMenuItem = (item, index) => {
-  const IconComponent = item.icon;
+    const IconComponent = item.icon;
 
-  return (
-    <TouchableOpacity
-      key={item.title}
-      onPress={() => handleCreateMenuPress(item.title)}
-      style={styles.createMenuRow}
-      activeOpacity={0.8}
-    >
-      <View style={[styles.createMenuIcon, { backgroundColor: item.color }]}>
-        {typeof IconComponent === 'function' ? (
-          <IconComponent size={20} color="#fff" />
-        ) : (
-          <IconComponent size={20} color="#fff" />
-        )}
-      </View>
-      <View style={styles.createMenuTextWrapper}>
-        <Text style={styles.createMenuTitle}>{item.title}</Text>
-        <Text style={styles.createMenuSubtitle}>{item.subtitle}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
+    return (
+      <TouchableOpacity
+        key={item.title}
+        onPress={() => item.onPress?.()}
+        style={styles.createMenuRow}
+        activeOpacity={0.8}
+      >
+        <View style={[styles.createMenuIcon, { backgroundColor: item.color }]}>
+          {typeof IconComponent === "function" ? (
+            <IconComponent size={20} color={colors.white} />
+          ) : (
+            <IconComponent size={20} color={colors.white} />
+          )}
+        </View>
+        <View style={styles.createMenuTextWrapper}>
+          <Text style={styles.createMenuTitle}>{item.title}</Text>
+          <Text style={styles.createMenuSubtitle}>{item.subtitle}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <>
       {/* Overlay */}
       <Animated.View
-  pointerEvents={showCreateMenu ? 'auto' : 'none'}
-  style={[
-    styles.overlay,
-    {
-      backgroundColor: colors.overlay,
-      opacity: fadeAnim,
-    },
-  ]}
->
-  <TouchableOpacity
-    style={styles.overlayTouch}
-    onPress={toggleCreateMenu}
-    activeOpacity={1}
-  />
-</Animated.View>
-
+        pointerEvents={showCreateMenu ? "auto" : "none"}
+        style={[
+          styles.overlay,
+          {
+            backgroundColor: colors.overlay,
+            opacity: fadeAnim,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.overlayTouch}
+          onPress={toggleCreateMenu}
+          activeOpacity={1}
+        />
+      </Animated.View>
 
       {/* Create Menu */}
-    <Animated.View
-  pointerEvents={showCreateMenu ? 'auto' : 'none'}
-  style={[
-    styles.createMenuContainer,
-    {
-      opacity: fadeAnim,
-      transform: [{ scale: scaleAnim }],
-    },
-  ]}
->
-  {/* Left gradient panel */}
-  <LinearGradient
-    colors={['#8b5cf6', '#3b82f6']}
-    style={styles.createMenuLeft}
-  >
-    <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>
-      Criconic
-    </Text>
-    <Text style={{ fontSize: 12, color: '#f3f4f6', marginTop: 6 }}>
-      Manage your cricket matches, teams, and tournaments.
-    </Text>
-  </LinearGradient>
+      <Animated.View
+        pointerEvents={showCreateMenu ? "auto" : "none"}
+        style={[
+          styles.createMenuContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }],
+            backgroundColor: colors.menuBackground,
+          },
+        ]}
+      >
+        {/* Glass morphism background */}
+        {Platform.OS === "ios" ? (
+          <BlurView
+            style={StyleSheet.absoluteFill}
+            blurType={isDark ? "dark" : "light"}
+            blurAmount={30}
+          />
+        ) : (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: colors.menuBackdrop,
+              },
+            ]}
+          />
+        )}
 
-  {/* Right menu items */}
-  <View style={{ flex: 1, paddingLeft: 16 }}>
-    {createMenuItems.map((item, index) => renderCreateMenuItem(item, index))}
-  </View>
-</Animated.View>
+        <View style={styles.createMenuContent}>
+          {/* Header with icon */}
+          <View style={styles.createMenuHeader}>
+            <View style={styles.createMenuHeaderIconWrapper}>
+              <LinearGradient
+                colors={colors.gradient}
+                style={styles.createMenuHeaderGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Sparkles size={24} color="#FFFFFF" strokeWidth={1.5} />
+              </LinearGradient>
+            </View>
+            <View style={styles.createMenuHeaderText}>
+              <ThemedText
+                style={[styles.createMenuHeaderTitle, { color: colors.text }]}
+              >
+                Quick Create
+              </ThemedText>
+              <ThemedText
+                style={[
+                  styles.createMenuHeaderSubtitle,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Launch something new
+              </ThemedText>
+            </View>
+            <TouchableOpacity
+              onPress={toggleCreateMenu}
+              style={[
+                styles.createMenuCloseButton,
+                {
+                  backgroundColor: colors.closeButtonOverlay,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <X size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
 
+          {/* Menu Items */}
+          <View style={styles.createMenuItemsGrid}>
+            {createMenuItems.map((item, index) => (
+              <CreateMenuItemCard
+                key={item.title}
+                item={item}
+                index={index}
+                showCreateMenu={showCreateMenu}
+                colors={colors}
+              />
+            ))}
+          </View>
+
+          {/* Stats Section */}
+          <View
+            style={[styles.createMenuStats, { borderTopColor: colors.border }]}
+          >
+            <View style={styles.statCard}>
+              <View
+                style={[
+                  styles.statIcon,
+                  { backgroundColor: `${colors.primary}15` },
+                ]}
+              >
+                <Trophy size={16} color={colors.primary} />
+              </View>
+              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
+                12
+              </ThemedText>
+              <ThemedText
+                style={[styles.statName, { color: colors.textSecondary }]}
+              >
+                Tournaments
+              </ThemedText>
+            </View>
+
+            <View style={styles.statCard}>
+              <View
+                style={[
+                  styles.statIcon,
+                  { backgroundColor: `${colors.primary}15` },
+                ]}
+              >
+                <Activity size={16} color={colors.primary} />
+              </View>
+              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
+                48
+              </ThemedText>
+              <ThemedText
+                style={[styles.statName, { color: colors.textSecondary }]}
+              >
+                Matches
+              </ThemedText>
+            </View>
+
+            <View style={styles.statCard}>
+              <View
+                style={[
+                  styles.statIcon,
+                  { backgroundColor: `${colors.primary}15` },
+                ]}
+              >
+                <Users size={16} color={colors.primary} />
+              </View>
+              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
+                156
+              </ThemedText>
+              <ThemedText
+                style={[styles.statName, { color: colors.textSecondary }]}
+              >
+                Players
+              </ThemedText>
+            </View>
+          </View>
+        </View>
+      </Animated.View>
 
       {/* Custom Shaped Footer */}
       <View style={styles.footerContainer}>
@@ -301,13 +517,11 @@ const createFooterPath = () => {
             strokeWidth={1}
           />
         </Svg>
-        
+
         {/* Footer Content */}
         <View style={styles.footerContent}>
           <HStack style={styles.footerItemsContainer}>
-            {footerItems.map((item, index) =>
-              renderFooterItem(item, index)
-            )}
+            {footerItems.map((item, index) => renderFooterItem(item, index))}
           </HStack>
         </View>
       </View>
@@ -316,8 +530,9 @@ const createFooterPath = () => {
 };
 
 const styles = StyleSheet.create({
+  // Footer Container
   footerContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
@@ -325,9 +540,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   footerSvg: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: -2,
@@ -337,7 +552,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   footerContent: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
@@ -347,32 +562,34 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingBottom: 8,
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
   },
+
+  // Tab Items
   tabItem: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    alignItems: "center",
+    justifyContent: "flex-end",
     paddingVertical: 8,
-    height: '100%',
+    height: "100%",
   },
   createTabItem: {
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingBottom: 35,
   },
   regularTab: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
   },
   createButton: {
-    position:"relative",
+    position: "relative",
     bottom: 25,
     width: 56,
     height: 56,
     borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -385,8 +602,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+
+  // Overlay
   overlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
@@ -396,61 +615,152 @@ const styles = StyleSheet.create({
   overlayTouch: {
     flex: 1,
   },
- createMenuContainer: {
-  position: 'absolute',
-  bottom: 100,
-  left: 20,
-  right: 20,
-  backgroundColor: '#111827', // dark panel background
-  borderRadius: 16,
-  padding: 16,
-  flexDirection: 'row',
-  zIndex: 3,
-  shadowColor: '#000',
-  shadowOpacity: 0.25,
-  shadowRadius: 10,
-  elevation: 8,
-},
 
-// Left gradient section
-createMenuLeft: {
-  width: 120,
-  borderRadius: 12,
-  padding: 12,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
+  // Create Menu Container - Modern Version
+  createMenuContainer: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    borderRadius: 28,
+    overflow: "hidden",
+    zIndex: 3,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 15,
+  },
 
-createMenuRow: {
-  flexDirection: 'row',
-  alignItems: 'flex-start',
-  paddingVertical: 12,
-},
+  // Create Menu Content
+  createMenuContent: {
+    padding: 20,
+  },
 
-createMenuIcon: {
-  width: 32,
-  height: 32,
-  borderRadius: 16,
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginRight: 12,
-},
+  // Header
+  createMenuHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  createMenuHeaderIconWrapper: {
+    marginRight: 12,
+  },
+  createMenuHeaderGradient: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createMenuHeaderText: {
+    flex: 1,
+  },
+  createMenuHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 2,
+    letterSpacing: -0.3,
+  },
+  createMenuHeaderSubtitle: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  createMenuCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-createMenuTextWrapper: {
-  flex: 1,
-},
+  // Menu Items Grid
+  createMenuItemsGrid: {
+    marginBottom: 24,
+    gap: 12,
+  },
+  createMenuItemWrapper: {
+    width: "100%",
+  },
+  createMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  createMenuItemIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  createMenuItemInfo: {
+    flex: 1,
+  },
+  createMenuItemTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+    letterSpacing: -0.2,
+  },
+  createMenuItemSubtitle: {
+    fontSize: 12,
+    lineHeight: 14,
+    opacity: 0.7,
+  },
+  createMenuItemArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-createMenuTitle: {
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#fff',
-},
-
-createMenuSubtitle: {
-  fontSize: 12,
-  color: '#9ca3af',
-  marginTop: 2,
-},
+  // Stats Section
+  createMenuStats: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingTop: 20,
+    borderTopWidth: 1,
+  },
+  statCard: {
+    alignItems: "center",
+    flex: 1,
+  },
+  statIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  statName: {
+    fontSize: 11,
+    fontWeight: "500",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
 });
 
 export default AnimatedFooter;

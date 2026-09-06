@@ -5,7 +5,10 @@ module.exports = {
   darkMode: process.env.DARK_MODE ? process.env.DARK_MODE : "media",
   content: [
     "./App.js",
+    "./Layout.jsx",
+    "./screens/**/*.{html,js,jsx,ts,tsx,mdx}",
     "./components/**/*.{html,js,jsx,ts,tsx,mdx}",
+    "./navigation/**/*.{html,js,jsx,ts,tsx,mdx}",
     "./hooks/**/*.{html,js,jsx,ts,tsx,mdx}",
   ],
   presets: [require("nativewind/preset")],

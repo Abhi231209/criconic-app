@@ -1,4 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
+import User from "@/utils/User";
 
 const initialState = {
   user: null, // User data will be stored here after login
@@ -14,15 +15,24 @@ const authSlice = createSlice({
   initialState,
   reducers: {
     login: (state, action) => {
-      state.user = {
-        ...(action.payload || {}),
-        is_logged_in: true, // Ensure this is set
+      const payload = action.payload || {};
+      const normalizedUser = {
+        ...payload,
+        id: payload._id || payload.id || null,
+        _id: payload._id || payload.id || null,
+        username: payload.username || payload.name || null,
+        name: payload.username || payload.name || null,
+        is_logged_in: true,
       };
-      state.token = action.payload.access_token;
+      state.user = normalizedUser;
+      state.token = payload.token || payload.access_token || null;
       state.isAuthenticated = true;
       state.is_logged_in = true;
       state.loading = false;
       state.error = null;
+
+      // Synchronize User singleton
+      User.login(normalizedUser);
     },
     logout: (state) => {
       state.user = null;
@@ -31,7 +41,11 @@ const authSlice = createSlice({
       state.is_logged_in = false;
       state.loading = false;
       state.error = null;
+
+      // Synchronize User singleton
+      User.logout();
     },
+
     setLoading: (state, action) => {
       state.loading = action.payload;
     },

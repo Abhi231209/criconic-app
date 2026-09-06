@@ -74,46 +74,48 @@ const TabSwitch = ({
     );
   }
 
-  // Create tab screen components dynamically
-  const createTabScreens = () => {
-    return tabs.map((tab, index) => {
-      const TabScreen = () => {
-        // Handle content prop if it exists
-        if (tab.content) {
-          return tab.content;
-        }
-        
-        // Handle content array prop if it exists
-        if (Array.isArray(contentStyle?.content)) {
-          return contentStyle.content[index] || <View />;
-        }
-        
-        return <View />;
-      };
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const contentStyleRef = useRef(contentStyle);
+  contentStyleRef.current = contentStyle;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-      // Create a unique route name for each tab
+  // Render tab screens with stable children callbacks rather than newly instantiated component functions
+  const renderTabScreens = () => {
+    return tabs.map((tab, index) => {
       const routeName = `Tab_${index}`;
 
       return (
         <Tab.Screen
-          key={index}
+          key={tab.id || `tab_${index}`}
           name={routeName}
-          component={TabScreen}
           options={{
             tabBarLabel: tab.label || tab.name || `Tab${index}`,
           }}
           listeners={{
             tabPress: () => {
-              if (onChange) {
+              if (onChangeRef.current) {
                 try {
-                  onChange(tab, index);
+                  onChangeRef.current(tab, index);
                 } catch (error) {
                   console.error('Error in onChange callback:', error);
                 }
               }
             },
           }}
-        />
+        >
+          {() => {
+            const currentTab = tabsRef.current?.[index];
+            if (currentTab?.content) {
+              return currentTab.content;
+            }
+            if (Array.isArray(contentStyleRef.current?.content)) {
+              return contentStyleRef.current.content[index] || <View />;
+            }
+            return <View />;
+          }}
+        </Tab.Screen>
       );
     });
   };
@@ -169,7 +171,7 @@ const TabSwitch = ({
           lazy: true,
         }}
       >
-        {createTabScreens()}
+        {renderTabScreens()}
       </Tab.Navigator>
     </View>
   );

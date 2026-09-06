@@ -43,6 +43,8 @@ export default function MatchSummary({ matchData }) {
     border: isDark ? "#334155" : "#e2e8f0",
   };
 
+  // HARDCODED SAMPLE MATCH DATA - COMMENTED OUT (API ONLY)
+  /*
   // Sample match data
   const matchInfo = {
     team1: {
@@ -95,6 +97,82 @@ export default function MatchSummary({ matchData }) {
     { over: "16.2", description: "Healy's quickfire 42 comes to an end", type: "wicket" },
     { over: "19.1", description: "WF-W seal the victory with a yorker", type: "decisive" }
   ];
+  */
+
+  const t1 = matchData?.teams?.[0];
+  const t2 = matchData?.teams?.[1];
+  const inn1 = matchData?.inning?.[0];
+  const inn2 = matchData?.inning?.[1];
+
+  const matchInfo = {
+    team1: {
+      name: inn1?.batting?.battingTeam || t1?.title || "Team 1",
+      score: `${inn1?.batting?.score?.runs ?? 0}/${inn1?.batting?.score?.wicket ?? 0}`,
+      overs: inn1?.batting?.score?.over || "0.0",
+      result: matchData?.matchResult || matchData?.result || ""
+    },
+    team2: {
+      name: inn2?.batting?.battingTeam || t2?.title || "Team 2",
+      score: `${inn2?.batting?.score?.runs ?? 0}/${inn2?.batting?.score?.wicket ?? 0}`,
+      overs: inn2?.batting?.score?.over || "0.0",
+      result: ""
+    },
+    venue: matchData?.venue || matchData?.location || "Ground",
+    date: matchData?.date ? new Date(matchData.date).toLocaleDateString() : "",
+    matchType: matchData?.matchType ? `${matchData.matchType} Match` : "Cricket Match"
+  };
+
+  const manOfTheMatch = matchData?.manOfTheMatch || null;
+
+  // Extract all batsmen from innings to get top batters
+  const allBatters = [];
+  let totalSixes = 0;
+  let totalFours = 0;
+  let totalWickets = 0;
+
+  (matchData?.inning || []).forEach((inn) => {
+    const teamTitle = inn?.batting?.battingTeam || "";
+    (inn?.playedBatsman || []).forEach((b) => {
+      totalSixes += b.sixes || 0;
+      totalFours += b.fours || 0;
+      allBatters.push({
+        name: b.name || "Batter",
+        team: teamTitle,
+        runs: b.runs ?? 0,
+        balls: b.ballsFaced ?? 0,
+        fours: b.fours ?? 0,
+        sixes: b.sixes ?? 0,
+        sr: b.sr ?? (b.ballsFaced ? ((b.runs / b.ballsFaced) * 100).toFixed(1) : 0),
+      });
+    });
+    totalWickets += inn?.batting?.score?.wicket || 0;
+  });
+  allBatters.sort((a, b) => b.runs - a.runs);
+  const topBatters = allBatters.slice(0, 3);
+
+  // Extract all bowlers from innings to get top bowlers
+  const allBowlers = [];
+  (matchData?.inning || []).forEach((inn) => {
+    const teamTitle = inn?.bowling?.teamName || "";
+    (inn?.bowling?.allBowlers || inn?.bowling?.bowlers || []).forEach((b) => {
+      allBowlers.push({
+        name: b.name || "Bowler",
+        team: teamTitle,
+        wickets: b.wicketsTaken ?? 0,
+        runs: b.runsGiven ?? 0,
+        overs: b.over || "0.0",
+        economy: b.eco ?? "0.00",
+      });
+    });
+  });
+  allBowlers.sort((a, b) => (b.wickets - a.wickets) || (a.runs - b.runs));
+  const topBowlers = allBowlers.slice(0, 3);
+
+  const keyMoments = (matchData?.fallOfWickets || []).map((fow) => ({
+    over: fow.teamOvers || "0.0",
+    description: `${fow.batsman?.name || "Batter"} dismissed for ${fow.teamRuns || 0} runs`,
+    type: "wicket"
+  }));
 
   const toggleSection = (section) => {
     if (expandedSection === section) {
@@ -209,60 +287,62 @@ export default function MatchSummary({ matchData }) {
       </Animated.View>
 
       {/* Man of the Match */}
-      <Animated.View 
-        entering={LightSpeedInLeft.delay(300).duration(600)}
-        className={`p-6 mx-4 my-6 rounded-2xl border ${
-          isDark ? "bg-amber-900/20 border-amber-700" : "bg-amber-100 border-amber-200"
-        }`}
-        style={{ elevation: 4 }}
-      >
-        <View className="flex-row justify-between items-start mb-4">
-          <View className="flex-1">
-            <ThemedText className={`text-sm font-semibold ${
-              isDark ? "text-amber-300" : "text-amber-700"
-            }`} style={{ lineHeight: 20 }}>
-              Player of the Match
-            </ThemedText>
-            <ThemedText className={`text-2xl font-bold mt-1 ${
-              isDark ? "text-white" : "text-gray-900"
-            }`} style={{ lineHeight: 32 }}>
-              {manOfTheMatch.name}
-            </ThemedText>
-            <ThemedText className={`mt-1 ${isDark ? "text-amber-200" : "text-amber-800"}`} style={{ lineHeight: 20 }}>
-              {manOfTheMatch.team} • {manOfTheMatch.role}
-            </ThemedText>
+      {manOfTheMatch && (
+        <Animated.View 
+          entering={LightSpeedInLeft.delay(300).duration(600)}
+          className={`p-6 mx-4 my-6 rounded-2xl border ${
+            isDark ? "bg-amber-900/20 border-amber-700" : "bg-amber-100 border-amber-200"
+          }`}
+          style={{ elevation: 4 }}
+        >
+          <View className="flex-row justify-between items-start mb-4">
+            <View className="flex-1">
+              <ThemedText className={`text-sm font-semibold ${
+                isDark ? "text-amber-300" : "text-amber-700"
+              }`} style={{ lineHeight: 20 }}>
+                Player of the Match
+              </ThemedText>
+              <ThemedText className={`text-2xl font-bold mt-1 ${
+                isDark ? "text-white" : "text-gray-900"
+              }`} style={{ lineHeight: 32 }}>
+                {manOfTheMatch.name || "Player"}
+              </ThemedText>
+              <ThemedText className={`mt-1 ${isDark ? "text-amber-200" : "text-amber-800"}`} style={{ lineHeight: 20 }}>
+                {manOfTheMatch.team || ""} • {manOfTheMatch.role || "All-rounder"}
+              </ThemedText>
+            </View>
+            
+            <View className={`w-14 h-14 rounded-full items-center justify-center ${
+              isDark ? "bg-amber-800" : "bg-amber-200"
+            }`}>
+              <ThemedText className="text-2xl">{manOfTheMatch.avatar || "🏏"}</ThemedText>
+            </View>
           </View>
           
-          <View className={`w-14 h-14 rounded-full items-center justify-center ${
-            isDark ? "bg-amber-800" : "bg-amber-200"
-          }`}>
-            <ThemedText className="text-2xl">{manOfTheMatch.avatar}</ThemedText>
+          <View className="flex-row justify-between" style={{ marginHorizontal: -4 }}>
+            <StatBadge 
+              value={manOfTheMatch.performance?.runs ?? 0} 
+              label="Runs" 
+              color={isDark ? "#fbbf24" : "#f59e0b"} 
+            />
+            <StatBadge 
+              value={manOfTheMatch.performance?.balls ?? 0} 
+              label="Balls" 
+              color={isDark ? "#fbbf24" : "#f59e0b"} 
+            />
+            <StatBadge 
+              value={manOfTheMatch.performance?.wickets ?? 0} 
+              label="Wickets" 
+              color={isDark ? "#fbbf24" : "#f59e0b"} 
+            />
+            <StatBadge 
+              value={manOfTheMatch.performance?.economy ?? "0.0"} 
+              label="Economy" 
+              color={isDark ? "#fbbf24" : "#f59e0b"} 
+            />
           </View>
-        </View>
-        
-        <View className="flex-row justify-between" style={{ marginHorizontal: -4 }}>
-          <StatBadge 
-            value={manOfTheMatch.performance.runs} 
-            label="Runs" 
-            color={isDark ? "#fbbf24" : "#f59e0b"} 
-          />
-          <StatBadge 
-            value={manOfTheMatch.performance.balls} 
-            label="Balls" 
-            color={isDark ? "#fbbf24" : "#f59e0b"} 
-          />
-          <StatBadge 
-            value={manOfTheMatch.performance.wickets} 
-            label="Wickets" 
-            color={isDark ? "#fbbf24" : "#f59e0b"} 
-          />
-          <StatBadge 
-            value={manOfTheMatch.performance.economy} 
-            label="Economy" 
-            color={isDark ? "#fbbf24" : "#f59e0b"} 
-          />
-        </View>
-      </Animated.View>
+        </Animated.View>
+      )}
 
       {/* Top Performers Section */}
       <View className="px-4 pb-6">
@@ -279,52 +359,58 @@ export default function MatchSummary({ matchData }) {
           onPress={() => toggleSection('batters')}
           index={0}
         >
-          {topBatters.map((batter, index) => (
-            <View
-              key={index}
-              className={`flex-row justify-between items-center py-3 ${
-                index < topBatters.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
-              }`}
-            >
-              <View className="flex-1">
-                <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                  {batter.name}
-                </ThemedText>
-                <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                  {batter.team}
-                </ThemedText>
-              </View>
-              
-              <View className="flex-row">
-                <View className="items-center mr-4">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {batter.runs}
+          {topBatters.length > 0 ? (
+            topBatters.map((batter, index) => (
+              <View
+                key={index}
+                className={`flex-row justify-between items-center py-3 ${
+                  index < topBatters.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
+                }`}
+              >
+                <View className="flex-1">
+                  <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                    {batter.name}
                   </ThemedText>
                   <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    Runs
+                    {batter.team}
                   </ThemedText>
                 </View>
                 
-                <View className="items-center mr-4">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {batter.sr}
-                  </ThemedText>
-                  <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    SR
-                  </ThemedText>
-                </View>
-                
-                <View className="items-center">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {batter.fours}/{batter.sixes}
-                  </ThemedText>
-                  <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    4s/6s
-                  </ThemedText>
+                <View className="flex-row">
+                  <View className="items-center mr-4">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {batter.runs}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      Runs
+                    </ThemedText>
+                  </View>
+                  
+                  <View className="items-center mr-4">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {batter.sr}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      SR
+                    </ThemedText>
+                  </View>
+                  
+                  <View className="items-center">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {batter.fours}/{batter.sixes}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      4s/6s
+                    </ThemedText>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            ))
+          ) : (
+            <ThemedText className={`p-4 text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              No batting stats available
+            </ThemedText>
+          )}
         </PerformanceCard>
 
         {/* Top Bowlers */}
@@ -334,52 +420,58 @@ export default function MatchSummary({ matchData }) {
           onPress={() => toggleSection('bowlers')}
           index={1}
         >
-          {topBowlers.map((bowler, index) => (
-            <View
-              key={index}
-              className={`flex-row justify-between items-center py-3 ${
-                index < topBowlers.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
-              }`}
-            >
-              <View className="flex-1">
-                <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                  {bowler.name}
-                </ThemedText>
-                <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                  {bowler.team}
-                </ThemedText>
-              </View>
-              
-              <View className="flex-row">
-                <View className="items-center mr-4">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {bowler.wickets}
+          {topBowlers.length > 0 ? (
+            topBowlers.map((bowler, index) => (
+              <View
+                key={index}
+                className={`flex-row justify-between items-center py-3 ${
+                  index < topBowlers.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
+                }`}
+              >
+                <View className="flex-1">
+                  <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                    {bowler.name}
                   </ThemedText>
                   <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    Wkts
+                    {bowler.team}
                   </ThemedText>
                 </View>
                 
-                <View className="items-center mr-4">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {bowler.runs}
-                  </ThemedText>
-                  <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    Runs
-                  </ThemedText>
-                </View>
-                
-                <View className="items-center">
-                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                    {bowler.economy}
-                  </ThemedText>
-                  <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-                    Econ
-                  </ThemedText>
+                <View className="flex-row">
+                  <View className="items-center mr-4">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {bowler.wickets}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      Wkts
+                    </ThemedText>
+                  </View>
+                  
+                  <View className="items-center mr-4">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {bowler.runs}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      Runs
+                    </ThemedText>
+                  </View>
+                  
+                  <View className="items-center">
+                    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                      {bowler.economy}
+                    </ThemedText>
+                    <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
+                      Econ
+                    </ThemedText>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            ))
+          ) : (
+            <ThemedText className={`p-4 text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              No bowling stats available
+            </ThemedText>
+          )}
         </PerformanceCard>
 
         {/* Key Moments */}
@@ -389,36 +481,42 @@ export default function MatchSummary({ matchData }) {
           onPress={() => toggleSection('moments')}
           index={2}
         >
-          {keyMoments.map((moment, index) => (
-            <View
-              key={index}
-              className={`flex-row items-start py-3 ${
-                index < keyMoments.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
-              }`}
-            >
-              <View className={`w-12 h-12 rounded-full items-center justify-center mr-3 ${
-                isDark ? "bg-gray-700" : "bg-gray-100"
-              }`}>
-                <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                  {moment.over}
-                </ThemedText>
+          {keyMoments.length > 0 ? (
+            keyMoments.map((moment, index) => (
+              <View
+                key={index}
+                className={`flex-row items-start py-3 ${
+                  index < keyMoments.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
+                }`}
+              >
+                <View className={`w-12 h-12 rounded-full items-center justify-center mr-3 ${
+                  isDark ? "bg-gray-700" : "bg-gray-100"
+                }`}>
+                  <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                    {moment.over}
+                  </ThemedText>
+                </View>
+                
+                <View className="flex-1">
+                  <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                    {moment.description}
+                  </ThemedText>
+                  <ThemedText className={`text-xs mt-1 ${
+                    moment.type === 'milestone' ? (isDark ? "text-green-400" : "text-green-700") :
+                    moment.type === 'breakthrough' ? (isDark ? "text-blue-400" : "text-blue-700") :
+                    moment.type === 'wicket' ? (isDark ? "text-red-400" : "text-red-700") :
+                    (isDark ? "text-purple-400" : "text-purple-700")
+                  }`} style={{ lineHeight: 16 }}>
+                    {moment.type.charAt(0).toUpperCase() + moment.type.slice(1)}
+                  </ThemedText>
+                </View>
               </View>
-              
-              <View className="flex-1">
-                <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
-                  {moment.description}
-                </ThemedText>
-                <ThemedText className={`text-xs mt-1 ${
-                  moment.type === 'milestone' ? (isDark ? "text-green-400" : "text-green-700") :
-                  moment.type === 'breakthrough' ? (isDark ? "text-blue-400" : "text-blue-700") :
-                  moment.type === 'wicket' ? (isDark ? "text-red-400" : "text-red-700") :
-                  (isDark ? "text-purple-400" : "text-purple-700")
-                }`} style={{ lineHeight: 16 }}>
-                  {moment.type.charAt(0).toUpperCase() + moment.type.slice(1)}
-                </ThemedText>
-              </View>
-            </View>
-          ))}
+            ))
+          ) : (
+            <ThemedText className={`p-4 text-center ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              No key moments recorded
+            </ThemedText>
+          )}
         </PerformanceCard>
       </View>
 
@@ -435,7 +533,7 @@ export default function MatchSummary({ matchData }) {
         <View className="flex-row justify-between mb-4">
           <View className="items-center">
             <ThemedText className={`text-2xl font-bold ${isDark ? "text-blue-400" : "text-blue-600"}`} style={{ lineHeight: 32 }}>
-              8
+              {totalSixes}
             </ThemedText>
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 20 }}>
               Sixes
@@ -444,7 +542,7 @@ export default function MatchSummary({ matchData }) {
           
           <View className="items-center">
             <ThemedText className={`text-2xl font-bold ${isDark ? "text-green-400" : "text-green-600"}`} style={{ lineHeight: 32 }}>
-              21
+              {totalFours}
             </ThemedText>
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 20 }}>
               Fours
@@ -453,7 +551,7 @@ export default function MatchSummary({ matchData }) {
           
           <View className="items-center">
             <ThemedText className={`text-2xl font-bold ${isDark ? "text-red-400" : "text-red-600"}`} style={{ lineHeight: 32 }}>
-              15
+              {totalWickets}
             </ThemedText>
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 20 }}>
               Wickets
@@ -461,6 +559,8 @@ export default function MatchSummary({ matchData }) {
           </View>
         </View>
         
+        {/* HARDCODED WIN PROBABILITY - COMMENTED OUT (API ONLY) */}
+        {/*
         <View className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-gray-700" : "bg-gray-200"}`}>
           <View 
             className="h-full rounded-full bg-blue-500" 
@@ -475,6 +575,7 @@ export default function MatchSummary({ matchData }) {
             BP-W 35%
           </ThemedText>
         </View>
+        */}
       </Animated.View>
     </ScrollView>
   );

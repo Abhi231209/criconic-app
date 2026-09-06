@@ -1,29 +1,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { User, Plus, X } from "lucide-react-native";
-
-const COLORS = {
-  primary: '#3B82F6',
-  primaryDark: '#2563EB',
-  secondary: '#10B981',
-  accent: '#8B5CF6',
-  danger: '#EF4444',
-  warning: '#F59E0B',
-  light: {
-    background: '#F5F5F5',
-    card: '#FFFFFF',
-    text: '#1F2937',
-    textSecondary: '#6B7280',
-    border: '#E5E7EB',
-  },
-  dark: {
-    background: '#121212',
-    card: '#1E1E1E',
-    text: '#FFFFFF',
-    textSecondary: '#D1D5DB',
-    border: '#374151',
-  }
-};
+import { COLORS } from "@/theme/colors";
 
 export default function PlayerPreview({
   playerId,

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   ScrollView,
@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
+import { searchApi } from "@/utils/api";
 
 export default function SearchScreen() {
   const navigation = useNavigation();
@@ -25,7 +26,8 @@ export default function SearchScreen() {
   const [activeTab, setActiveTab] = useState("teams");
   const [isSearching, setIsSearching] = useState(false);
 
-  // Sample data for demonstration
+  // HARDCODED SAMPLE DATA - COMMENTED OUT (API ONLY)
+  /*
   const sampleTeams = [
     {
       id: "1",
@@ -148,6 +150,55 @@ export default function SearchScreen() {
       tournament: "IPL 2024",
     },
   ];
+  */
+
+  const [searchResults, setSearchResults] = useState({
+    teams: [],
+    players: [],
+    tournaments: [],
+    matches: [],
+  });
+
+  const performSearch = async (text = searchQuery) => {
+    const q = text.trim();
+    if (!q) {
+      setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await searchApi.search(q);
+      const list = Array.isArray(res?.data) ? res.data : [];
+      const teams = list.find((item) => item.key?.toLowerCase() === "team")?.data || [];
+      const players = list.find((item) => item.key?.toLowerCase() === "player")?.data || [];
+      const tournaments = list.find((item) => item.key?.toLowerCase() === "tournament")?.data || [];
+      const matches = list.find((item) => item.key?.toLowerCase() === "match")?.data || [];
+
+      setSearchResults({
+        teams: Array.isArray(teams) ? teams : [],
+        players: Array.isArray(players) ? players : [],
+        tournaments: Array.isArray(tournaments) ? tournaments : [],
+        matches: Array.isArray(matches) ? matches : [],
+      });
+    } catch (err) {
+      console.error("Search error:", err);
+      setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim().length >= 2) {
+        performSearch(searchQuery);
+      } else if (!searchQuery.trim()) {
+        setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const tabs = [
     { id: "teams", label: "Teams", icon: "people-outline" },
@@ -155,36 +206,6 @@ export default function SearchScreen() {
     { id: "tournaments", label: "Tournaments", icon: "trophy-outline" },
     { id: "matches", label: "Matches", icon: "calendar-outline" },
   ];
-
-  const performSearch = () => {
-    if (!searchQuery.trim()) return;
-    
-    setIsSearching(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsSearching(false);
-    }, 1000);
-  };
-
-  const filteredData = {
-    teams: sampleTeams.filter(team => 
-      team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      team.shortName.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    players: samplePlayers.filter(player => 
-      player.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      player.team.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    tournaments: sampleTournaments.filter(tournament => 
-      tournament.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tournament.shortName.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    matches: sampleMatches.filter(match => 
-      match.team1.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      match.team2.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      match.tournament.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-  };
 
   const TabButton = ({ tab }) => (
     <TouchableOpacity
@@ -218,136 +239,135 @@ export default function SearchScreen() {
     </TouchableOpacity>
   );
 
-  const renderTeamItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => navigation.navigate(SCREENS.TeamProfile, { team: item })}
-      className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
-    >
-      <View className="flex-row items-center">
-        <View className="w-12 h-12 bg-blue-100 rounded-full items-center justify-center mr-3">
-          <ThemedText className="text-blue-600 font-bold">
-            {item.shortName}
-          </ThemedText>
-        </View>
-        <View className="flex-1">
-          <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            {item.name}
-          </ThemedText>
-          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {item.wins} Wins • {item.losses} Losses • {item.players} Players
-          </ThemedText>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-        />
-      </View>
-    </TouchableOpacity>
-  );
+  const renderTeamItem = ({ item }) => {
+    const name = item.title || item.name || "Unknown Team";
+    const shortName = item.shortName || name.slice(0, 3).toUpperCase();
+    const playersCount = Array.isArray(item.players) ? item.players.length : (item.players || 0);
 
-  const renderPlayerItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => navigation.navigate(SCREENS.PlayerProfile, { player: item })}
-      className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
-    >
-      <View className="flex-row items-center">
-        <View className="w-12 h-12 bg-gray-300 rounded-full items-center justify-center mr-3">
-          <Ionicons name="person" size={24} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.navigate(SCREENS.TeamProfile, { team: item })}
+        className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
+      >
+        <View className="flex-row items-center">
+          <View className="w-12 h-12 bg-blue-100 rounded-full items-center justify-center mr-3">
+            <ThemedText className="text-blue-600 font-bold">
+              {shortName}
+            </ThemedText>
+          </View>
+          <View className="flex-1">
+            <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {name}
+            </ThemedText>
+            <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              {item.location ? `${item.location} • ` : ""}{playersCount} Players
+            </ThemedText>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          />
         </View>
-        <View className="flex-1">
-          <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            {item.name}
-          </ThemedText>
-          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {item.team} • {item.role}
-          </ThemedText>
-          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {item.runs ? `${item.runs} runs` : `${item.wickets} wickets`} in {item.matches} matches
-          </ThemedText>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-        />
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
-  const renderTournamentItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => navigation.navigate(SCREENS.TournamentProfile, { tournament: item })}
-      className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
-    >
-      <View className="flex-row items-center justify-between mb-2">
-        <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          {item.name}
-        </ThemedText>
-        <View className={`px-3 py-1 rounded-full ${
-          item.status === "ongoing" ? "bg-green-100" : 
-          item.status === "upcoming" ? "bg-blue-100" : "bg-gray-100"
-        }`}>
-          <ThemedText className={`text-xs ${
-            item.status === "ongoing" ? "text-green-800" : 
-            item.status === "upcoming" ? "text-blue-800" : "text-gray-800"
+  const renderPlayerItem = ({ item }) => {
+    const name = item.username || item.name || "Player";
+    const role = item.role || "Player";
+    const mobile = item.mobile || "";
+
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.navigate(SCREENS.PlayerProfile, { player: item })}
+        className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
+      >
+        <View className="flex-row items-center">
+          <View className="w-12 h-12 bg-gray-300 rounded-full items-center justify-center mr-3">
+            <Ionicons name="person" size={24} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+          </View>
+          <View className="flex-1">
+            <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {name}
+            </ThemedText>
+            <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              {role}{mobile ? ` • ${mobile}` : ""}
+            </ThemedText>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderTournamentItem = ({ item }) => {
+    const name = item.title || item.name || "Tournament";
+    const status = item.status || "upcoming";
+    const teamsCount = Array.isArray(item.teams) ? item.teams.length : (item.teams || 0);
+
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.navigate(SCREENS.TournamentProfile, { tournament: item })}
+        className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
+      >
+        <View className="flex-row items-center justify-between mb-2">
+          <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {name}
+          </ThemedText>
+          <View className={`px-3 py-1 rounded-full ${
+            status === "ongoing" ? "bg-green-100" : 
+            status === "upcoming" ? "bg-blue-100" : "bg-gray-100"
           }`}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            <ThemedText className={`text-xs ${
+              status === "ongoing" ? "text-green-800" : 
+              status === "upcoming" ? "text-blue-800" : "text-gray-800"
+            }`}>
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </ThemedText>
+          </View>
+        </View>
+        <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
+          {item.shortName ? `${item.shortName} • ` : ""}{teamsCount} teams
+        </ThemedText>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderMatchItem = ({ item }) => {
+    const team1 = item.firstBattingTeam?.title || item.team1 || "Team 1";
+    const team2 = item.secondBattingTeam?.title || item.team2 || "Team 2";
+    const status = item.status || "upcoming";
+    const result = item.result?.resultString || item.result || (status ? `Status: ${status}` : "Scheduled");
+
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.navigate(SCREENS.MatchDetails, { match: item })}
+        className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
+      >
+        {item.tournament?.title && (
+          <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
+            {item.tournament?.title}
+          </ThemedText>
+        )}
+        <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"} mb-2`}>
+          {team1} vs {team2}
+        </ThemedText>
+        <View className="flex-row justify-between items-center">
+          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            {status}
+          </ThemedText>
+          <ThemedText className="text-sm font-medium text-green-600">
+            {result}
           </ThemedText>
         </View>
-      </View>
-      <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
-        {item.teams} teams • {item.matches} matches
-      </ThemedText>
-      {item.status !== "upcoming" && (
-        <View className="mt-2">
-          <View className="flex-row justify-between mb-1">
-            <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              Progress
-            </ThemedText>
-            <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              {item.progress}%
-            </ThemedText>
-          </View>
-          <View className={`h-2 rounded-full ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}>
-            <View 
-              className={`h-2 rounded-full ${
-                item.status === "completed" ? "bg-green-500" : "bg-blue-500"
-              }`}
-              style={{ width: `${item.progress}%` }}
-            />
-          </View>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  const renderMatchItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => navigation.navigate(SCREENS.MatchDetails, { match: item })}
-      className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
-    >
-      <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
-        {item.tournament}
-      </ThemedText>
-      <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"} mb-2`}>
-        {item.team1} vs {item.team2}
-      </ThemedText>
-      <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
-        {item.score}
-      </ThemedText>
-      <View className="flex-row justify-between items-center">
-        <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-          {item.date}
-        </ThemedText>
-        <ThemedText className={`text-sm font-medium ${
-          item.result.includes("won") ? "text-green-600" : "text-gray-600"
-        }`}>
-          {item.result}
-        </ThemedText>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View className="items-center justify-center py-10">
@@ -399,7 +419,7 @@ export default function SearchScreen() {
             placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onSubmitEditing={performSearch}
+            onSubmitEditing={() => performSearch()}
             className={`flex-1 ml-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}
             returnKeyType="search"
           />
@@ -431,8 +451,8 @@ export default function SearchScreen() {
           </View>
         ) : (
           <FlatList
-            data={filteredData[activeTab]}
-            keyExtractor={(item) => item.id}
+            data={searchResults[activeTab] || []}
+            keyExtractor={(item) => (item._id || item.id || Math.random()).toString()}
             renderItem={
               activeTab === "teams" ? renderTeamItem :
               activeTab === "players" ? renderPlayerItem :

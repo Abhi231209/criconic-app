@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
+import { teamsApi } from '@/utils/api';
 
 export default function EditTeam() {
   const navigation = useNavigation();
@@ -24,7 +25,25 @@ export default function EditTeam() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
   
-  // Get team data from route params or use sample data
+  const routeTeam = route?.params?.team;
+  const teamId = routeTeam?._id || routeTeam?.id;
+
+  // Real team data from route params with safe empty fallbacks
+  const team = {
+    id: teamId || '',
+    name: routeTeam?.title || routeTeam?.name || '',
+    shortName: routeTeam?.shortName || '',
+    location: routeTeam?.location || '',
+    logo: routeTeam?.logoImage || routeTeam?.logo || null,
+    founded: routeTeam?.founded || '',
+    homeGround: routeTeam?.homeGround || '',
+    captain: routeTeam?.captain?.username || routeTeam?.captain || '',
+    coach: routeTeam?.coach || '',
+    jerseyColor: routeTeam?.jerseyColor || '',
+  };
+
+  // HARDCODED SAMPLE TEAM DATA - COMMENTED OUT (API ONLY)
+  /*
   const team = route.params?.team || {
     id: '1',
     name: 'Mumbai Indians',
@@ -37,6 +56,7 @@ export default function EditTeam() {
     coach: 'Mark Boucher',
     jerseyColor: 'Blue & Gold',
   };
+  */
 
   const [formData, setFormData] = useState({
     name: team.name,
@@ -106,21 +126,45 @@ export default function EditTeam() {
     }
 
     setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      if (teamId) {
+        await teamsApi.updateTeam(teamId, {
+          title: formData.name,
+          shortName: formData.shortName,
+          location: formData.location,
+          logoImage: formData.logo,
+        });
+      }
+
+      // HARDCODED MOCK UPDATE TIMEOUT - COMMENTED OUT (API ONLY)
+      /*
+      setTimeout(() => {
+        setIsLoading(false);
+        Alert.alert(
+          'Success',
+          'Team updated successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      }, 1500);
+      */
+
+      Alert.alert('Success', 'Team updated successfully!', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
+    } catch (err) {
+      console.error('Update team error:', err);
+      Alert.alert('Error', err?.response?.data?.message || err.message || 'Failed to update team');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Success',
-        'Team updated successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
-    }, 1500);
+    }
   };
 
   const InputField = ({ 
