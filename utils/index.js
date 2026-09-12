@@ -152,18 +152,76 @@ export const matchRedirectBasedOnStatus = (matchId, status) => {
       return { screen: SCREENS.TossScreen, params: { matchId } };
     case MATCH_STATUS.TOSS:
       return { screen: SCREENS.PlayerSelectionScreen, params: { matchId } };
+    case MATCH_STATUS.INNINGS_I_ENDED:
+    case MATCH_STATUS.INNINGS_BREAK:
+      return { screen: SCREENS.PlayerSelectionScreen, params: { matchId, isInningsTwo: true, currentInnings: 2 } };
+    case MATCH_STATUS.SUPER_OVER:
     case MATCH_STATUS.MATCH_OPENER_SELECTED:
     case MATCH_STATUS.MATCH_STARTED:
     case MATCH_STATUS.MATCH_IN_PROGRESS:
     case MATCH_STATUS.INNINGS_I:
     case MATCH_STATUS.INNINGS_II:
-    case MATCH_STATUS.INNINGS_I_ENDED:
     case MATCH_STATUS.MATCH_RESUMED:
     case MATCH_STATUS.MATCH_COMPLETED:
     case MATCH_STATUS.MATCH_TIE:
     case MATCH_STATUS.MATCH_ENDED:
     default:
       return { screen: SCREENS.ScorerScreen, params: { matchId } };
+  }
+};
+
+export const calculateCRR = (runs, overs) => {
+  if (runs === undefined || runs === null || !overs) return "0.00";
+  const str = String(overs);
+  const parts = str.split(".");
+  const completedOvers = parseInt(parts[0], 10) || 0;
+  const ballsInCurrentOver = parseInt(parts[1], 10) || 0;
+  const totalBalls = completedOvers * 6 + ballsInCurrentOver;
+  if (totalBalls <= 0) return "0.00";
+  return ((Number(runs) / totalBalls) * 6).toFixed(2);
+};
+
+export const calculateOversLeft = (totalOvers, currentOver) => {
+  const str = String(currentOver || "0.0");
+  const parts = str.split(".").map(Number);
+  const fullOvers = parts[0] || 0;
+  const balls = parts[1] || 0;
+  const totalBalls = (totalOvers || 0) * 6;
+  const ballsBowled = fullOvers * 6 + balls;
+  const ballsLeft = Math.max(0, totalBalls - ballsBowled);
+  const fullOversLeft = Math.floor(ballsLeft / 6);
+  const remainingBalls = ballsLeft % 6;
+  return `${fullOversLeft}.${remainingBalls}`;
+};
+
+export const calculateProjectedResult = (
+  teamA,
+  teamB,
+  target,
+  oversLeft,
+  totalOvers
+) => {
+  const numOversLeft = parseFloat(oversLeft) || 0.1;
+  const numTotalOvers = parseFloat(totalOvers) || 20;
+  const oversBowled = Math.max(0.1, numTotalOvers - numOversLeft);
+  const currentRunRate = (teamB?.runs || 0) / oversBowled;
+  const remainingRuns = (target || 0) - (teamB?.runs || 0);
+  const requiredRunRate = remainingRuns / numOversLeft;
+  const wicketsLeft = 10 - (teamB?.wickets || 0);
+  const runsPerBall = remainingRuns / (numOversLeft * 6);
+
+  if (remainingRuns <= 0) {
+    return `${teamB?.title || teamB?.name || "Team B"} has won the match!`;
+  } else if (wicketsLeft <= 2) {
+    return `${teamA?.title || teamA?.name || "Team A"} likely to win due to low wickets remaining.`;
+  } else if (requiredRunRate > currentRunRate * 1.5) {
+    return `${teamA?.title || teamA?.name || "Team A"} likely to win as required run rate is too high.`;
+  } else if (runsPerBall <= 1 && wicketsLeft > 5) {
+    return `${teamB?.title || teamB?.name || "Team B"} likely to win with ease.`;
+  } else if (numOversLeft < 3 && remainingRuns > 20) {
+    return `${teamA?.title || teamA?.name || "Team A"} likely to win due to insufficient overs.`;
+  } else {
+    return "Match is evenly poised.";
   }
 };
 

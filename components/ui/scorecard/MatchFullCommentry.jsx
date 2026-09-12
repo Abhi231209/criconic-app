@@ -14,6 +14,7 @@ import {
 import ThemedText from "../custom/ThemedText";
 import { useColorScheme } from "react-native";
 import { matchesApi } from "@/utils/api";
+import SCREENS from "@/screens";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -78,16 +79,107 @@ export default function MatchFullCommentary({ matchId, score }) {
   };
   */
 
+  const redirectToPlayerProfile = (playerOrName) => {
+    if (!playerOrName) return;
+    const playerObj = typeof playerOrName === "object" ? playerOrName : { name: playerOrName, username: playerOrName };
+    const playerId = playerObj?.playerId || playerObj?.id || playerObj?._id;
+    navigation.navigate(SCREENS.PlayerProfile, {
+      player: playerObj,
+      playerId,
+      matchId: matchId || score?._id || score?.id,
+      match: score,
+    });
+  };
+
+  // Extract all known players from match data for intelligent name resolution
+  const allMatchPlayers = React.useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    const add = (p) => {
+      if (!p) return;
+      const name = p.name || p.username || p.playerName;
+      const id = p.id || p._id || p.playerId;
+      if (name && typeof name === "string" && name.trim().length > 1 && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        list.push({ id, name: name.trim(), username: name.trim() });
+      }
+    };
+    (score?.teams || []).forEach((t) => {
+      (t?.players || []).forEach(add);
+    });
+    (score?.inning || []).forEach((inn) => {
+      (inn?.playedBatsman || []).forEach(add);
+      (inn?.batsman || []).forEach(add);
+      (inn?.batsmanUpcoming || []).forEach(add);
+      (inn?.bowling?.allBowlers || []).forEach(add);
+      (inn?.bowling?.bowlers || []).forEach(add);
+      (inn?.bowlers || []).forEach(add);
+    });
+    (score?.batsman || []).forEach(add);
+    add(score?.bowler);
+    return list.sort((a, b) => b.name.length - a.name.length);
+  }, [score]);
+
+  const parseCommentaryItem = useCallback((c, idx, pageNum = 1) => {
+    const runsVal = c?.runs !== undefined && c?.runs !== null ? String(c.runs) : "";
+    const eventVal = runsVal.toUpperCase() === "W" || c?.type === "wicket" || c?.isWicket ? "wicket" 
+      : runsVal === "4" || c?.runs === 4 || (c?.isBoundary && runsVal === "4") ? "boundary" 
+      : runsVal === "6" || c?.runs === 6 ? "six" 
+      : "run";
+    const desc = c?.comment || c?.message || (typeof c === "string" ? c : "");
+
+    let bMan = c?.batsman?.name || c?.batsman?.username || (typeof c?.batsman === "string" ? c.batsman : "");
+    let bObj = typeof c?.batsman === "object" ? c.batsman : null;
+    let bowl = c?.bowler?.name || c?.bowler?.username || (typeof c?.bowler === "string" ? c.bowler : "");
+    let bowlObj = typeof c?.bowler === "object" ? c.bowler : null;
+
+    // Pattern 1: Regex "Bowler to Batter"
+    if ((!bMan || !bowl) && desc) {
+      const toMatch = desc.match(/(?:No Ball!|Wide!|)\s*([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+?)(?:\s+Free Hit|\s+for|\s*$|\.)/i);
+      if (toMatch) {
+        if (!bowl) bowl = toMatch[1].trim();
+        if (!bMan) bMan = toMatch[2].trim();
+      }
+    }
+
+    // Pattern 2: Match against known players in match
+    if ((!bMan || !bowl) && desc && allMatchPlayers.length > 0) {
+      const found = allMatchPlayers.filter(p => desc.toLowerCase().includes(p.name.toLowerCase()));
+      if (found.length >= 2) {
+        if (!bowl) {
+          bowl = found[0].name;
+          bowlObj = found[0];
+        }
+        if (!bMan) {
+          bMan = found[1].name;
+          bObj = found[1];
+        }
+      } else if (found.length === 1) {
+        if (!bMan) {
+          bMan = found[0].name;
+          bObj = found[0];
+        }
+      }
+    }
+
+    return {
+      id: c?._id || `${pageNum}-${idx}`,
+      over: c?.ballNumber || c?.over || "",
+      event: eventVal,
+      description: desc,
+      runs: runsVal,
+      batsman: bMan,
+      bowler: bowl,
+      batsmanObj: bObj,
+      bowlerObj: bowlObj,
+    };
+  }, [allMatchPlayers]);
+
   // Map incoming score commentary as initial fallback
-  const initialList = (score?.fullCommentary || score?.commentary || []).map((c, idx) => ({
-    id: c._id || idx + 1,
-    over: c.ballNumber || c.over || "",
-    event: c.runs === "W" || c.type === "wicket" ? "wicket" : (c.runs === 4 || c.runs === "4" ? "boundary" : (c.runs === 6 || c.runs === "6" ? "six" : "run")),
-    description: c.comment || c.message || "",
-    runs: c.runs || "",
-    batsman: c.batsman || "Batter",
-    bowler: c.bowler || "Bowler"
-  }));
+  const rawInitial = Array.isArray(score?.fullCommentary) 
+    ? score.fullCommentary 
+    : (Array.isArray(score?.commentary) ? score.commentary : []);
+  const initialList = rawInitial.map((c, idx) => parseCommentaryItem(c, idx, 1));
 
   const [commentaryData, setCommentaryData] = useState(initialList);
 
@@ -97,7 +189,7 @@ export default function MatchFullCommentary({ matchId, score }) {
     team2: score?.teams?.[1]?.title || "Team 2",
     score: `${inn?.batting?.score?.runs ?? 0}/${inn?.batting?.score?.wicket ?? 0}`,
     over: inn?.batting?.score?.over || "0.0",
-    currentBatsmen: (score?.batsman || []).map((b) => b.name || "Batter"),
+    currentBatsmen: (Array.isArray(score?.batsman) ? score.batsman : []).map((b) => b?.name || "Batter"),
     currentBowler: score?.bowler?.name || score?.bowling?.lastTwoBowlers?.[0]?.name || "Bowler"
   };
 
@@ -107,37 +199,41 @@ export default function MatchFullCommentary({ matchId, score }) {
     try {
       setLoading(true);
       const res = await matchesApi.getCommentary(matchId, pageNum, 20);
-      const comments = res?.comments || res?.data?.comments || (Array.isArray(res) ? res : []);
-      const formatted = comments.map((c, idx) => ({
-        id: c._id || `${pageNum}-${idx}`,
-        over: c.ballNumber || c.over || "",
-        event: c.runs === "W" || c.type === "wicket" ? "wicket" : (c.runs === 4 || c.runs === "4" ? "boundary" : (c.runs === 6 || c.runs === "6" ? "six" : "run")),
-        description: c.comment || c.message || "",
-        runs: c.runs || "",
-        batsman: c.batsman || "Batter",
-        bowler: c.bowler || "Bowler"
-      }));
+      const rawComments = res?.data?.data || res?.data?.comments || res?.comments || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      const comments = Array.isArray(rawComments) ? rawComments : [];
+      const formatted = comments.map((c, idx) => parseCommentaryItem(c, idx, pageNum));
 
       if (append) {
         setCommentaryData((prev) => [...prev, ...formatted]);
-      } else {
+      } else if (formatted.length > 0) {
         setCommentaryData(formatted);
       }
 
-      const totalPage = res?.totalPage || 1;
+      const totalPage = res?.data?.totalPage || res?.totalPage || 1;
       setHasMore(pageNum < totalPage && formatted.length > 0);
       setLoading(false);
     } catch (err) {
       console.log("Error loading commentary:", err);
       setLoading(false);
     }
-  }, [matchId]);
+  }, [matchId, parseCommentaryItem]);
 
   React.useEffect(() => {
     if (matchId) {
       fetchCommentary(1, false);
     }
   }, [matchId, fetchCommentary]);
+
+  React.useEffect(() => {
+    const rawScoreComments = Array.isArray(score?.fullCommentary) && score.fullCommentary.length > 0
+      ? score.fullCommentary
+      : (Array.isArray(score?.commentary) ? score.commentary : []);
+
+    if (rawScoreComments.length > 0 && commentaryData.length === 0) {
+      const mapped = rawScoreComments.map((c, idx) => parseCommentaryItem(c, idx, 1));
+      setCommentaryData(mapped);
+    }
+  }, [score?.commentary, score?.fullCommentary, parseCommentaryItem]);
 
   // Load older commentary
   const loadOlderCommentary = useCallback(() => {
@@ -158,7 +254,7 @@ export default function MatchFullCommentary({ matchId, score }) {
   }, [matchId, fetchCommentary]);
 
   // Filter commentary based on selection
-  const filteredCommentary = commentaryData.filter(item => {
+  const filteredCommentary = (Array.isArray(commentaryData) ? commentaryData : []).filter(item => {
     if (activeFilter === "all") return true;
     if (activeFilter === "wickets") return item.event === "wicket";
     if (activeFilter === "boundaries") return item.event === "boundary" || item.event === "six";
@@ -169,21 +265,21 @@ export default function MatchFullCommentary({ matchId, score }) {
   const FilterButton = ({ label, value, icon }) => (
     <Pressable
       onPress={() => setActiveFilter(value)}
-      className={`flex-row items-center py-2 px-4 rounded-full mx-1 ${
+      className={`flex-row items-center py-1 px-2.5 rounded-full mx-1 ${
         activeFilter === value 
           ? (isDark ? "bg-blue-600" : "bg-blue-500") 
-          : (isDark ? "bg-gray-700" : "bg-gray-200")
+          : (isDark ? "bg-gray-700/60" : "bg-gray-200")
       }`}
     >
       {icon && (
         <MaterialIcons 
           name={icon} 
-          size={16} 
+          size={13} 
           color={activeFilter === value ? "#fff" : (isDark ? "#94a3b8" : "#64748b")} 
-          style={{ marginRight: 4 }}
+          style={{ marginRight: 3 }}
         />
       )}
-      <ThemedText className={`text-xs font-medium ${
+      <ThemedText className={`text-[11px] font-semibold ${
         activeFilter === value ? "text-white" : (isDark ? "text-gray-300" : "text-gray-700")
       }`}>
         {label}
@@ -230,21 +326,35 @@ export default function MatchFullCommentary({ matchId, score }) {
             style={{ marginTop: 2 }}
           />
           
-          <View className="flex-row items-center ml-2">
-            <ThemedText className={`text-sm font-medium ${
-              isDark ? "text-white" : "text-gray-900"
-            }`}>
-              {item.batsman}
-            </ThemedText>
-            
-            <ThemedText className={`mx-1 ${isDark ? "text-gray-400" : "text-gray-500"}`} style={{ lineHeight: 20 }}>
-              to
-            </ThemedText>
-            
-            <ThemedText className={`text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-              {item.bowler}
-            </ThemedText>
-          </View>
+          {(item.bowler || item.batsman) ? (
+            <View className="flex-row items-center ml-2 flex-wrap">
+              {item.bowler ? (
+                <Pressable onPress={() => redirectToPlayerProfile(item.bowlerObj || item.bowler)}>
+                  <ThemedText className={`text-sm font-semibold underline ${
+                    isDark ? "text-blue-400" : "text-blue-600"
+                  }`}>
+                    {item.bowler}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+              
+              {item.bowler && item.batsman ? (
+                <ThemedText className={`mx-1.5 text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`} style={{ lineHeight: 20 }}>
+                  to
+                </ThemedText>
+              ) : null}
+              
+              {item.batsman ? (
+                <Pressable onPress={() => redirectToPlayerProfile(item.batsmanObj || item.batsman)}>
+                  <ThemedText className={`text-sm font-semibold underline ${
+                    isDark ? "text-blue-400" : "text-blue-600"
+                  }`}>
+                    {item.batsman}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           
           <View className="ml-2" style={{ alignSelf: 'flex-start' }}>
             <View className={`px-2 py-1 rounded-full ${
@@ -282,42 +392,37 @@ export default function MatchFullCommentary({ matchId, score }) {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
-      {/* Match Status Bar */}
-      <View className={`p-4 ${isDark ? "bg-gray-800" : "bg-blue-50"} border-b ${
-        isDark ? "border-gray-700" : "border-blue-100"
-      }`}>
-        <View className="flex-row justify-between items-center">
-          <View>
-            <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {matchInfo.team1} vs {matchInfo.team2}
+      {/* Compact Match Status Bar */}
+      {(matchInfo.currentBatsmen?.length > 0 || (matchInfo.currentBowler && matchInfo.currentBowler !== "Bowler")) ? (
+        <View className={`py-1.5 px-3 ${isDark ? "bg-gray-800/80" : "bg-blue-50/80"} border-b ${
+          isDark ? "border-gray-700" : "border-blue-100"
+        }`}>
+          <View className="flex-row justify-between items-center">
+            <ThemedText className={`text-[11px] ${isDark ? "text-gray-300" : "text-gray-700"} flex-1 mr-2`} numberOfLines={1}>
+              <ThemedText className="font-semibold">Bat: </ThemedText>
+              {matchInfo.currentBatsmen?.length > 0 ? matchInfo.currentBatsmen.join(", ") : "None"}
             </ThemedText>
-            <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              {matchInfo.score} ({matchInfo.over} Ov)
-            </ThemedText>
-          </View>
-          
-          <View className="items-end">
-            <ThemedText className={`text-sm ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-              Batting: {matchInfo.currentBatsmen.join(", ")}
-            </ThemedText>
-            <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              Bowling: {matchInfo.currentBowler}
+            <ThemedText className={`text-[11px] ${isDark ? "text-gray-300" : "text-gray-700"}`} numberOfLines={1}>
+              <ThemedText className="font-semibold">Bowl: </ThemedText>
+              {matchInfo.currentBowler}
             </ThemedText>
           </View>
         </View>
-      </View>
+      ) : null}
 
       {/* Filter Bar */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        className={`p-3 border-b ${isDark ? "border-gray-700" : "border-gray-200"}`}
-      >
-        <FilterButton label="All" value="all" icon="all-inclusive" />
-        <FilterButton label="Wickets" value="wickets" icon="sports-cricket" />
-        <FilterButton label="Boundaries" value="boundaries" icon="bolt" />
-        <FilterButton label="Recent" value="recent" icon="schedule" />
-      </ScrollView>
+      <View className={`py-1.5 px-2 border-b ${isDark ? "border-gray-700" : "border-gray-200"}`}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 2 }}
+        >
+          <FilterButton label="All" value="all" icon="all-inclusive" />
+          <FilterButton label="Wickets" value="wickets" icon="sports-cricket" />
+          <FilterButton label="Boundaries" value="boundaries" icon="bolt" />
+          <FilterButton label="Recent" value="recent" icon="schedule" />
+        </ScrollView>
+      </View>
 
       {/* Commentary List */}
       <ScrollView 
@@ -356,8 +461,8 @@ export default function MatchFullCommentary({ matchId, score }) {
         {filteredCommentary.length > 0 ? (
           filteredCommentary.map((item, index) => (
             <Animated.View 
-              key={item.id}
-              entering={FadeInDown.delay(index * 50).duration(400)}
+              key={item?.id || `comm_${index}`}
+              entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(300)}
             >
               <CommentaryItem item={item} />
             </Animated.View>

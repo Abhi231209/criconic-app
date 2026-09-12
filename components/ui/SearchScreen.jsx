@@ -280,7 +280,7 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate(SCREENS.PlayerProfile, { player: item })}
+        onPress={() => navigation.navigate(SCREENS.PlayerProfile, { player: item, playerId: item._id || item.id || item.playerId })}
         className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
       >
         <View className="flex-row items-center">

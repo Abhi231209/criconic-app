@@ -17,7 +17,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 import CustomRunModal from "./CustomRunModal";
 import { MATCH_ACTION, MATCH_STATUS, MATCH_STATUS_STAGE } from "@/utils/Common";
-import { matchRedirectBasedOnStatus } from "@/utils";
+import { matchRedirectBasedOnStatus, calculateOversLeft, calculateProjectedResult } from "@/utils";
 import MatchHeader from "./MatchHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSelector } from "react-redux";
@@ -58,19 +58,17 @@ export default function ScorerScreen() {
 
   const authUser = useSelector((state) => state.auth?.user);
   const userId =
-    User.id ||
-    authUser?._id ||
     authUser?.id ||
-    authUser?.userId ||
-    authUser?.user?._id ||
-    authUser?.user?.id;
-
+    authUser?._id ||
+    User?.id;
 
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+
   const navigation = useNavigation();
   const route = useRoute();
   const isFocused = useIsFocused();
+
   const matchID =
     route.params?.matchId ||
     route.params?.matchID ||
@@ -85,8 +83,6 @@ export default function ScorerScreen() {
   const [matchDetails, setMatchDetails] = useState(null);
 
   const [refreshing, setRefreshing] = useState(false);
-  // Guard: prevents rendering scorer UI while the initial status-check API is in flight.
-  // This eliminates the "flash before redirect" flicker when match status is still in pre-scoring.
   const [isStatusChecked, setIsStatusChecked] = useState(false);
 
   // Dynamic In-Match Sheet / Modal States
@@ -96,6 +92,61 @@ export default function ScorerScreen() {
   const [availableBowlers, setAvailableBowlers] = useState([]);
   const [inningsCompleteModalVisible, setInningsCompleteModalVisible] = useState(false);
   const [matchCompleteModalVisible, setMatchCompleteModalVisible] = useState(false);
+  const [matchTiedModalVisible, setMatchTiedModalVisible] = useState(false);
+  const [committeeEndModalVisible, setCommitteeEndModalVisible] = useState(false);
+  const [committeeWinnerTeam, setCommitteeWinnerTeam] = useState(null);
+  const [isEndingInnings, setIsEndingInnings] = useState(false);
+  const handleInningsStartSocketRef = useRef(null);
+
+  const [matchStatus, setMatchStatus] = useState({
+    isInningCompleted: false,
+    isMatchCompleted: false,
+    isMatchEnded: false,
+    isMatchTied: false,
+  });
+
+  const matchStatusHandler = useCallback((type, value) => {
+    if (typeof type === "boolean") {
+      setMatchStatus({
+        isInningCompleted: type,
+        isMatchCompleted: type,
+        isMatchEnded: type,
+        isMatchTied: type,
+      });
+      if (!type) {
+        setInningsCompleteModalVisible(false);
+        setMatchCompleteModalVisible(false);
+        setMatchTiedModalVisible(false);
+        setCommitteeEndModalVisible(false);
+      }
+      return;
+    }
+    setMatchStatus((prev) => ({ ...prev, [type]: value }));
+    if (value) {
+      setNextBatterModalVisible(false);
+      setNextBowlerModalVisible(false);
+      setShowCustomRunsModal(false);
+      setShowOutModal(false);
+      setSelectStrikerModalVisible(false);
+    }
+  }, []);
+
+  const getTeamId = (team) => {
+    if (!team) return "";
+    if (typeof team.teamId === "object" && team.teamId?._id) return String(team.teamId._id);
+    if (team.teamId) return String(team.teamId);
+    if (team._id) return String(team._id);
+    if (team.id) return String(team.id);
+    return "";
+  };
+
+  const getTeamTitle = (team, fallback = "") => {
+    if (!team) return fallback;
+    if (typeof team.teamId === "object" && (team.teamId?.name || team.teamId?.title)) {
+      return team.teamId?.name || team.teamId?.title;
+    }
+    return team.name || team.title || fallback;
+  };
 
   // Custom Runs & Extras Modal State (WD, NB, BYE, LB, 5,7)
   const [showCustomRunsModal, setShowCustomRunsModal] = useState(false);
@@ -181,6 +232,22 @@ export default function ScorerScreen() {
     useCallback(() => {
       isLeavingRef.current = false;
 
+      // Re-request score and match details on focus (e.g. after returning from PlayerSelectionScreen for Inning 2)
+      if (socketRef.current && matchID) {
+        console.log("🔌 [ScorerScreen] Re-requesting score on focus:", matchID);
+        socketRef.current.emit("score", { matchId: matchID, matchID });
+      }
+      if (matchID) {
+        matchesApi
+          .getMatchById(matchID)
+          .then((res) => {
+            if (res?.data) {
+              setMatchDetails(res.data);
+            }
+          })
+          .catch(() => {});
+      }
+
       const backAction = () => {
         if (!navigation.isFocused()) {
           return false;
@@ -206,7 +273,7 @@ export default function ScorerScreen() {
         backHandler.remove();
         unsubscribe();
       };
-    }, [navigation, handleLeaveScoring])
+    }, [navigation, handleLeaveScoring, matchID])
   );
 
   const openPopup = (content) => {
@@ -421,11 +488,17 @@ export default function ScorerScreen() {
       const maxWickets = latestScore?.matchConfig?.singleBatsmanAllowed
         ? battingSquad.length
         : Math.max(0, battingSquad.length - 1);
+      const isOddInning = ((latestScore?.currentInnings || latestScore?.currentInning || 1) % 2 === 1);
+
       if (
         battingSquad.length > 0 &&
         latestScore?.currentInningWicket >= maxWickets
       ) {
         console.log("[WICKET] All out reached — skipping incoming batter");
+        if (isOddInning) {
+          console.log("[WICKET] Inning all out — setting isInningCompleted");
+          matchStatusHandler("isInningCompleted", true);
+        }
         return;
       }
 
@@ -571,11 +644,32 @@ export default function ScorerScreen() {
     const latestScore = scoreRef.current || {};
     const latestMatchDetails = matchDetailsRef.current || {};
 
+    const currentStatus = latestScore?.matchCurrentStatus?.toUpperCase();
     if (
-      latestScore?.matchCurrentStatus?.toUpperCase() === "INNINGS_I_ENDED" ||
-      latestScore?.matchCurrentStatus?.toUpperCase() === "MATCH_COMPLETED" ||
-      latestScore?.matchCurrentStatus?.toUpperCase() === "MATCH_ENDED"
+      currentStatus === "INNINGS_I_ENDED" ||
+      currentStatus === "INNINGS_BREAK" ||
+      currentStatus === "MATCH_COMPLETED" ||
+      currentStatus === "MATCH_ENDED"
     ) {
+      return;
+    }
+
+    const currentOver = parseFloat(latestScore?.batting?.score?.over || 0);
+    const totalOvers = parseFloat(latestScore?.totalOvers || latestMatchDetails?.totalOvers || 0);
+    const isSuperOver = Boolean(
+      latestScore?.isSuperOver ||
+      latestMatchDetails?.isSuperOver ||
+      latestScore?.status === "SUPER_OVER" ||
+      latestScore?.matchCurrentStatus === "SUPER_OVER" ||
+      latestScore?.status === MATCH_STATUS.SUPER_OVER ||
+      latestScore?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER
+    );
+    const effectiveTotalOvers = isSuperOver ? 1 : totalOvers;
+    const isOddInning = ((latestScore?.currentInnings || latestScore?.currentInning || latestMatchDetails?.currentInnings || 1) % 2 === 1);
+
+    if (isOddInning && effectiveTotalOvers > 0 && Math.floor(currentOver) >= effectiveTotalOvers) {
+      console.log("[OVER-COMPLETE] Inning overs complete — setting isInningCompleted");
+      matchStatusHandler("isInningCompleted", true);
       return;
     }
 
@@ -690,28 +784,133 @@ export default function ScorerScreen() {
   };
 
   // Innings Complete Flow
-  const handleInningsComplete = useCallback(() => {
-    setInningsCompleteModalVisible(true);
-  }, []);
+  const handleInningsComplete = useCallback(({ isMatchEndedByCommittee = false } = {}) => {
+    const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
+    const isOddInning = (currentInn % 2 === 1);
+
+    if (isOddInning) {
+      setInningsCompleteModalVisible(true);
+    } else {
+      setCommitteeEndModalVisible(true);
+    }
+  }, [score?.currentInnings, matchDetails?.currentInnings]);
   handleInningsCompleteRef.current = handleInningsComplete;
 
   const handleStartInningsTwo = () => {
+    setIsEndingInnings(true);
     updateScore("END_OF_INNINGS", {});
     setInningsCompleteModalVisible(false);
-    isLeavingRef.current = true;
-    navigation.navigate(SCREENS.PlayerSelectionScreen, {
-      matchId: matchID,
-      ...route.params,
+
+    // Fallback in case INNINGS_START socket event is delayed or dropped
+    setTimeout(() => {
+      if (!isLeavingRef.current) {
+        handleInningsStartSocketRef.current?.();
+      }
+    }, 4000);
+  };
+
+  const handleSuperOver = () => {
+    Alert.alert(
+      "Super Over",
+      "Create a Super Over? Each team will play 1 over to break the tie.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start Super Over",
+          onPress: () => {
+            updateScore(MATCH_ACTION.SUPER_OVER, {});
+            setMatchTiedModalVisible(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeclareTied = () => {
+    Alert.alert(
+      "Declare Match Tied",
+      "End the match as a tie? This action cannot be reversed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Declare Tied",
+          onPress: () => {
+            updateScore(MATCH_ACTION.MATCH_TIE, {});
+            setMatchTiedModalVisible(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleMatchComplete = () => {
+    Alert.alert(
+      "Match Complete",
+      "End of match is an irreversible action. Make sure you want to continue.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "End Match",
+          onPress: () => {
+            updateScore(MATCH_ACTION.END_OF_MATCH, {});
+            setMatchCompleteModalVisible(false);
+            isLeavingRef.current = true;
+            setTimeout(() => {
+              navigation.navigate(SCREENS.MatchScoreCard, { matchId: matchID });
+            }, 1000);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEndMatchCommittee = (winnerTeamId, prompt) => {
+    updateScore("END_OF_INNINGS", {
+      isMatchEndedByCommittee: true,
+      winnerTeamId,
+      prompt,
     });
+    setCommitteeEndModalVisible(false);
   };
 
   useEffect(() => {
+    if (isLeavingRef.current) return;
     if (!score || Object.keys(score).length === 0) return;
 
-    if (score?.matchCurrentStatus === MATCH_STATUS.INNINGS_I_ENDED) {
-      setInningsCompleteModalVisible(true);
-    } else if (score?.matchCurrentStatus === MATCH_STATUS.MATCH_COMPLETED) {
+    const currentStatus = String(score?.matchCurrentStatus || score?.status || "").toUpperCase();
+
+    if (
+      currentStatus === "INNINGS_I_ENDED" ||
+      currentStatus === "INNINGS_BREAK" ||
+      currentStatus === MATCH_STATUS.INNINGS_I_ENDED ||
+      currentStatus === MATCH_STATUS.INNINGS_BREAK
+    ) {
+      const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
+      const isOddInning = (currentInn % 2 === 1);
+      if (isOddInning || !isInningsTwo) {
+        matchStatusHandler("isInningCompleted", true);
+      }
+    } else if (
+      currentStatus === "MATCH_COMPLETED" ||
+      currentStatus === MATCH_STATUS.MATCH_COMPLETED
+    ) {
+      matchStatusHandler("isMatchCompleted", true);
       setMatchCompleteModalVisible(true);
+    } else if (
+      currentStatus === "MATCH_ENDED" ||
+      currentStatus === MATCH_STATUS.MATCH_ENDED
+    ) {
+      matchStatusHandler("isMatchEnded", true);
+      setMatchCompleteModalVisible(true);
+    } else if (
+      currentStatus === "MATCH_TIE" ||
+      currentStatus === MATCH_STATUS.MATCH_TIE ||
+      score?.isMatchTied
+    ) {
+      matchStatusHandler("isMatchTied", true);
+      setMatchTiedModalVisible(true);
+    } else {
+      matchStatusHandler(false);
     }
 
     // Mid-match check on initial load (matches web ScorerScreen.jsx lines 554-578)
@@ -850,12 +1049,48 @@ export default function ScorerScreen() {
     };
 
     const handleInningsStartSocket = () => {
+      setIsEndingInnings(false);
+      setInningsCompleteModalVisible(false);
+      setMatchTiedModalVisible(false);
+      setCommitteeEndModalVisible(false);
       isLeavingRef.current = true;
-      navigation.navigate(SCREENS.PlayerSelectionScreen, { matchId: matchID });
+
+      const currentLatestScore = scoreRef.current || score;
+      const isSuperOver =
+        currentLatestScore?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER ||
+        currentLatestScore?.status === MATCH_STATUS.SUPER_OVER ||
+        currentLatestScore?.matchCurrentStatus === "SUPER_OVER";
+
+      const nextInn = (currentLatestScore?.currentInning || 1) + 1;
+      const inning1Runs =
+        currentLatestScore?.batting?.score?.runs ??
+        currentLatestScore?.innings_1?.totalRuns ??
+        currentLatestScore?.lastInningScore ??
+        0;
+      const computedTarget = Number(inning1Runs) + 1;
+
+      navigation.navigate(SCREENS.PlayerSelectionScreen, {
+        ...route.params,
+        matchId: matchID,
+        matchID: matchID,
+        isInningsTwo: true,
+        currentInnings: nextInn,
+        action: "END_OF_INNINGS",
+        targetScore: computedTarget,
+        isSuperOver: isSuperOver,
+        striker: null,
+        nonStriker: null,
+        bowler: null,
+        battingTeam: null,
+        bowlingTeam: null,
+      });
     };
+    handleInningsStartSocketRef.current = handleInningsStartSocket;
 
     const stableOverComplete = (...args) => handleOverCompleteRef.current?.(...args);
-    const stableInningsComplete = (...args) => handleInningsCompleteRef.current?.(...args);
+    const stableInningsComplete = () => {
+      matchStatusHandler("isInningCompleted", true);
+    };
 
     socketConn.on("connect", joinRoom);
     socketConn.on("reconnect", joinRoom);
@@ -1036,22 +1271,6 @@ export default function ScorerScreen() {
   const battingTeamId = String(score?.batting?.battingId || score?.batting?.teamId || "");
   const bowlingTeamTitle = String(score?.bowling?.teamName || "").toLowerCase().trim();
 
-  const getTeamId = (team) => {
-    if (!team) return "";
-    if (typeof team.teamId === "object" && team.teamId?._id) return String(team.teamId._id);
-    if (team.teamId) return String(team.teamId);
-    if (team._id) return String(team._id);
-    if (team.id) return String(team.id);
-    return "";
-  };
-
-  const getTeamTitle = (team, fallback = "") => {
-    if (!team) return fallback;
-    if (typeof team.teamId === "object" && (team.teamId?.name || team.teamId?.title)) {
-      return team.teamId?.name || team.teamId?.title;
-    }
-    return team.name || team.title || fallback;
-  };
 
   let resolvedBattingObj = null;
   let resolvedBowlingObj = null;
@@ -1079,7 +1298,16 @@ export default function ScorerScreen() {
     });
   }
 
-  if (matchDetails?.currentInnings && matchDetails.currentInnings != 1 && resolvedBattingObj && resolvedBowlingObj) {
+  const currentInnNumber = Number(score?.currentInnings || matchDetails?.currentInnings || route.params?.currentInnings || 1);
+  const isEvenInningsNumber = currentInnNumber % 2 === 0;
+  const isInningsTwo = Boolean(
+    (route.params?.isInningsTwo && isEvenInningsNumber) ||
+    currentInnNumber === 2 ||
+    isEvenInningsNumber ||
+    score?.matchCurrentStatus === MATCH_STATUS.INNINGS_II
+  );
+
+  if (isInningsTwo && resolvedBattingObj && resolvedBowlingObj) {
     [resolvedBattingObj, resolvedBowlingObj] = [resolvedBowlingObj, resolvedBattingObj];
   }
 
@@ -1378,65 +1606,106 @@ export default function ScorerScreen() {
           >
             {/* Left Section */}
             <View style={styles.leftSection}>
-              {leftButtons.map((row, rowIndex) => (
-                <View key={rowIndex} style={styles.row}>
-                  {row.map((label, colIndex) => {
-                    const onPress = () => {
-                      switch (label) {
-                        case "0":
-                        case "1":
-                        case "2":
-                        case "3":
-                          handleBall({ runs: parseInt(label, 10), runType: "bat", ballType: "ball" });
-                          break;
-                        case "4\nFour":
-                          handleBall({ runs: 4, runType: "bat", isBoundary: true, ballType: "ball" });
-                          break;
-                        case "6\nSIX":
-                          handleBall({ runs: 6, runType: "bat", isBoundary: true, ballType: "ball" });
-                          break;
-                        case "WD":
-                          handleShowCustomRunsModal("Wide Ball", "wd");
-                          break;
-                        case "NB":
-                          handleShowCustomRunsModal("No Ball", "nb");
-                          break;
-                        case "BYE":
-                          handleShowCustomRunsModal("Bye Run", "bye");
-                          break;
-                        default:
-                          console.log("Unhandled button:", label);
-                      }
-                    };
-
-                    return (
-                      <TouchableOpacity
-                        key={colIndex}
-                        style={[
-                          styles.button,
-                          isDarkMode ? styles.buttonDark : styles.buttonLight,
-                        ]}
-                        onPress={onPress}
-                      >
-                        <ThemedText
-                          style={[
-                            styles.text,
-                            isDarkMode ? styles.textDark : styles.textLight,
-                          ]}
-                        >
-                          {label}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
+              {matchStatus.isInningCompleted ? (
+                <View
+                  style={[
+                    styles.inningCompleteCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111827" : "#f8fafc",
+                      borderColor: isDarkMode ? "#1f2937" : "#e2e8f0",
+                    },
+                  ]}
+                >
+                  <View style={styles.inningCompleteBadge}>
+                    <Ionicons name="flag" size={22} color="#2563eb" />
+                    <ThemedText style={styles.inningCompleteTitle}>
+                      Innings 1 Complete
+                    </ThemedText>
+                  </View>
+                  <ThemedText
+                    style={[
+                      styles.inningCompleteSub,
+                      { color: isDarkMode ? "#9ca3af" : "#64748b" },
+                    ]}
+                  >
+                    Tap End Innings to proceed or tap UNDO to revert the last ball
+                  </ThemedText>
+                  <TouchableOpacity
+                    style={styles.endInningsMainBtn}
+                    onPress={() => handleInningsComplete()}
+                    activeOpacity={0.8}
+                  >
+                    <ThemedText style={styles.endInningsMainBtnText}>
+                      End Innings
+                    </ThemedText>
+                    <Ionicons name="arrow-forward" size={18} color="#ffffff" style={{ marginLeft: 6 }} />
+                  </TouchableOpacity>
                 </View>
-              ))}
+              ) : (
+                leftButtons.map((row, rowIndex) => (
+                  <View key={rowIndex} style={styles.row}>
+                    {row.map((label, colIndex) => {
+                      const onPress = () => {
+                        switch (label) {
+                          case "0":
+                          case "1":
+                          case "2":
+                          case "3":
+                            handleBall({ runs: parseInt(label, 10), runType: "bat", ballType: "ball" });
+                            break;
+                          case "4\nFour":
+                            handleBall({ runs: 4, runType: "bat", isBoundary: true, ballType: "ball" });
+                            break;
+                          case "6\nSIX":
+                            handleBall({ runs: 6, runType: "bat", isBoundary: true, ballType: "ball" });
+                            break;
+                          case "WD":
+                            handleShowCustomRunsModal("Wide Ball", "wd");
+                            break;
+                          case "NB":
+                            handleShowCustomRunsModal("No Ball", "nb");
+                            break;
+                          case "BYE":
+                            handleShowCustomRunsModal("Bye Run", "bye");
+                            break;
+                          default:
+                            console.log("Unhandled button:", label);
+                        }
+                      };
+
+                      return (
+                        <TouchableOpacity
+                          key={colIndex}
+                          style={[
+                            styles.button,
+                            isDarkMode ? styles.buttonDark : styles.buttonLight,
+                          ]}
+                          onPress={onPress}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.text,
+                              isDarkMode ? styles.textDark : styles.textLight,
+                            ]}
+                          >
+                            {label}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))
+              )}
             </View>
 
             {/* Right Section */}
             <View style={styles.rightSection}>
               {rightButtons.map((label, index) => {
+                const isUndo = label === "UNDO";
+                const isDisabled = matchStatus.isInningCompleted && !isUndo;
+
                 const onPress = () => {
+                  if (isDisabled) return;
                   switch (label) {
                     case "UNDO":
                       handleUndo();
@@ -1462,17 +1731,28 @@ export default function ScorerScreen() {
                     style={[
                       styles.button,
                       isDarkMode ? styles.buttonDark : styles.buttonLight,
+                      isUndo && matchStatus.isInningCompleted && {
+                        backgroundColor: "#2563eb",
+                        borderColor: "#1d4ed8",
+                      },
+                      isDisabled && { opacity: 0.25 },
                     ]}
                     onPress={onPress}
+                    disabled={isDisabled}
                     activeOpacity={0.7}
                   >
                     <ThemedText
                       style={[
                         styles.text,
                         isDarkMode ? styles.textDark : styles.textLight,
+                        isUndo && matchStatus.isInningCompleted && {
+                          color: "#ffffff",
+                          fontWeight: "bold",
+                        },
+                        isDisabled && { color: isDarkMode ? "#4b5563" : "#9ca3af" },
                       ]}
                     >
-                      {label}
+                      {isUndo && matchStatus.isInningCompleted ? "UNDO ↩" : label}
                     </ThemedText>
                   </TouchableOpacity>
                 );
@@ -1964,6 +2244,21 @@ export default function ScorerScreen() {
         </View>
       )}
 
+      {/* Ending Innings Loading Indicator */}
+      {isEndingInnings && (
+        <View style={styles.sheetBackdrop}>
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <ActivityIndicator size="large" color="#2563eb" />
+            <ThemedText style={{ color: "#ffffff", marginTop: 12, fontSize: 16, fontWeight: "600" }}>
+              Ending Innings...
+            </ThemedText>
+            <ThemedText style={{ color: "#9ca3af", marginTop: 4, fontSize: 12 }}>
+              Setting up Innings 2 openers
+            </ThemedText>
+          </View>
+        </View>
+      )}
+
       {/* Match Completed Dialog */}
       {matchCompleteModalVisible && isFocused && (
         <View style={styles.dialogOverlay} pointerEvents="box-none">
@@ -2018,6 +2313,205 @@ export default function ScorerScreen() {
                 Return to Home
               </ThemedText>
             </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Match Tied Dialog (Super Over / Declare Tied) */}
+      {matchTiedModalVisible && isFocused && (
+        <View style={styles.dialogOverlay} pointerEvents="box-none">
+          <View style={styles.sheetBackdrop} />
+          <View
+            style={[
+              styles.dialogCard,
+              { backgroundColor: isDarkMode ? "#1f2937" : "#ffffff" },
+            ]}
+          >
+            <ThemedText style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, textAlign: "center" }}>
+              🤝 Match Tied!
+            </ThemedText>
+            <ThemedText style={{ fontSize: 15, color: isDarkMode ? "#9ca3af" : "#4b5563", textAlign: "center", marginBottom: 20 }}>
+              The scores are level at the end of the match. Choose an option to proceed:
+            </ThemedText>
+
+            <TouchableOpacity
+              onPress={handleSuperOver}
+              style={{
+                width: "100%",
+                padding: 16,
+                borderRadius: 12,
+                backgroundColor: "#2563eb",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+              activeOpacity={0.8}
+            >
+              <ThemedText style={{ color: "#ffffff", fontSize: 16, fontWeight: "bold" }}>
+                Start Super Over
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleDeclareTied}
+              style={{
+                width: "100%",
+                padding: 14,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: isDarkMode ? "#374151" : "#d1d5db",
+                alignItems: "center",
+              }}
+              activeOpacity={0.7}
+            >
+              <ThemedText style={{ color: isDarkMode ? "#d1d5db" : "#4b5563", fontSize: 15, fontWeight: "600" }}>
+                Declare Match Tied
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* End Match Committee / Innings 2 Confirmation Dialog */}
+      {committeeEndModalVisible && isFocused && (
+        <View style={styles.dialogOverlay} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setCommitteeEndModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.dialogCard,
+              { backgroundColor: isDarkMode ? "#1f2937" : "#ffffff", maxHeight: "85%" },
+            ]}
+          >
+            <TouchableOpacity 
+              onPress={() => setCommitteeEndModalVisible(false)}
+              style={{ position: "absolute", top: 16, right: 16, padding: 6, zIndex: 10 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={24} color={isDarkMode ? "#9ca3af" : "#6b7280"} />
+            </TouchableOpacity>
+
+            <ThemedText style={{ fontSize: 22, fontWeight: "bold", marginBottom: 6, color: "#0d9488" }}>
+              End the Match
+            </ThemedText>
+            <ThemedText style={{ fontSize: 13, color: isDarkMode ? "#9ca3af" : "#6b7280", marginBottom: 14 }}>
+              Ending the match is irreversible. Please review the current status and confirm your decision.
+            </ThemedText>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: "100%" }}>
+              {/* Current Score */}
+              <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: isDarkMode ? "#111827" : "#f1f5f9" }}>
+                <ThemedText style={{ fontSize: 12, color: isDarkMode ? "#9ca3af" : "#64748b" }}>Current Score:</ThemedText>
+                <ThemedText style={{ fontSize: 15, fontWeight: "bold", marginTop: 2 }}>
+                  {`${score?.bowling?.teamName || "Team A"} ${score?.lastInningScore || 0}/${score?.lastInningWickets || 0} in ${score?.totalOvers || 0} overs`}
+                </ThemedText>
+              </View>
+
+              {/* Chasing Status */}
+              <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: isDarkMode ? "#111827" : "#f1f5f9" }}>
+                <ThemedText style={{ fontSize: 12, color: isDarkMode ? "#9ca3af" : "#64748b" }}>Chasing Status:</ThemedText>
+                <ThemedText style={{ fontSize: 15, fontWeight: "bold", marginTop: 2 }}>
+                  {`${score?.batting?.teamName || "Team B"} needs ${Math.max(0, (score?.lastInningScore || 0) - (score?.batting?.score?.runs || 0))} runs in ${calculateOversLeft(score?.totalOvers || 0, score?.batting?.score?.over || 0)} overs`}
+                </ThemedText>
+              </View>
+
+              {/* Projected Result */}
+              <View style={{ marginBottom: 14, padding: 10, borderRadius: 8, backgroundColor: isDarkMode ? "#111827" : "#fef9c3" }}>
+                <ThemedText style={{ fontSize: 12, color: isDarkMode ? "#9ca3af" : "#854d0e" }}>Projected Result:</ThemedText>
+                <ThemedText style={{ fontSize: 14, fontWeight: "bold", color: "#ca8a04", marginTop: 2 }}>
+                  {calculateProjectedResult(
+                    { title: score?.bowling?.teamName || "Team A" },
+                    {
+                      title: score?.batting?.teamName || "Team B",
+                      runs: score?.batting?.score?.runs || 0,
+                      wickets: score?.batting?.score?.wicket || 0,
+                    },
+                    score?.lastInningScore || 0,
+                    calculateOversLeft(score?.totalOvers || 0, score?.batting?.score?.over || 0),
+                    score?.totalOvers || 20
+                  )}
+                </ThemedText>
+              </View>
+
+              {/* Select Winning Team */}
+              <ThemedText style={{ fontSize: 14, fontWeight: "600", marginBottom: 8 }}>
+                Select Winning Team:
+              </ThemedText>
+
+              {allTeams.map((team, idx) => {
+                const tId = getTeamId(team);
+                const tTitle = getTeamTitle(team, `Team ${idx + 1}`);
+                const isSelected = committeeWinnerTeam === tId;
+
+                return (
+                  <TouchableOpacity
+                    key={tId || idx}
+                    onPress={() => setCommitteeWinnerTeam(tId)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: 12,
+                      borderRadius: 10,
+                      marginBottom: 8,
+                      borderWidth: 2,
+                      borderColor: isSelected ? "#0d9488" : (isDarkMode ? "#374151" : "#e5e7eb"),
+                      backgroundColor: isSelected ? (isDarkMode ? "#134e4a" : "#ccfbf1") : (isDarkMode ? "#1e293b" : "#ffffff"),
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={isSelected ? "radio-button-on" : "radio-button-off"}
+                      size={20}
+                      color={isSelected ? "#0d9488" : "#9ca3af"}
+                      style={{ marginRight: 10 }}
+                    />
+                    <ThemedText style={{ fontSize: 16, fontWeight: isSelected ? "bold" : "500" }}>
+                      {tTitle}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14, width: "100%" }}>
+              <TouchableOpacity
+                onPress={() => setCommitteeEndModalVisible(false)}
+                style={{ paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10 }}
+              >
+                <ThemedText style={{ color: "#9ca3af", fontSize: 15, fontWeight: "600" }}>
+                  Cancel
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  if (!committeeWinnerTeam) {
+                    Alert.alert("Select Winner", "Please select a winning team.");
+                    return;
+                  }
+                  const winnerTeamObj = allTeams.find(
+                    (t) => String(getTeamId(t)) === String(committeeWinnerTeam)
+                  );
+                  const winnerTitle = getTeamTitle(winnerTeamObj, "Winning Team");
+                  handleEndMatchCommittee(committeeWinnerTeam, `${winnerTitle} win declare by committee`);
+                }}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 22,
+                  borderRadius: 10,
+                  backgroundColor: "#0d9488",
+                  alignItems: "center",
+                }}
+                activeOpacity={0.8}
+              >
+                <ThemedText style={{ color: "#ffffff", fontSize: 15, fontWeight: "bold" }}>
+                  End Match
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -2148,5 +2642,48 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 25,
+  },
+  inningCompleteCard: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 14,
+    borderWidth: 1,
+  },
+  inningCompleteBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  inningCompleteTitle: {
+    fontSize: 17,
+    fontWeight: "bold",
+    marginLeft: 6,
+    color: "#2563eb",
+  },
+  inningCompleteSub: {
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  endInningsMainBtn: {
+    backgroundColor: "#2563eb",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  endInningsMainBtnText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });

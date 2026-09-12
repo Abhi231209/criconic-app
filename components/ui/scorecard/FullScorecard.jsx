@@ -12,8 +12,10 @@ import {
   MaterialCommunityIcons
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
+import PlayerAvatar from "../custom/PlayerAvatar";
 import { useColorScheme } from "react-native";
-import { convertBallToOvers } from "@/utils/Common";
+import { convertBallToOvers, getBatsmenDescription, calculateCRR } from "@/utils/Common";
+import SCREENS from "@/screens";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -44,85 +46,9 @@ export default function FullScoreCard({
     mutedForeground: isDark ? "#94a3b8" : "#64748b",
   };
 
-  // HARDCODED SAMPLE DATA FOR BOTH INNINGS - COMMENTED OUT (API ONLY)
-  /*
-  const sampleInning1 = {
-    batting: {
-      battingTeam: "WF-W",
-      score: {
-        runs: 145,
-        wicket: 6,
-        over: "20.0",
-        CRR: 7.25,
-        projectedScore: 160
-      },
-      isSuperOver: false
-    },
-    playedBatsman: [
-      { id: 1, name: "E Perry", runs: 55, ballsFaced: 43, fours: 6, sixes: 2, sr: 127.91, notOut: false, howOut: "c Taylor b Ismail" },
-      { id: 2, name: "A Healy", runs: 42, ballsFaced: 32, fours: 5, sixes: 1, sr: 131.25, notOut: false, howOut: "b Schutt" },
-      { id: 3, name: "B Mooney", runs: 28, ballsFaced: 24, fours: 3, sixes: 0, sr: 116.67, notOut: true },
-    ],
-    extras: 12,
-    batsmanUpcoming: [
-      { id: 4, name: "A Gardner" },
-      { id: 5, name: "A Sutherland" }
-    ],
-    bowling: {
-      allBowlers: [
-        { id: 6, name: "S Ismail", over: 4.0, maiden: 1, runsGiven: 28, wicketsTaken: 2, eco: 7.00 },
-        { id: 7, name: "M Schutt", over: 4.0, maiden: 0, runsGiven: 32, wicketsTaken: 1, eco: 8.00 },
-        { id: 8, name: "M Taylor", over: 3.2, maiden: 0, runsGiven: 26, wicketsTaken: 0, eco: 7.80 },
-      ]
-    },
-    fallOfWickets: [
-      { batsman: { id: 2, name: "A Healy" }, teamRuns: 42, teamOvers: "5.3" },
-      { batsman: { id: 1, name: "E Perry" }, teamRuns: 98, teamOvers: "14.1" },
-    ],
-    inningNumber: 1,
-    description: "WF-W 1st Innings"
-  };
-
-  const sampleInning2 = {
-    batting: {
-      battingTeam: "BP-W",
-      score: {
-        runs: 105,
-        wicket: 9,
-        over: "20.0",
-        CRR: 5.25,
-        projectedScore: 0
-      },
-      isSuperOver: false
-    },
-    playedBatsman: [
-      { id: 9, name: "S Devine", runs: 38, ballsFaced: 35, fours: 4, sixes: 0, sr: 108.57, notOut: false, howOut: "c Healy b Perry" },
-      { id: 10, name: "S Bates", runs: 24, ballsFaced: 28, fours: 2, sixes: 0, sr: 85.71, notOut: false, howOut: "b Sutherland" },
-      { id: 11, name: "A Kerr", runs: 18, ballsFaced: 20, fours: 1, sixes: 0, sr: 90.00, notOut: true },
-    ],
-    extras: 8,
-    batsmanUpcoming: [
-      { id: 12, name: "L Tahuhu" }
-    ],
-    bowling: {
-      allBowlers: [
-        { id: 13, name: "E Perry", over: 4.0, maiden: 0, runsGiven: 22, wicketsTaken: 2, eco: 5.50 },
-        { id: 14, name: "A Sutherland", over: 4.0, maiden: 1, runsGiven: 18, wicketsTaken: 3, eco: 4.50 },
-        { id: 15, name: "J Jonassen", over: 3.0, maiden: 0, runsGiven: 20, wicketsTaken: 1, eco: 6.67 },
-      ]
-    },
-    fallOfWickets: [
-      { batsman: { id: 10, name: "S Bates" }, teamRuns: 45, teamOvers: "8.2" },
-      { batsman: { id: 9, name: "S Devine" }, teamRuns: 82, teamOvers: "16.5" },
-    ],
-    inningNumber: 2,
-    description: "BP-W 2nd Innings - Target: 146"
-  };
-  */
-
   const emptyInning = {
     batting: {
-      battingTeam: "Team 1",
+      battingTeam: "Team",
       score: {
         runs: 0,
         wicket: 0,
@@ -145,21 +71,27 @@ export default function FullScoreCard({
 
   const getInningData = (rawInning, fallbackTeam) => {
     if (!rawInning) return { ...emptyInning, batting: { ...emptyInning.batting, battingTeam: fallbackTeam } };
+    const innRuns = rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0;
+    const innOvers = rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0";
+    const computedCRR = calculateCRR(innRuns, innOvers);
+
     return {
       batting: {
         battingTeam: rawInning.batting?.battingTeam || rawInning.battingTeam || fallbackTeam,
         score: {
-          runs: rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0,
+          runs: innRuns,
           wicket: rawInning.batting?.score?.wicket ?? rawInning.score?.wicket ?? rawInning.wickets ?? 0,
-          over: rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0",
-          CRR: rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00",
+          over: innOvers,
+          CRR: (computedCRR !== "0.00" ? computedCRR : (rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00")),
           projectedScore: rawInning.batting?.score?.projectedScore ?? rawInning.score?.projectedScore ?? 0,
         },
         isSuperOver: rawInning.isSuperOver || false,
       },
       playedBatsman: Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : (Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
       extras: rawInning.extras ?? 0,
-      batsmanUpcoming: Array.isArray(rawInning.batsmanUpcoming) ? rawInning.batsmanUpcoming : [],
+      batsmanUpcoming: (Array.isArray(rawInning.batsmanUpcoming) && rawInning.batsmanUpcoming.length > 0)
+        ? rawInning.batsmanUpcoming
+        : (Array.isArray(score?.batsmanUpcoming) ? score.batsmanUpcoming : []),
       bowling: {
         allBowlers: Array.isArray(rawInning.bowling?.allBowlers) ? rawInning.bowling.allBowlers : (Array.isArray(rawInning.bowling?.bowlers) ? rawInning.bowling.bowlers : (Array.isArray(rawInning.bowlers) ? rawInning.bowlers : [])),
       },
@@ -169,38 +101,50 @@ export default function FullScoreCard({
     };
   };
 
-  const inning1Data = getInningData(inning_I || (score?.inning && score.inning[0]), score?.teams?.[0]?.title || "Inning 1");
-  const inning2Data = getInningData((score?.inning && score.inning[1]) || (score?.inning ? null : score), score?.teams?.[1]?.title || "Inning 2");
-  
-  const currentInning = activeInning === 1 ? inning1Data : inning2Data;
-  const isSecondInningComplete = (inning2Data.batting.score.wicket >= 10) || 
-                                 inning2Data.batting.score.over === "20.0";
+  const inningsList = Array.isArray(score?.inning) && score.inning.length > 0
+    ? score.inning.map((inn, idx) => ({
+        number: idx + 1,
+        label: inn?.isSuperOver ? `Super Over ${Math.ceil((idx + 1) / 2)}` : `Inning ${idx + 1}`,
+        data: getInningData(inn, score?.teams?.[idx % 2]?.title || `Inning ${idx + 1}`)
+      }))
+    : [
+        {
+          number: 1,
+          label: "Inning 1",
+          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1")
+        }
+      ];
 
-  // Function to get batsman description
-  const getBatsmenDescription = (player) => {
-    if (player.notOut) return "not out";
-    if (player.howOut) return player.howOut;
-    return "";
-  };
+  const selectedInningObj = inningsList.find(i => i.number === activeInning) || inningsList[0];
+  const currentInning = selectedInningObj?.data || emptyInning;
+
+  const isSecondInningComplete = (inningsList[1]?.data?.batting?.score?.wicket >= 10) || 
+                                 (inningsList[1]?.data?.batting?.score?.over === "20.0");
 
   const redirectToPlayerProfile = (player) => {
-    // Navigate to player profile
-    console.log("Navigate to player profile:", player.id);
+    if (!player) return;
+    const playerId = player?.playerId || player?.id || player?._id;
+    navigation.navigate(SCREENS.PlayerProfile, {
+      player: typeof player === "object" ? player : { name: player },
+      playerId: playerId,
+      matchId: score?._id || score?.id,
+      match: score,
+    });
   };
 
-  const InningButton = ({ inningNumber, isActive }) => (
+  const InningButton = ({ inningNumber, label, isActive }) => (
     <Pressable
       onPress={() => setActiveInning(inningNumber)}
-      className={`flex-1 py-3 rounded-lg mx-1 items-center ${
+      className={`py-2 px-4 rounded-lg mx-1 items-center flex-1 ${
         isActive 
           ? (isDark ? "bg-blue-600" : "bg-blue-500") 
           : (isDark ? "bg-gray-700" : "bg-gray-200")
       }`}
     >
-      <ThemedText className={`font-medium ${
+      <ThemedText className={`font-medium text-center ${
         isActive ? "text-white" : (isDark ? "text-gray-300" : "text-gray-700")
       }`}>
-        Inning {inningNumber}
+        {label || `Inning ${inningNumber}`}
       </ThemedText>
     </Pressable>
   );
@@ -247,12 +191,20 @@ export default function FullScoreCard({
       showsVerticalScrollIndicator={false}
     >
       {/* Inning Selection */}
-      <View className={`mx-4 mt-4 p-1 rounded-lg ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
-        <View className="flex-row">
-          <InningButton inningNumber={1} isActive={activeInning === 1} />
-          <InningButton inningNumber={2} isActive={activeInning === 2} />
+      {inningsList.length > 1 && (
+        <View className={`mx-4 mt-4 p-1 rounded-lg ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            {inningsList.map((item) => (
+              <InningButton
+                key={item.number}
+                inningNumber={item.number}
+                label={item.label}
+                isActive={activeInning === item.number}
+              />
+            ))}
+          </ScrollView>
         </View>
-      </View>
+      )}
 
       {/* Match Header */}
       <Animated.View 
@@ -337,33 +289,44 @@ export default function FullScoreCard({
           </View>
 
           {/* Batting Table Rows */}
-          {currentInning.playedBatsman.map((player, index) => (
-            <View 
-              key={player.id} 
-              className={`flex-row p-2 border-b ${
-                isDark ? "border-gray-700" : "border-gray-200"
-              } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
-            >
-              <TableCell width="w-2/5" center={false}>
-                <Pressable onPress={() => redirectToPlayerProfile(player)}>
-                  <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-                    {player.name}
-                    {player.notOut && (
-                      <ThemedText className={isDark ? "text-green-400" : "text-green-600"}>*</ThemedText>
-                    )}
-                  </ThemedText>
-                  <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                    {getBatsmenDescription(player)}
-                  </ThemedText>
-                </Pressable>
-              </TableCell>
-              <TableCell>{player.runs}</TableCell>
-              <TableCell>{player.ballsFaced}</TableCell>
-              <TableCell>{player.fours}</TableCell>
-              <TableCell>{player.sixes}</TableCell>
-              <TableCell>{player.sr}</TableCell>
+          {(currentInning?.playedBatsman || []).length > 0 ? (
+            currentInning.playedBatsman.map((player, index) => (
+              <View 
+                key={player?.id || player?._id || player?.playerId || index} 
+                className={`flex-row p-2 border-b ${
+                  isDark ? "border-gray-700" : "border-gray-200"
+                } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
+              >
+                <TableCell width="w-2/5" center={false}>
+                  <Pressable onPress={() => redirectToPlayerProfile(player)} className="flex-row items-center">
+                    <PlayerAvatar player={player} size={28} className="mr-2" />
+                    <View className="flex-1">
+                      <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
+                        {player?.name || player?.username || player?.playerName || "Batter"}
+                        {player?.notOut && (
+                          <ThemedText className={isDark ? "text-green-400" : "text-green-600"}>*</ThemedText>
+                        )}
+                      </ThemedText>
+                      <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} numberOfLines={1}>
+                        {getBatsmenDescription(player)}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                </TableCell>
+                <TableCell>{player?.runs ?? 0}</TableCell>
+                <TableCell>{player?.ballsFaced ?? player?.balls ?? 0}</TableCell>
+                <TableCell>{player?.fours ?? 0}</TableCell>
+                <TableCell>{player?.sixes ?? 0}</TableCell>
+                <TableCell>{player?.sr ?? "0.00"}</TableCell>
+              </View>
+            ))
+          ) : (
+            <View className="py-4 items-center">
+              <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                No batting data available
+              </ThemedText>
             </View>
-          ))}
+          )}
 
           {/* Additional Stats */}
           <View className="flex-row mt-4">
@@ -373,29 +336,34 @@ export default function FullScoreCard({
                   Extras
                 </ThemedText>
                 <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {currentInning.extras || 0}
+                  {currentInning?.extras || 0}
                 </ThemedText>
               </View>
             </View>
 
-            {currentInning.batsmanUpcoming && currentInning.batsmanUpcoming.length > 0 && (
+            {Array.isArray(currentInning?.batsmanUpcoming) && currentInning.batsmanUpcoming.length > 0 && (
               <View className={`flex-1 p-3 rounded-lg ml-2 ${isDark ? "bg-gray-800" : "bg-white"}`}>
                 <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"} mb-1`}>
                   Yet to Bat
                 </ThemedText>
                 <View className="flex-row flex-wrap">
-                  {currentInning.batsmanUpcoming.map((player, index) => (
-                    <Pressable 
-                      key={player.id} 
-                      onPress={() => redirectToPlayerProfile(player)}
-                      className="mr-1"
-                    >
-                      <ThemedText className={`text-sm ${isDark ? "text-blue-400" : "text-blue-600"}`}>
-                        {player.name}
-                        {index < currentInning.batsmanUpcoming.length - 1 ? "," : ""}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
+                  {currentInning.batsmanUpcoming.map((player, index) => {
+                    const upcomingName = typeof player === "string" 
+                      ? player 
+                      : (player?.name || player?.username || player?.playerName || "Player");
+                    return (
+                      <Pressable 
+                        key={player?.id || player?._id || player?.playerId || index} 
+                        onPress={() => redirectToPlayerProfile(player)}
+                        className="mr-1.5 mb-1"
+                      >
+                        <ThemedText className={`text-sm ${isDark ? "text-blue-400" : "text-blue-600"}`}>
+                          {upcomingName}
+                          {index < currentInning.batsmanUpcoming.length - 1 ? "," : ""}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -420,32 +388,46 @@ export default function FullScoreCard({
           </View>
 
           {/* Bowling Table Rows */}
-          {currentInning.bowling.allBowlers.map((player, index) => (
-            <View 
-              key={player.id} 
-              className={`flex-row p-2 border-b ${
-                isDark ? "border-gray-700" : "border-gray-200"
-              } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
-            >
-              <TableCell width="w-2/5" center={false}>
-                <Pressable onPress={() => redirectToPlayerProfile(player)}>
-                  <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-                    {player.name}
-                  </ThemedText>
-                </Pressable>
-              </TableCell>
-              <TableCell>{player.over}</TableCell>
-              <TableCell>{player.maiden}</TableCell>
-              <TableCell>{player.runsGiven}</TableCell>
-              <TableCell>{player.wicketsTaken}</TableCell>
-              <TableCell>{player.eco}</TableCell>
+          {(currentInning?.bowling?.allBowlers || []).length > 0 ? (
+            currentInning.bowling.allBowlers.map((player, index) => (
+              <View 
+                key={player?.id || player?._id || player?.playerId || index} 
+                className={`flex-row p-2 border-b ${
+                  isDark ? "border-gray-700" : "border-gray-200"
+                } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
+              >
+                <TableCell width="w-2/5" center={false}>
+                  <Pressable 
+                    onPress={() => redirectToPlayerProfile(player)}
+                    className="flex-row items-center"
+                  >
+                    <PlayerAvatar player={player} size={28} className="mr-2" />
+                    <View className="flex-1">
+                      <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`} numberOfLines={1}>
+                        {player?.name || player?.username || player?.playerName || "Bowler"}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                </TableCell>
+                <TableCell>{player?.over ?? "0.0"}</TableCell>
+                <TableCell>{player?.maiden ?? 0}</TableCell>
+                <TableCell>{player?.runsGiven ?? player?.runs ?? 0}</TableCell>
+                <TableCell>{player?.wicketsTaken ?? player?.wickets ?? 0}</TableCell>
+                <TableCell>{player?.eco ?? "0.00"}</TableCell>
+              </View>
+            ))
+          ) : (
+            <View className="py-4 items-center">
+              <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                No bowling data available
+              </ThemedText>
             </View>
-          ))}
+          )}
         </Animated.View>
       )}
 
       {/* Fall of Wickets */}
-      {currentInning.fallOfWickets && currentInning.fallOfWickets.length > 0 && (
+      {Array.isArray(currentInning?.fallOfWickets) && currentInning.fallOfWickets.length > 0 && (
         <Animated.View 
           entering={FadeInDown.duration(500)}
           className={`mx-4 p-4 rounded-lg ${isDark ? "bg-gray-800" : "bg-white"} mb-6`}
@@ -455,20 +437,34 @@ export default function FullScoreCard({
           </ThemedText>
           
           <View className="flex-row flex-wrap">
-            {currentInning.fallOfWickets.map((wicket, i) => (
-              <View key={i} className="w-1/2 mb-2">
-                <View className="flex-row justify-between items-center pr-2">
-                  <Pressable onPress={() => redirectToPlayerProfile(wicket.batsman)}>
-                    <ThemedText className={`text-sm ${isDark ? "text-blue-400" : "text-blue-600"}`}>
-                      {i + 1}. {wicket.batsman.name}
+            {currentInning.fallOfWickets.map((wicket, i) => {
+              const batsmanName = typeof wicket?.batsman === "string" 
+                ? wicket.batsman 
+                : (wicket?.batsman?.name || wicket?.batsman?.username || wicket?.batsman?.playerName || "Wicket");
+              const bowlerName = typeof wicket?.bowler === "string" 
+                ? wicket.bowler 
+                : (wicket?.bowler?.name || wicket?.bowler?.username || wicket?.bowler?.playerName || "");
+
+              return (
+                <View key={i} className="w-1/2 mb-2">
+                  <View className="flex-row justify-between items-center pr-2">
+                    <Pressable onPress={() => redirectToPlayerProfile(wicket?.batsman)}>
+                      <ThemedText className={`text-sm ${isDark ? "text-blue-400" : "text-blue-600"}`}>
+                        {i + 1}. {batsmanName}
+                      </ThemedText>
+                      {bowlerName ? (
+                        <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                          b {bowlerName}
+                        </ThemedText>
+                      ) : null}
+                    </Pressable>
+                    <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                      {wicket?.teamRuns ?? 0} ({wicket?.teamOvers ?? "0.0"})
                     </ThemedText>
-                  </Pressable>
-                  <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                    {wicket.teamRuns} ({wicket.teamOvers})
-                  </ThemedText>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </Animated.View>
       )}

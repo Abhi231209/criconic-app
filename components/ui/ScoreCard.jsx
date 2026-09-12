@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   TouchableOpacity,
@@ -18,6 +18,8 @@ import { matchesApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import User from "@/utils/User";
 
+const ACTION_SHEET_SNAP_POINTS = ["48%"];
+
 function ScoreCard({
   matchId,
   startDate,
@@ -33,6 +35,7 @@ function ScoreCard({
   const [loading, setLoading] = useState(!hasExistingData);
   const [matchDetails, setMatchDetails] = useState(match || null);
   const [liveScore, setLiveScore] = useState(match?.score || null);
+  const [isAccessToUpdate, setIsAccessToUpdate] = useState(false);
   const { on, off, emit } = useSocket();
   const { theme } = useAppTheme();
   const navigation = useNavigation();
@@ -86,6 +89,9 @@ function ScoreCard({
       if (!incomingId || String(incomingId) !== String(effectiveMatchId)) {
         return;
       }
+      if (data.accessToUpdate) {
+      setIsAccessToUpdate(data.accessToUpdate);
+    }
 
       setLiveScore(data);
       if (data?.teams?.length) {
@@ -266,22 +272,25 @@ function ScoreCard({
     currentStatus === MATCH_STATUS.MATCH_COMPLETED ||
     currentStatus === MATCH_STATUS.MATCH_ENDED;
 
-  const BottomSheetContent = () => (
-    <MatchActionSheet
-      closeSheet={closeSheet}
-      navigation={navigation}
-      matchId={effectiveMatchId}
-      matchStatus={currentStatus}
-    />
-  );
+  const handleOpenActionSheet = useCallback(() => {
+    openSheet(
+      <MatchActionSheet
+        closeSheet={closeSheet}
+        navigation={navigation}
+        matchId={effectiveMatchId}
+        matchStatus={currentStatus}
+      />,
+      ACTION_SHEET_SNAP_POINTS
+    );
+  }, [openSheet, closeSheet, navigation, effectiveMatchId, currentStatus]);
 
-  const handlePress = () => {
-    if (onPress) {
-      onPress();
+  const handlePress = useCallback(() => {
+    if (isAccessToUpdate) {
+      handleOpenActionSheet();
     } else {
-      openSheet(<BottomSheetContent />);
+      navigation.navigate(SCREENS.MatchScoreCard, { matchId: effectiveMatchId });
     }
-  };
+  }, [isAccessToUpdate, handleOpenActionSheet, navigation, effectiveMatchId]);
 
   // Helper for team initials avatar
   const getInitials = (name) => {
@@ -413,7 +422,7 @@ function ScoreCard({
             <TouchableOpacity
               onPress={(e) => {
                 e?.stopPropagation?.();
-                openSheet(<BottomSheetContent />);
+                handleOpenActionSheet();
               }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={{ marginLeft: 6, padding: 3 }}

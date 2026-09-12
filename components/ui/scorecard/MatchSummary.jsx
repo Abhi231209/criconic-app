@@ -1,18 +1,6 @@
 import React, { useState } from "react";
-import { View, ScrollView, Pressable, useWindowDimensions } from "react-native";
+import { View, ScrollView, Pressable, useWindowDimensions, useColorScheme } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import Animated, { 
-  FadeIn, 
-  FadeInDown, 
-  ZoomIn, 
-  SlideInRight,
-  LightSpeedInLeft,
-  FlipInXUp,
-  BounceInDown,
-  StretchInX,
-  PinwheelIn,
-  Layout
-} from "react-native-reanimated";
 import { 
   Ionicons, 
   MaterialIcons, 
@@ -20,10 +8,45 @@ import {
   MaterialCommunityIcons
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
-import { useColorScheme } from "react-native";
+import SCREENS from "@/screens";
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedView = Animated.createAnimatedComponent(View);
+const StatBadge = React.memo(({ value, label, color, isDark }) => (
+  <View className={`items-center p-2 rounded-lg ${
+    isDark ? "bg-gray-700" : "bg-gray-100"
+  }`} style={{ flex: 1, marginHorizontal: 4, maxWidth: "23%" }}>
+    <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20, fontSize: 14 }}>
+      {value}
+    </ThemedText>
+    <ThemedText className="text-xs mt-1" style={{ color, lineHeight: 16 }}>
+      {label}
+    </ThemedText>
+  </View>
+));
+
+const PerformanceCard = React.memo(({ title, children, isExpanded, onPress, isDark }) => (
+  <Pressable
+    onPress={onPress}
+    className={`rounded-lg p-4 mb-4 border ${
+      isDark ? "border-gray-600" : "border-gray-200"
+    } ${isExpanded ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-800" : "bg-gray-50")}`}
+  >
+    <View className="flex-row justify-between items-center">
+      <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 24 }}>
+        {title}
+      </ThemedText>
+      <MaterialIcons 
+        name={isExpanded ? "expand-less" : "expand-more"} 
+        size={24} 
+        color={isDark ? "#94a3b8" : "#64748b"} 
+      />
+    </View>
+    {isExpanded ? (
+      <View className="mt-2">
+        {children}
+      </View>
+    ) : null}
+  </Pressable>
+));
 
 export default function MatchSummary({ matchData }) {
   const navigation = useNavigation();
@@ -99,22 +122,143 @@ export default function MatchSummary({ matchData }) {
   ];
   */
 
+  const redirectToPlayerProfile = (player) => {
+    if (!player) return;
+    const playerId = player?.playerId || player?.id || player?._id;
+    navigation.navigate(SCREENS.PlayerProfile, {
+      player: typeof player === "object" ? player : { name: player },
+      playerId: playerId,
+      matchId: matchData?._id || matchData?.id,
+      match: matchData,
+    });
+  };
+
+  // Distinct team names resolution
+  const titleParts = (matchData?.title || "").split(/\s+vs\s+|\s+VS\s+|\s+v\s+/i);
+  const titleTeam1 = titleParts[0]?.trim();
+  const titleTeam2 = titleParts[1]?.trim();
+
   const t1 = matchData?.teams?.[0];
   const t2 = matchData?.teams?.[1];
+  const t1Name = t1?.title || t1?.teamName || t1?.name || matchData?.teamA?.title || matchData?.teamA?.name;
+  const t2Name = t2?.title || t2?.teamName || t2?.name || matchData?.teamB?.title || matchData?.teamB?.name;
+
   const inn1 = matchData?.inning?.[0];
-  const inn2 = matchData?.inning?.[1];
+  const inn1BattingTeam = inn1?.batting?.battingTeam;
+  const inn1BowlingTeam = inn1?.bowling?.teamName;
+
+  // Find second inning with distinct batting team
+  const inn2 = (matchData?.inning || []).find((inn, idx) => 
+    idx > 0 && inn?.batting?.battingTeam && inn?.batting?.battingTeam !== inn1BattingTeam
+  ) || matchData?.inning?.[1];
+
+  const team1Name = inn1BattingTeam || t1Name || titleTeam1 || "Team 1";
+  let team2Name = (inn2?.batting?.battingTeam && inn2?.batting?.battingTeam !== team1Name)
+    ? inn2.batting.battingTeam
+    : (inn1BowlingTeam && inn1BowlingTeam !== team1Name)
+    ? inn1BowlingTeam
+    : (t2Name && t2Name !== team1Name)
+    ? t2Name
+    : (titleTeam2 && titleTeam2 !== team1Name)
+    ? titleTeam2
+    : (t1Name && t1Name !== team1Name)
+    ? t1Name
+    : "Team 2";
+
+  if (team2Name === team1Name) {
+    if (titleTeam2 && titleTeam2 !== team1Name) team2Name = titleTeam2;
+    else if (t2Name && t2Name !== team1Name) team2Name = t2Name;
+    else team2Name = `${team1Name} (Opponent)`;
+  }
+
+  // Filter out any super over innings so regular team scores are shown
+  const allInnings = Array.isArray(matchData?.inning) ? matchData.inning : [];
+  const regularInnings = allInnings.filter(inn => !inn?.isSuperOver);
+  const superOverInnings = allInnings.filter(inn => inn?.isSuperOver);
+
+  const team1Inning = regularInnings.find(inn => inn?.batting?.battingTeam === team1Name) || regularInnings[0] || inn1;
+  const team2Inning = regularInnings.find(inn => inn?.batting?.battingTeam === team2Name) || (regularInnings[1] !== team1Inning ? regularInnings[1] : (inn2 !== team1Inning ? inn2 : null));
+
+  const isTeam1CurrentlyBatting = matchData?.batting?.battingTeam === team1Name && !matchData?.isSuperOver;
+  const isTeam2CurrentlyBatting = matchData?.batting?.battingTeam === team2Name && !matchData?.isSuperOver;
+
+  const team1Score = team1Inning?.batting?.score || (isTeam1CurrentlyBatting ? matchData?.batting?.score : null);
+  const team2Score = team2Inning?.batting?.score || (isTeam2CurrentlyBatting ? matchData?.batting?.score : null);
+
+  const status = String(
+    matchData?.status ||
+    matchData?.matchCurrentStatus ||
+    ""
+  ).toUpperCase();
+
+  const isSuperOverMatch = Boolean(
+    matchData?.isSuperOver ||
+    matchData?.score?.isSuperOver ||
+    superOverInnings.length > 0 ||
+    status.includes("SUPER_OVER") ||
+    matchData?.description?.toLowerCase().includes("super over") ||
+    matchData?.matchResult?.prompt?.toLowerCase().includes("super over")
+  );
+
+  const hasEndedStatus =
+    status === "MATCH_COMPLETED" ||
+    status === "MATCH_ENDED" ||
+    status === "COMPLETED" ||
+    status === "END" ||
+    Boolean(matchData?.isMatchEnded || matchData?.isMatchCompleted);
+
+  const rawPrompt = matchData?.matchResult?.prompt || matchData?.description || (typeof matchData?.result === "string" ? matchData.result : "") || "";
+  const lowerPrompt = rawPrompt.toLowerCase();
+
+  const hasWinningResult = Boolean(
+    matchData?.matchResult?.prompt ||
+    matchData?.matchResult?.winner ||
+    matchData?.matchResult?.winTeam ||
+    matchData?.matchResult?.winningTeam ||
+    (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over"))
+  );
+
+  const isMatchEnded = (hasEndedStatus || hasWinningResult) &&
+    status !== "INNINGS_I_ENDED" &&
+    status !== "INNINGS_BREAK";
+
+  let resultStr = rawPrompt;
+  if (isSuperOverMatch && isMatchEnded) {
+    if (lowerPrompt.includes("super over") && (lowerPrompt.includes("won") || lowerPrompt.includes("win"))) {
+      resultStr = rawPrompt;
+    } else {
+      const winnerId = matchData?.matchResult?.winnerTeamId || matchData?.matchResult?.winner || matchData?.winner || matchData?.winnerTeamId;
+      const winTeamObj = (matchData?.teams || []).find(t => String(t?.teamId || t?._id || t?.id) === String(winnerId));
+      let winnerName = winTeamObj?.title || winTeamObj?.name || matchData?.matchResult?.winnerTeamName;
+      if (!winnerName && superOverInnings.length >= 2) {
+        const lastSo1 = superOverInnings[superOverInnings.length - 2];
+        const lastSo2 = superOverInnings[superOverInnings.length - 1];
+        const so1Score = Number(lastSo1?.batting?.score?.runs ?? 0);
+        const so2Score = Number(lastSo2?.batting?.score?.runs ?? 0);
+        if (so2Score > so1Score) winnerName = lastSo2?.batting?.battingTeam || team2Name;
+        else if (so1Score > so2Score) winnerName = lastSo1?.batting?.battingTeam || team1Name;
+      }
+      if (winnerName) {
+        resultStr = `${winnerName} won in Super Over`;
+      } else if (rawPrompt) {
+        resultStr = `${rawPrompt} (in Super Over)`;
+      } else {
+        resultStr = "Match won in Super Over";
+      }
+    }
+  }
 
   const matchInfo = {
     team1: {
-      name: inn1?.batting?.battingTeam || t1?.title || "Team 1",
-      score: `${inn1?.batting?.score?.runs ?? 0}/${inn1?.batting?.score?.wicket ?? 0}`,
-      overs: inn1?.batting?.score?.over || "0.0",
-      result: matchData?.matchResult || matchData?.result || ""
+      name: team1Name,
+      score: `${team1Score?.runs ?? 0}/${team1Score?.wicket ?? 0}`,
+      overs: team1Score?.over || "0.0",
+      result: resultStr
     },
     team2: {
-      name: inn2?.batting?.battingTeam || t2?.title || "Team 2",
-      score: `${inn2?.batting?.score?.runs ?? 0}/${inn2?.batting?.score?.wicket ?? 0}`,
-      overs: inn2?.batting?.score?.over || "0.0",
+      name: team2Name,
+      score: `${team2Score?.runs ?? 0}/${team2Score?.wicket ?? 0}`,
+      overs: team2Score?.over || "0.0",
       result: ""
     },
     venue: matchData?.venue || matchData?.location || "Ground",
@@ -122,7 +266,22 @@ export default function MatchSummary({ matchData }) {
     matchType: matchData?.matchType ? `${matchData.matchType} Match` : "Cricket Match"
   };
 
-  const manOfTheMatch = matchData?.manOfTheMatch || null;
+  const rawMom = isMatchEnded ? (matchData?.mom || matchData?.manOfTheMatch || null) : null;
+  const manOfTheMatch = rawMom
+    ? {
+        name: rawMom?.playerName || rawMom?.name || (typeof rawMom === "string" ? rawMom : "Player"),
+        playerId: rawMom?.playerId || rawMom?.id || rawMom?._id,
+        team: rawMom?.team || "",
+        role: rawMom?.role || (Array.isArray(rawMom?.statsType) ? rawMom.statsType.join(", ") : "Player"),
+        avatar: rawMom?.avatar || "🏏",
+        performance: {
+          runs: rawMom?.contributions?.batting?.runs ?? rawMom?.performance?.runs ?? 0,
+          balls: rawMom?.contributions?.batting?.balls ?? rawMom?.performance?.balls ?? 0,
+          wickets: rawMom?.contributions?.bowling?.wickets ?? rawMom?.performance?.wickets ?? 0,
+          economy: rawMom?.contributions?.bowling?.economy ?? rawMom?.performance?.economy ?? "0.0",
+        },
+      }
+    : null;
 
   // Extract all batsmen from innings to get top batters
   const allBatters = [];
@@ -136,7 +295,8 @@ export default function MatchSummary({ matchData }) {
       totalSixes += b.sixes || 0;
       totalFours += b.fours || 0;
       allBatters.push({
-        name: b.name || "Batter",
+        playerId: b?.playerId || b?.id || b?._id,
+        name: b.name || b.username || "Batter",
         team: teamTitle,
         runs: b.runs ?? 0,
         balls: b.ballsFaced ?? 0,
@@ -156,7 +316,8 @@ export default function MatchSummary({ matchData }) {
     const teamTitle = inn?.bowling?.teamName || "";
     (inn?.bowling?.allBowlers || inn?.bowling?.bowlers || []).forEach((b) => {
       allBowlers.push({
-        name: b.name || "Bowler",
+        playerId: b?.playerId || b?.id || b?._id,
+        name: b.name || b.username || "Bowler",
         team: teamTitle,
         wickets: b.wicketsTaken ?? 0,
         runs: b.runsGiven ?? 0,
@@ -170,7 +331,8 @@ export default function MatchSummary({ matchData }) {
 
   const keyMoments = (matchData?.fallOfWickets || []).map((fow) => ({
     over: fow.teamOvers || "0.0",
-    description: `${fow.batsman?.name || "Batter"} dismissed for ${fow.teamRuns || 0} runs`,
+    description: `${fow.batsman?.name || fow.batsman?.username || "Batter"} dismissed for ${fow.teamRuns || 0} runs`,
+    batsman: fow.batsman,
     type: "wicket"
   }));
 
@@ -182,49 +344,6 @@ export default function MatchSummary({ matchData }) {
     }
   };
 
-  const PerformanceCard = ({ title, children, isExpanded, onPress, index }) => (
-    <AnimatedPressable
-      entering={FadeInDown.delay(index * 100).duration(500)}
-      onPress={onPress}
-      className={`rounded-lg p-4 mb-4 border ${
-        isDark ? "border-gray-600" : "border-gray-200"
-      } ${isExpanded ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-800" : "bg-gray-50")}`}
-    >
-      <View className="flex-row justify-between items-center">
-        <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 24 }}>
-          {title}
-        </ThemedText>
-        <MaterialIcons 
-          name={isExpanded ? "expand-less" : "expand-more"} 
-          size={24} 
-          color={isDark ? "#94a3b8" : "#64748b"} 
-        />
-      </View>
-      {isExpanded && (
-        <AnimatedView 
-          entering={FadeIn.duration(300)}
-          exiting={FadeIn.duration(200)}
-          layout={Layout.springify()}
-        >
-          {children}
-        </AnimatedView>
-      )}
-    </AnimatedPressable>
-  );
-
-  const StatBadge = ({ value, label, color }) => (
-    <View className={`items-center p-2 rounded-lg ${
-      isDark ? "bg-gray-700" : "bg-gray-100"
-    }`} style={{ flex: 1, marginHorizontal: 4, maxWidth: "23%" }}>
-      <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20, fontSize: 14 }}>
-        {value}
-      </ThemedText>
-      <ThemedText className="text-xs mt-1" style={{ color, lineHeight: 16 }}>
-        {label}
-      </ThemedText>
-    </View>
-  );
-
   return (
     <ScrollView 
       className="flex-1"
@@ -232,8 +351,7 @@ export default function MatchSummary({ matchData }) {
       showsVerticalScrollIndicator={false}
     >
       {/* Match Header */}
-      <Animated.View 
-        entering={FadeIn.duration(600)}
+      <View 
         className={`p-6 ${isDark ? "bg-gray-800" : "bg-blue-50"} items-center`}
       >
         <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-blue-800"} mb-2`} style={{ lineHeight: 20 }}>
@@ -272,24 +390,23 @@ export default function MatchSummary({ matchData }) {
           </View>
         </View>
         
-        <Animated.View 
-          entering={BounceInDown.delay(200).duration(600)}
+        <View 
           className={`px-4 py-2 rounded-full ${isDark ? "bg-green-800" : "bg-green-100"}`}
         >
           <ThemedText className={`font-bold ${isDark ? "text-green-200" : "text-green-800"}`} style={{ lineHeight: 20 }}>
-            {matchInfo.team1.name} {matchInfo.team1.result}
+            {matchInfo.team1.result || `${matchInfo.team1.name} vs ${matchInfo.team2.name}`}
           </ThemedText>
-        </Animated.View>
+        </View>
         
         <ThemedText className={`mt-4 ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 20 }}>
           {matchInfo.venue} • {matchInfo.date}
         </ThemedText>
-      </Animated.View>
+      </View>
 
       {/* Man of the Match */}
-      {manOfTheMatch && (
-        <Animated.View 
-          entering={LightSpeedInLeft.delay(300).duration(600)}
+      {Boolean(manOfTheMatch) ? (
+        <Pressable 
+          onPress={() => redirectToPlayerProfile(manOfTheMatch)}
           className={`p-6 mx-4 my-6 rounded-2xl border ${
             isDark ? "bg-amber-900/20 border-amber-700" : "bg-amber-100 border-amber-200"
           }`}
@@ -324,25 +441,29 @@ export default function MatchSummary({ matchData }) {
               value={manOfTheMatch.performance?.runs ?? 0} 
               label="Runs" 
               color={isDark ? "#fbbf24" : "#f59e0b"} 
+              isDark={isDark}
             />
             <StatBadge 
               value={manOfTheMatch.performance?.balls ?? 0} 
               label="Balls" 
               color={isDark ? "#fbbf24" : "#f59e0b"} 
+              isDark={isDark}
             />
             <StatBadge 
               value={manOfTheMatch.performance?.wickets ?? 0} 
               label="Wickets" 
               color={isDark ? "#fbbf24" : "#f59e0b"} 
+              isDark={isDark}
             />
             <StatBadge 
               value={manOfTheMatch.performance?.economy ?? "0.0"} 
               label="Economy" 
               color={isDark ? "#fbbf24" : "#f59e0b"} 
+              isDark={isDark}
             />
           </View>
-        </Animated.View>
-      )}
+        </Pressable>
+      ) : null}
 
       {/* Top Performers Section */}
       <View className="px-4 pb-6">
@@ -357,7 +478,7 @@ export default function MatchSummary({ matchData }) {
           title="Top Batters"
           isExpanded={expandedSection === 'batters'}
           onPress={() => toggleSection('batters')}
-          index={0}
+          isDark={isDark}
         >
           {topBatters.length > 0 ? (
             topBatters.map((batter, index) => (
@@ -367,14 +488,14 @@ export default function MatchSummary({ matchData }) {
                   index < topBatters.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
                 }`}
               >
-                <View className="flex-1">
-                  <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                <Pressable className="flex-1" onPress={() => redirectToPlayerProfile(batter)}>
+                  <ThemedText className={`font-semibold ${isDark ? "text-blue-400" : "text-blue-600"}`} style={{ lineHeight: 20 }}>
                     {batter.name}
                   </ThemedText>
                   <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
                     {batter.team}
                   </ThemedText>
-                </View>
+                </Pressable>
                 
                 <View className="flex-row">
                   <View className="items-center mr-4">
@@ -418,7 +539,7 @@ export default function MatchSummary({ matchData }) {
           title="Top Bowlers"
           isExpanded={expandedSection === 'bowlers'}
           onPress={() => toggleSection('bowlers')}
-          index={1}
+          isDark={isDark}
         >
           {topBowlers.length > 0 ? (
             topBowlers.map((bowler, index) => (
@@ -428,14 +549,14 @@ export default function MatchSummary({ matchData }) {
                   index < topBowlers.length - 1 ? (isDark ? "border-b border-gray-700" : "border-b border-gray-200") : ""
                 }`}
               >
-                <View className="flex-1">
-                  <ThemedText className={`font-semibold ${isDark ? "text-white" : "text-gray-900"}`} style={{ lineHeight: 20 }}>
+                <Pressable className="flex-1" onPress={() => redirectToPlayerProfile(bowler)}>
+                  <ThemedText className={`font-semibold ${isDark ? "text-blue-400" : "text-blue-600"}`} style={{ lineHeight: 20 }}>
                     {bowler.name}
                   </ThemedText>
                   <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
                     {bowler.team}
                   </ThemedText>
-                </View>
+                </Pressable>
                 
                 <View className="flex-row">
                   <View className="items-center mr-4">
@@ -479,7 +600,7 @@ export default function MatchSummary({ matchData }) {
           title="Key Moments"
           isExpanded={expandedSection === 'moments'}
           onPress={() => toggleSection('moments')}
-          index={2}
+          isDark={isDark}
         >
           {keyMoments.length > 0 ? (
             keyMoments.map((moment, index) => (
@@ -521,8 +642,7 @@ export default function MatchSummary({ matchData }) {
       </View>
 
       {/* Match Statistics */}
-      <Animated.View 
-        entering={FlipInXUp.delay(500).duration(600)}
+      <View 
         className={`p-6 mx-4 my-4 rounded-xl ${isDark ? "bg-gray-800" : "bg-white"}`}
         style={{ elevation: 2 }}
       >
@@ -558,25 +678,7 @@ export default function MatchSummary({ matchData }) {
             </ThemedText>
           </View>
         </View>
-        
-        {/* HARDCODED WIN PROBABILITY - COMMENTED OUT (API ONLY) */}
-        {/*
-        <View className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-gray-700" : "bg-gray-200"}`}>
-          <View 
-            className="h-full rounded-full bg-blue-500" 
-            style={{ width: '65%' }}
-          />
-        </View>
-        <View className="flex-row justify-between mt-1">
-          <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-            WF-W 65%
-          </ThemedText>
-          <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} style={{ lineHeight: 16 }}>
-            BP-W 35%
-          </ThemedText>
-        </View>
-        */}
-      </Animated.View>
+      </View>
     </ScrollView>
   );
 }

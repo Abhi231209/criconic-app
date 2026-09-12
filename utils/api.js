@@ -394,6 +394,16 @@ export const matchesApi = {
     request(`api/commentary?matchId=${matchId}&page=${page}&limit=${limit}`, {
       method: "GET",
     }),
+  getHeadToHead: (matchId) =>
+    request(`api/head-to-head/byMatchId/${matchId}`, {
+      method: "GET",
+      errorAlert: false,
+    }),
+  getTeamsRecentForm: (matchId) =>
+    request(`api/teams/recent-form/${matchId}`, {
+      method: "GET",
+      errorAlert: false,
+    }),
   getMatchSettings: (matchId) =>
     request(`api/matches/${matchId}/settings`, { method: "GET" }),
   updateMatchSettings: (matchId, data) =>

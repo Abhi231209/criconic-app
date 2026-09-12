@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   ScrollView,
@@ -6,6 +6,7 @@ import {
   Image,
   useColorScheme,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -16,6 +17,8 @@ import ScoreCard from "@/components/ui/ScoreCard";
 import SwipeableTabs from "../custom/SwipeableTab";
 import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
+import request, { matchesApi, userApi } from "@/utils/api";
+import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
 
 export default function PlayerProfile() {
   const navigation = useNavigation();
@@ -32,317 +35,697 @@ export default function PlayerProfile() {
   });
 
   const routePlayer = route?.params?.player;
+  const routePlayerId = route?.params?.playerId || routePlayer?.id || routePlayer?._id || routePlayer?.playerId || routePlayer?.userId;
   const authUser = useSelector((state) => state?.auth?.user);
+  const [fetchedPlayer, setFetchedPlayer] = useState(null);
+  const [userStats, setUserStats] = useState(null);
 
-  // Dynamic player data derived from route params or Redux auth user
-  const player = {
-    id: routePlayer?._id || routePlayer?.id || authUser?._id || authUser?.id || "1",
-    name: routePlayer?.username || routePlayer?.name || authUser?.username || "Player",
-    shortName: routePlayer?.shortName || routePlayer?.username || authUser?.username || "Player",
-    team: routePlayer?.team || "Unassigned",
-    nationality: routePlayer?.nationality || routePlayer?.location || "India",
-    age: routePlayer?.age || "-",
-    role: routePlayer?.role || authUser?.role || "Player",
-    battingStyle: routePlayer?.battingStyle || "Right Handed",
-    bowlingStyle: routePlayer?.bowlingStyle || "Right Arm Medium",
-    photo: routePlayer?.profileImage || routePlayer?.photo || authUser?.profileImage || null,
-    debut: routePlayer?.debut || "-",
-    matches: routePlayer?.matches || 0,
-    runs: routePlayer?.runs || 0,
-    wickets: routePlayer?.wickets || 0,
-    highestScore: routePlayer?.highestScore || 0,
-    bestBowling: routePlayer?.bestBowling || "-",
-    average: routePlayer?.average || 0,
-    strikeRate: routePlayer?.strikeRate || 0,
-    economy: routePlayer?.economy || 0,
+  const [playerMatches, setPlayerMatches] = useState([]);
+  const [detailedMatchesMap, setDetailedMatchesMap] = useState({});
+  const [loadingMatches, setLoadingMatches] = useState(false);
+
+  // Sanitize routePlayer to strip transient scorecard single-match values so they do not pollute career stats
+  const sanitizedRoutePlayer = React.useMemo(() => {
+    if (!routePlayer || typeof routePlayer !== "object") return {};
+    const {
+      runs,
+      balls,
+      ballsFaced,
+      ball,
+      ballsPlayed,
+      fours,
+      sixes,
+      sr,
+      over,
+      overs,
+      maiden,
+      maidens,
+      wickets,
+      wicketsTaken,
+      runsGiven,
+      runsConceded,
+      concededRuns,
+      eco,
+      economy,
+      dots,
+      dotBalls,
+      outStatus,
+      dismissal,
+      dismissalInfo,
+      howOut,
+      isOut,
+      notOut,
+      didBat,
+      didBowl,
+      currentBowler,
+      currentBatsman,
+      ...cleanPlayer
+    } = routePlayer;
+    return cleanPlayer;
+  }, [routePlayer]);
+
+  const targetId = routePlayerId || (authUser?._id || authUser?.id);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!targetId || String(targetId) === "1") return;
+
+    // 1. Fetch Profile
+    const fetchProfile = async () => {
+      try {
+        let user = null;
+        const res = await userApi.getProfile(targetId).catch(() => null);
+        user = res?.data?.data || res?.data?.user || res?.data;
+
+        if (!user || (!user._id && !user.id && !user.username)) {
+          const fbRes = await request(`api/users/profile/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
+          user = fbRes?.data?.data || fbRes?.data?.user || fbRes?.data;
+        }
+
+        if ((!user || (!user._id && !user.username)) && (!routePlayerId || String(targetId) === String(authUser?._id || authUser?.id))) {
+          const authRes = await request("api/auth/status", { method: "GET", errorAlert: false }).catch(() => null);
+          user = authRes?.data?.user;
+        }
+
+        if (isMounted && user && typeof user === "object") {
+          setFetchedPlayer(user);
+        }
+      } catch (err) {
+        console.log("[PlayerProfile] Profile fetch error:", err);
+      }
+    };
+    fetchProfile();
+
+    // 2. Fetch User Stats if available
+    request(`api/users/getUserStat/${targetId}`, { method: "GET", errorAlert: false })
+      .then((res) => {
+        if (!isMounted) return;
+        const statsObj = res?.data?.stats || res?.data?.data || res?.data;
+        if (statsObj && typeof statsObj === "object") {
+          setUserStats(statsObj);
+        }
+      })
+      .catch(() => {});
+
+    // 3. Fetch Player Matches
+    setLoadingMatches(true);
+    const fetchMatches = async () => {
+      try {
+        const promises = [
+          request(`api/matches/ids?playerId=${targetId}&page=1&items=50`, { method: "GET", errorAlert: false }).catch(() => null),
+          matchesApi.getMatches({ playerId: targetId }, { errorAlert: false }).catch(() => null),
+          matchesApi.getMatches({ userId: targetId }, { errorAlert: false }).catch(() => null),
+        ];
+
+        const [idsRes, matchesRes, userMatchesRes] = await Promise.all(promises);
+
+        const extractMatches = (res) => {
+          if (!res) return [];
+          if (Array.isArray(res)) return res;
+          if (Array.isArray(res?.data?.content)) return res.data.content;
+          if (Array.isArray(res?.content)) return res.content;
+          if (Array.isArray(res?.data?.matches)) return res.data.matches;
+          if (Array.isArray(res?.data?.data)) return res.data.data;
+          if (Array.isArray(res?.data)) return res.data;
+          return [];
+        };
+
+        const rawList = [
+          ...extractMatches(idsRes),
+          ...extractMatches(matchesRes),
+          ...extractMatches(userMatchesRes),
+        ];
+
+        if (route?.params?.match) {
+          rawList.unshift(route.params.match);
+        } else if (route?.params?.matchId) {
+          rawList.unshift(route.params.matchId);
+        }
+
+        const matchMap = new Map();
+        for (const item of rawList) {
+          if (!item) continue;
+          const id = typeof item === "string" ? item : (item._id || item.id || item.matchId);
+          if (!id) continue;
+          const idStr = String(id);
+          const existing = matchMap.get(idStr);
+          if (!existing || (typeof existing === "string" && typeof item === "object")) {
+            matchMap.set(idStr, item);
+          }
+        }
+
+        const combined = Array.from(matchMap.values());
+        if (isMounted) {
+          setPlayerMatches(combined);
+        }
+
+        // Fetch rich match cards in parallel for up to the first 10 matches
+        const idsToFetch = combined
+          .map((m) => (typeof m === "string" ? m : (m?._id || m?.id || m?.matchId)))
+          .filter(Boolean)
+          .slice(0, 10);
+
+        if (idsToFetch.length > 0) {
+          Promise.allSettled(
+            idsToFetch.map((id) =>
+              matchesApi.getMatchById(id, { params: { private: 1 }, errorAlert: false })
+            )
+          )
+            .then((results) => {
+              if (!isMounted) return;
+              const detailsMap = {};
+              results.forEach((r, idx) => {
+                if (r.status === "fulfilled" && r.value?.data) {
+                  const mData = r.value.data;
+                  const mId = mData._id || mData.id || idsToFetch[idx];
+                  if (mId) detailsMap[String(mId)] = mData;
+                }
+              });
+              setDetailedMatchesMap((prev) => ({ ...prev, ...detailsMap }));
+            })
+            .catch(() => {});
+        }
+      } catch (err) {
+        console.log("[PlayerProfile] Matches fetch error:", err);
+      } finally {
+        if (isMounted) setLoadingMatches(false);
+      }
+    };
+
+    fetchMatches();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetId, routePlayerId, authUser?._id, authUser?.id, route?.params?.matchId]);
+
+  const target = {
+    ...(sanitizedRoutePlayer || {}),
+    ...(fetchedPlayer || (routePlayerId ? null : authUser) || {}),
   };
+  const isSelf = Boolean(
+    authUser &&
+    (String(target?._id || target?.id) === String(authUser?._id || authUser?.id) || (!routePlayer && !routePlayerId))
+  );
 
-  // HARDCODED SAMPLE PLAYER DATA - COMMENTED OUT (API ONLY)
-  /*
-  const player = {
-    id: "1",
-    name: "Virat Kohli",
-    shortName: "V Kohli",
-    team: "RCB",
-    nationality: "Indian",
-    age: 35,
-    role: "Batsman",
-    battingStyle: "Right Handed",
-    bowlingStyle: "Right Arm Medium",
-    photo: null,
-    debut: "2008-08-18",
-    matches: 237,
-    runs: 7263,
-    wickets: 4,
-    highestScore: 113,
-    bestBowling: "2/25",
-    average: 37.25,
-    strikeRate: 130.02,
-    economy: 8.52,
-  };
+  const bStats = target?.stats?.batting || target?.battingStats || userStats?.batting || {};
+  const bowlStats = target?.stats?.bowling || target?.bowlingStats || userStats?.bowling || {};
 
-  // Stats data by ball type
-  const battingStats = {
-    all: {
-      matches: 237,
-      innings: 229,
-      runs: 7263,
-      average: 37.25,
-      strikeRate: 130.02,
-      highest: 113,
-      centuries: 8,
-      fifties: 50,
-      fours: 643,
-      sixes: 234
-    },
-    leather: {
-      matches: 180,
-      innings: 175,
-      runs: 5820,
-      average: 39.32,
-      strikeRate: 128.45,
-      highest: 113,
-      centuries: 7,
-      fifties: 40,
-      fours: 512,
-      sixes: 180
-    },
-    tennis: {
-      matches: 57,
-      innings: 54,
-      runs: 1443,
-      average: 28.86,
-      strikeRate: 138.72,
-      highest: 98,
-      centuries: 1,
-      fifties: 10,
-      fours: 131,
-      sixes: 54
-    }
-  };
-
-  const bowlingStats = {
-    all: {
-      matches: 237,
-      innings: 42,
-      wickets: 4,
-      average: 112.5,
-      economy: 8.52,
-      bestBowling: "2/25",
-      strikeRate: 79.2,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0
-    },
-    leather: {
-      matches: 180,
-      innings: 30,
-      wickets: 3,
-      average: 126.3,
-      economy: 8.45,
-      bestBowling: "2/25",
-      strikeRate: 89.7,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0
-    },
-    tennis: {
-      matches: 57,
-      innings: 12,
-      wickets: 1,
-      average: 98.0,
-      economy: 8.72,
-      bestBowling: "1/18",
-      strikeRate: 67.4,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0
-    }
-  };
-
-  // Sample matches data
-  const liveMatches = [
-    {
-      id: "1",
-      team1: "RCB",
-      team2: "CSK",
-      score: "RCB 145/4 (15) vs CSK 132/6 (15)",
-      result: "Live",
-      date: "Live",
-      isLive: true,
-      playerPerformance: "78(52)"
-    },
-    {
-      id: "2",
-      team1: "RCB",
-      team2: "MI",
-      score: "RCB 89/3 (10) vs MI 75/2 (10)",
-      result: "Live",
-      date: "Live",
-      isLive: true,
-      playerPerformance: "45(32)"
-    },
-  ];
-
-  const recentMatches = [
-    {
-      id: "3",
-      team1: "RCB",
-      team2: "KKR",
-      score: "RCB 196/4 (20) vs KKR 172/8 (20)",
-      result: "RCB won by 24 runs",
-      date: "2 days ago",
-      playerPerformance: "83(59)"
-    },
-    {
-      id: "4",
-      team1: "RCB",
-      team2: "DC",
-      score: "RCB 182/6 (20) vs DC 183/4 (19.1)",
-      result: "DC won by 6 wickets",
-      date: "5 days ago",
-      playerPerformance: "45(32)"
-    },
-    {
-      id: "5",
-      team1: "RCB",
-      team2: "SRH",
-      score: "RCB 205/3 (20) vs SRH 208/4 (19.2)",
-      result: "SRH won by 6 wickets",
-      date: "1 week ago",
-      playerPerformance: "78(52)"
-    },
-  ];
-
-  // Sample teams data (teams the player has played for)
-  const teams = [
-    {
-      id: "1",
-      name: "Royal Challengers Bangalore",
-      shortName: "RCB",
-      seasons: "2008-2024",
-      matches: 237,
-      runs: 7263,
-      wickets: 4,
-      role: "Batsman"
-    },
-    {
-      id: "2",
-      name: "India",
-      shortName: "IND",
-      seasons: "2008-2024",
-      matches: 115,
-      runs: 4050,
-      wickets: 2,
-      role: "Batsman"
-    },
-  ];
-
-  // Sample achievements data
-  const achievements = [
-    {
-      id: "1",
-      title: "Orange Cap Winner",
-      tournament: "IPL 2016",
-      description: "Most runs in the tournament (973 runs)"
-    },
-    {
-      id: "2",
-      title: "Player of the Tournament",
-      tournament: "IPL 2016",
-      description: "Outstanding performance throughout"
-    },
-    {
-      id: "3",
-      title: "Fastest to 5000 runs",
-      tournament: "IPL",
-      description: "Reached 5000 runs in 157 innings"
-    },
-  ];
-  */
-
-  const battingStats = {
-    all: {
-      matches: player.matches,
-      innings: player.matches,
-      runs: player.runs,
-      average: player.average,
-      strikeRate: player.strikeRate,
-      highest: player.highestScore,
-      centuries: 0,
-      fifties: 0,
-      fours: 0,
-      sixes: 0,
-    },
-    leather: {
+  // Aggregate stats across player matches to accurately compute career stats
+  const matchDerivedStats = React.useMemo(() => {
+    const initStat = () => ({
       matches: 0,
       innings: 0,
       runs: 0,
-      average: 0,
-      strikeRate: 0,
+      average: "0.00",
+      strikeRate: "0.00",
       highest: 0,
       centuries: 0,
       fifties: 0,
       fours: 0,
       sixes: 0,
-    },
-    tennis: {
-      matches: 0,
-      innings: 0,
-      runs: 0,
-      average: 0,
-      strikeRate: 0,
-      highest: 0,
-      centuries: 0,
-      fifties: 0,
-      fours: 0,
-      sixes: 0,
-    },
+      ballsFaced: 0,
+      outs: 0,
+      bowlingInnings: 0,
+      wickets: 0,
+      maidens: 0,
+      bowlingBalls: 0,
+      concededRuns: 0,
+      fourWickets: 0,
+      fiveWickets: 0,
+      bestWickets: 0,
+      bestRuns: 9999,
+      bestBowling: "-",
+      bowlingAverage: "0.00",
+      economy: "0.00",
+      bowlingStrikeRate: "0.00",
+    });
+
+    const stats = {
+      all: initStat(),
+      leather: initStat(),
+      tennis: initStat(),
+    };
+
+    const targetNames = [
+      target?.username,
+      target?.name,
+      target?.playerName,
+      sanitizedRoutePlayer?.name,
+      sanitizedRoutePlayer?.username,
+      routePlayer?.name,
+      routePlayer?.username,
+      authUser?.username,
+      authUser?.name,
+    ]
+      .filter(Boolean)
+      .map((n) => String(n).trim().toLowerCase());
+
+    const isMatchForPlayer = (p) => {
+      if (!p) return false;
+      const pId = p.id?._id || p.id?.id || p.id || p._id || p.playerId || p.userId;
+      if (pId && targetId && String(pId) === String(targetId)) return true;
+      const pName = (p.username || p.name || p.playerName || p.id?.username || p.id?.name || "").toString().trim().toLowerCase();
+      if (pName && targetNames.includes(pName)) return true;
+      return false;
+    };
+
+    const parseBalls = (ov, b) => {
+      if (typeof b === "number" && b > 0) return b;
+      if (!ov) return 0;
+      const parts = String(ov).split(".");
+      return (parseInt(parts[0], 10) || 0) * 6 + (parseInt(parts[1], 10) || 0);
+    };
+
+    const allMatches = [];
+    const seenMatchIds = new Set();
+
+    const addMatchObj = (m) => {
+      if (!m || typeof m !== "object") return;
+      const id = String(m._id || m.id || m.matchId || "");
+      if (id && seenMatchIds.has(id)) return;
+      if (id) seenMatchIds.add(id);
+      allMatches.push(m);
+    };
+
+    if (route?.params?.match) addMatchObj(route.params.match);
+    if (route?.params?.score) addMatchObj(route.params.score);
+
+    playerMatches.forEach((m) => {
+      if (typeof m === "object") {
+        addMatchObj(m);
+      } else if (typeof m === "string" && detailedMatchesMap[m]) {
+        addMatchObj(detailedMatchesMap[m]);
+      }
+    });
+
+    Object.values(detailedMatchesMap).forEach(addMatchObj);
+
+    for (const m of allMatches) {
+      const rawBallType = (m.ballType || m.score?.ballType || m.ball_type || "").toString().trim().toLowerCase();
+      const ballTypeKey = rawBallType.includes("leather") ? "leather" : "tennis";
+
+      let playerInMatch = false;
+      let playerBattedInMatch = false;
+      let matchBatRuns = 0;
+      let matchBalls = 0;
+      let matchFours = 0;
+      let matchSixes = 0;
+      let matchWasOut = false;
+
+      let playerBowledInMatch = false;
+      let matchWickets = 0;
+      let matchMaidens = 0;
+      let matchBowlingBalls = 0;
+      let matchConceded = 0;
+
+      const innings = [
+        ...(Array.isArray(m.inning) ? m.inning : []),
+        ...(Array.isArray(m.score?.inning) ? m.score.inning : []),
+        ...(Array.isArray(m.innings) ? m.innings : []),
+      ];
+      if (m.innings_1 || m.score?.innings_1) innings.push(m.innings_1 || m.score.innings_1);
+      if (m.innings_2 || m.score?.innings_2) innings.push(m.innings_2 || m.score.innings_2);
+
+      const squadPlayers = [
+        ...(m.teams?.[0]?.players || []),
+        ...(m.teams?.[1]?.players || []),
+        ...(m.teamA?.players || []),
+        ...(m.teamB?.players || []),
+      ];
+      if (squadPlayers.some(isMatchForPlayer)) {
+        playerInMatch = true;
+      }
+
+      for (const inn of innings) {
+        if (!inn) continue;
+
+        const batsmen = [
+          ...(Array.isArray(inn.playedBatsman) ? inn.playedBatsman : []),
+          ...(Array.isArray(inn.batsman) ? inn.batsman : []),
+          ...(Array.isArray(inn.batting?.batsmen) ? inn.batting.batsmen : []),
+          ...(Array.isArray(inn.outBatsman) ? inn.outBatsman : []),
+        ];
+        const batRec = batsmen.find(isMatchForPlayer);
+        if (batRec) {
+          playerInMatch = true;
+          playerBattedInMatch = true;
+          const r = Number(batRec.runs ?? batRec.score ?? 0);
+          const b = Number(batRec.ballsFaced ?? batRec.balls ?? batRec.ball ?? batRec.ballsPlayed ?? 0);
+          const f = Number(batRec.fours ?? batRec.four ?? 0);
+          const s = Number(batRec.sixes ?? batRec.six ?? 0);
+          const out = batRec.isOut ?? (batRec.notOut !== undefined ? !batRec.notOut : Boolean(batRec.dismissal || batRec.howOut));
+          matchBatRuns += r;
+          matchBalls += b;
+          matchFours += f;
+          matchSixes += s;
+          if (out) matchWasOut = true;
+        }
+
+        const bowlers = [
+          ...(Array.isArray(inn.bowling?.allBowlers) ? inn.bowling.allBowlers : []),
+          ...(Array.isArray(inn.bowling?.bowlers) ? inn.bowling.bowlers : []),
+          ...(Array.isArray(inn.bowlers) ? inn.bowlers : []),
+          ...(Array.isArray(inn.bowling?.lastTwoBowlers) ? inn.bowling.lastTwoBowlers : []),
+          ...(inn.bowler ? [inn.bowler] : []),
+        ];
+        const bowlRec = bowlers.find(isMatchForPlayer);
+        if (bowlRec) {
+          playerInMatch = true;
+          playerBowledInMatch = true;
+          const w = Number(bowlRec.wicketsTaken ?? bowlRec.wickets ?? bowlRec.wicket ?? 0);
+          const md = Number(bowlRec.maiden ?? bowlRec.maidens ?? 0);
+          const c = Number(bowlRec.runsGiven ?? bowlRec.runsConceded ?? bowlRec.concededRuns ?? bowlRec.runs ?? 0);
+          const b = parseBalls(bowlRec.over ?? bowlRec.overs, bowlRec.balls);
+          matchWickets += w;
+          matchMaidens += md;
+          matchConceded += c;
+          matchBowlingBalls += b;
+        }
+      }
+
+      if (!playerBattedInMatch) {
+        const topBatsmen = [
+          ...(Array.isArray(m.batsman) ? m.batsman : []),
+          ...(Array.isArray(m.score?.batsman) ? m.score.batsman : []),
+        ];
+        const topBat = topBatsmen.find(isMatchForPlayer);
+        if (topBat) {
+          playerInMatch = true;
+          playerBattedInMatch = true;
+          matchBatRuns = Number(topBat.runs ?? topBat.score ?? 0);
+          matchBalls = Number(topBat.ballsFaced ?? topBat.balls ?? 0);
+          matchFours = Number(topBat.fours ?? 0);
+          matchSixes = Number(topBat.sixes ?? 0);
+        }
+      }
+
+      if (!playerBowledInMatch) {
+        const topBowlers = [
+          ...(m.bowler ? [m.bowler] : []),
+          ...(m.score?.bowler ? [m.score.bowler] : []),
+          ...(Array.isArray(m.bowlers) ? m.bowlers : []),
+          ...(Array.isArray(m.score?.bowlers) ? m.score.bowlers : []),
+        ];
+        const topBowl = topBowlers.find(isMatchForPlayer);
+        if (topBowl) {
+          playerInMatch = true;
+          playerBowledInMatch = true;
+          matchWickets = Number(topBowl.wicketsTaken ?? topBowl.wickets ?? 0);
+          matchMaidens = Number(topBowl.maiden ?? topBowl.maidens ?? 0);
+          matchConceded = Number(topBowl.runsGiven ?? topBowl.runs ?? 0);
+          matchBowlingBalls = parseBalls(topBowl.over ?? topBowl.overs, topBowl.balls);
+        }
+      }
+
+      const targets = [stats.all, stats[ballTypeKey]];
+      for (const st of targets) {
+        if (playerInMatch) st.matches += 1;
+        if (playerBattedInMatch) {
+          st.innings += 1;
+          st.runs += matchBatRuns;
+          st.ballsFaced += matchBalls;
+          st.fours += matchFours;
+          st.sixes += matchSixes;
+          if (matchWasOut) st.outs += 1;
+          if (matchBatRuns > st.highest) st.highest = matchBatRuns;
+          if (matchBatRuns >= 100) st.centuries += 1;
+          else if (matchBatRuns >= 50) st.fifties += 1;
+        }
+        if (playerBowledInMatch) {
+          st.bowlingInnings += 1;
+          st.wickets += matchWickets;
+          st.maidens += matchMaidens;
+          st.bowlingBalls += matchBowlingBalls;
+          st.concededRuns += matchConceded;
+          if (matchWickets >= 5) st.fiveWickets += 1;
+          else if (matchWickets >= 4) st.fourWickets += 1;
+
+          if (
+            matchWickets > st.bestWickets ||
+            (matchWickets === st.bestWickets && matchConceded < st.bestRuns && matchWickets > 0)
+          ) {
+            st.bestWickets = matchWickets;
+            st.bestRuns = matchConceded;
+            st.bestBowling = `${matchWickets}/${matchConceded}`;
+          }
+        }
+      }
+    }
+
+    for (const key of ["all", "leather", "tennis"]) {
+      const st = stats[key];
+      const outs = Math.max(1, st.outs);
+      st.average = st.innings > 0 ? (st.runs / outs).toFixed(2) : "0.00";
+      st.strikeRate = st.ballsFaced > 0 ? ((st.runs / st.ballsFaced) * 100).toFixed(1) : "0.00";
+      st.bowlingAverage = st.wickets > 0 ? (st.concededRuns / st.wickets).toFixed(2) : "0.00";
+      st.economy = st.bowlingBalls > 0 ? ((st.concededRuns / st.bowlingBalls) * 6).toFixed(2) : "0.00";
+      st.bowlingStrikeRate = st.wickets > 0 ? (st.bowlingBalls / st.wickets).toFixed(1) : "0.00";
+      if (st.bestBowling === "-" && st.wickets > 0) {
+        st.bestBowling = `${st.bestWickets}/${st.bestRuns}`;
+      }
+    }
+
+    return stats;
+  }, [
+    targetId,
+    detailedMatchesMap,
+    playerMatches,
+    target?.username,
+    target?.name,
+    target?.playerName,
+    sanitizedRoutePlayer?.name,
+    sanitizedRoutePlayer?.username,
+    routePlayer?.name,
+    routePlayer?.username,
+    authUser?.username,
+    authUser?.name,
+    route?.params?.match,
+    route?.params?.score,
+  ]);
+
+  const getBattingStatsForType = (type) => {
+    const derived = matchDerivedStats[type] || matchDerivedStats.all;
+    if (type === "all") {
+      const hasBackend = Number(bStats.matches || bStats.runs || 0) > 0;
+      return {
+        matches: hasBackend ? (bStats.matches ?? derived.matches) : derived.matches,
+        innings: hasBackend ? (bStats.innings ?? bStats.matches ?? derived.innings) : derived.innings,
+        runs: hasBackend ? (bStats.runs ?? derived.runs) : derived.runs,
+        average: hasBackend ? (bStats.avg ?? derived.average) : derived.average,
+        strikeRate: hasBackend ? (bStats.strikeRate ?? derived.strikeRate) : derived.strikeRate,
+        highest: hasBackend ? (bStats.highestScore ?? derived.highest) : derived.highest,
+        centuries: hasBackend ? (bStats._100s ?? derived.centuries) : derived.centuries,
+        fifties: hasBackend ? (bStats._50s ?? derived.fifties) : derived.fifties,
+        fours: hasBackend ? (bStats.fours ?? derived.fours) : derived.fours,
+        sixes: hasBackend ? (bStats.six ?? derived.sixes) : derived.sixes,
+      };
+    }
+    const backendType = bStats[type] || userStats?.[type]?.batting;
+    const hasBackend = Number(backendType?.matches || backendType?.runs || 0) > 0;
+    return {
+      matches: hasBackend ? (backendType.matches ?? derived.matches) : derived.matches,
+      innings: hasBackend ? (backendType.innings ?? derived.innings) : derived.innings,
+      runs: hasBackend ? (backendType.runs ?? derived.runs) : derived.runs,
+      average: hasBackend ? (backendType.avg ?? derived.average) : derived.average,
+      strikeRate: hasBackend ? (backendType.strikeRate ?? derived.strikeRate) : derived.strikeRate,
+      highest: hasBackend ? (backendType.highestScore ?? derived.highest) : derived.highest,
+      centuries: hasBackend ? (backendType._100s ?? derived.centuries) : derived.centuries,
+      fifties: hasBackend ? (backendType._50s ?? derived.fifties) : derived.fifties,
+      fours: hasBackend ? (backendType.fours ?? derived.fours) : derived.fours,
+      sixes: hasBackend ? (backendType.six ?? derived.sixes) : derived.sixes,
+    };
+  };
+
+  const getBowlingStatsForType = (type) => {
+    const derived = matchDerivedStats[type] || matchDerivedStats.all;
+    if (type === "all") {
+      const hasBackend = Number(bowlStats.matches || bowlStats.wickets || 0) > 0;
+      return {
+        matches: hasBackend ? (bowlStats.matches ?? derived.matches) : derived.matches,
+        innings: hasBackend ? (bowlStats.innings ?? derived.bowlingInnings) : derived.bowlingInnings,
+        wickets: hasBackend ? (bowlStats.wickets ?? derived.wickets) : derived.wickets,
+        average: hasBackend ? (bowlStats.avg ?? derived.bowlingAverage) : derived.bowlingAverage,
+        economy: hasBackend ? (bowlStats.eco ?? derived.economy) : derived.economy,
+        bestBowling: hasBackend ? (bowlStats.bestBowling ?? derived.bestBowling) : derived.bestBowling,
+        strikeRate: hasBackend ? (bowlStats.strikeRate ?? derived.bowlingStrikeRate) : derived.bowlingStrikeRate,
+        maidens: hasBackend ? (bowlStats.maidens ?? derived.maidens) : derived.maidens,
+        fourWickets: hasBackend ? (bowlStats.fourWickets ?? derived.fourWickets) : derived.fourWickets,
+        fiveWickets: hasBackend ? (bowlStats.fiveWickets ?? derived.fiveWickets) : derived.fiveWickets,
+      };
+    }
+    const backendType = bowlStats[type] || userStats?.[type]?.bowling;
+    const hasBackend = Number(backendType?.matches || backendType?.wickets || 0) > 0;
+    return {
+      matches: hasBackend ? (backendType.matches ?? derived.matches) : derived.matches,
+      innings: hasBackend ? (backendType.innings ?? derived.bowlingInnings) : derived.bowlingInnings,
+      wickets: hasBackend ? (backendType.wickets ?? derived.wickets) : derived.wickets,
+      average: hasBackend ? (backendType.avg ?? derived.bowlingAverage) : derived.bowlingAverage,
+      economy: hasBackend ? (backendType.eco ?? derived.economy) : derived.economy,
+      bestBowling: hasBackend ? (backendType.bestBowling ?? derived.bestBowling) : derived.bestBowling,
+      strikeRate: hasBackend ? (backendType.strikeRate ?? derived.bowlingStrikeRate) : derived.bowlingStrikeRate,
+      maidens: hasBackend ? (backendType.maidens ?? derived.maidens) : derived.maidens,
+      fourWickets: hasBackend ? (backendType.fourWickets ?? derived.fourWickets) : derived.fourWickets,
+      fiveWickets: hasBackend ? (backendType.fiveWickets ?? derived.fiveWickets) : derived.fiveWickets,
+    };
+  };
+
+  const battingStats = {
+    all: getBattingStatsForType("all"),
+    leather: getBattingStatsForType("leather"),
+    tennis: getBattingStatsForType("tennis"),
   };
 
   const bowlingStats = {
-    all: {
-      matches: player.matches,
-      innings: 0,
-      wickets: player.wickets,
-      average: player.average,
-      economy: player.economy,
-      bestBowling: player.bestBowling,
-      strikeRate: 0,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0,
-    },
-    leather: {
-      matches: 0,
-      innings: 0,
-      wickets: 0,
-      average: 0,
-      economy: 0,
-      bestBowling: "-",
-      strikeRate: 0,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0,
-    },
-    tennis: {
-      matches: 0,
-      innings: 0,
-      wickets: 0,
-      average: 0,
-      economy: 0,
-      bestBowling: "-",
-      strikeRate: 0,
-      maidens: 0,
-      fourWickets: 0,
-      fiveWickets: 0,
-    },
+    all: getBowlingStatsForType("all"),
+    leather: getBowlingStatsForType("leather"),
+    tennis: getBowlingStatsForType("tennis"),
   };
+
+  // Dynamic player data derived from fetched data, sanitized route params, or match derived stats
+  const player = {
+    id: target?._id || target?.id || target?.playerId || routePlayerId || authUser?._id || authUser?.id || "1",
+    name: target?.username || target?.name || target?.playerName || sanitizedRoutePlayer?.name || sanitizedRoutePlayer?.username || (isSelf ? authUser?.username : "Player"),
+    shortName: target?.shortName || target?.username || target?.name || sanitizedRoutePlayer?.name || (isSelf ? authUser?.username : "Player"),
+    team: target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || sanitizedRoutePlayer?.team || "Unassigned",
+    nationality: target?.nationality || target?.location || "India",
+    age: target?.age || "-",
+    role: target?.role && typeof target.role === "string" ? target.role : (isSelf && typeof authUser?.role === "string" ? authUser.role : (sanitizedRoutePlayer?.role || "Player")),
+    battingStyle: target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "Right Handed",
+    bowlingStyle: target?.bowlingStyle || target?.ballStyle || sanitizedRoutePlayer?.bowlingStyle || "Right Arm Medium",
+    photo: target?.profileImg || target?.profileImage || target?.photo || target?.image || target?.avatar || sanitizedRoutePlayer?.profileImg || sanitizedRoutePlayer?.image || (isSelf ? authUser?.profileImage || authUser?.profileImg : null),
+    debut: target?.debut || "-",
+    matches: battingStats.all.matches || bowlingStats.all.matches || 0,
+    runs: battingStats.all.runs,
+    wickets: bowlingStats.all.wickets,
+    highestScore: battingStats.all.highest,
+    bestBowling: bowlingStats.all.bestBowling,
+    average: battingStats.all.average,
+    strikeRate: battingStats.all.strikeRate,
+    economy: bowlingStats.all.economy,
+  };
+
+  const teams = React.useMemo(() => {
+    const list = (Array.isArray(fetchedPlayer?.teams) && fetchedPlayer.teams.length > 0
+      ? fetchedPlayer.teams
+      : Array.isArray(target?.teams) ? target.teams : []
+    ).map((t, idx) => ({
+      id: t?._id || t?.id || t?.teamId?._id || String(idx),
+      name: t?.title || t?.name || t?.teamId?.title || "Team",
+      shortName: t?.shortName || t?.teamId?.shortName || "",
+      seasons: t?.seasons || "Current",
+      matches: t?.matches || 0,
+      runs: t?.runs || 0,
+      wickets: t?.wickets || 0,
+      role: t?.role || "Player",
+    }));
+
+    // If no teams registered in profile, extract teams from player's matches
+    if (list.length === 0) {
+      const seenTeamNames = new Set();
+      const targetNames = [player.name, target?.username, target?.name].filter(Boolean).map(n => n.toLowerCase());
+      const isPlayerMatch = (p) => {
+        if (!p) return false;
+        const pId = p.id?._id || p.id?.id || p.id || p._id || p.playerId;
+        if (pId && targetId && String(pId) === String(targetId)) return true;
+        const pName = (p.username || p.name || "").toLowerCase();
+        return pName && targetNames.includes(pName);
+      };
+
+      const scanTeam = (teamObj) => {
+        if (!teamObj) return;
+        const tName = teamObj.title || teamObj.name || teamObj.teamName;
+        if (!tName || seenTeamNames.has(tName)) return;
+        seenTeamNames.add(tName);
+        list.push({
+          id: teamObj._id || teamObj.id || tName,
+          name: tName,
+          shortName: teamObj.shortName || "",
+          seasons: "Current",
+          matches: battingStats.all.matches || 1,
+          runs: battingStats.all.runs || 0,
+          wickets: bowlingStats.all.wickets || 0,
+          role: player.role || "Player",
+        });
+      };
+
+      playerMatches.forEach((m) => {
+        if (typeof m === "object") {
+          if (m.teams?.[0]?.players?.some(isPlayerMatch)) scanTeam(m.teams[0]);
+          else if (m.teams?.[1]?.players?.some(isPlayerMatch)) scanTeam(m.teams[1]);
+          else if (m.teamA?.players?.some(isPlayerMatch)) scanTeam(m.teamA);
+          else if (m.teamB?.players?.some(isPlayerMatch)) scanTeam(m.teamB);
+        }
+      });
+      if (list.length === 0 && player.team && player.team !== "Unassigned") {
+        list.push({
+          id: "curr",
+          name: player.team,
+          shortName: "",
+          seasons: "Current",
+          matches: battingStats.all.matches || 0,
+          runs: battingStats.all.runs || 0,
+          wickets: bowlingStats.all.wickets || 0,
+          role: player.role || "Player",
+        });
+      }
+    }
+    return list;
+  }, [fetchedPlayer?.teams, target?.teams, playerMatches, player.name, player.team, battingStats.all, bowlingStats.all, targetId]);
 
   const liveMatches = [];
   const recentMatches = [];
-  const teams = [];
-  const achievements = [];
+  const achievements = React.useMemo(() => {
+    const list = [];
+    if (battingStats.all.centuries > 0) {
+      list.push({
+        id: "century",
+        title: `${battingStats.all.centuries} Century Club`,
+        tournament: "Career Milestones",
+        description: `Scored ${battingStats.all.centuries} century(ies) with a career high score of ${battingStats.all.highest}`,
+      });
+    }
+    if (battingStats.all.fifties > 0) {
+      list.push({
+        id: "fifty",
+        title: `${battingStats.all.fifties} Half-Century Milestones`,
+        tournament: "Career Milestones",
+        description: `Scored ${battingStats.all.fifties} fifty(ies) across career matches`,
+      });
+    }
+    if (bowlingStats.all.fiveWickets > 0) {
+      list.push({
+        id: "5w",
+        title: "5-Wicket Haul",
+        tournament: "Career Milestones",
+        description: `Took 5 or more wickets in an innings with best figures of ${bowlingStats.all.bestBowling}`,
+      });
+    } else if (bowlingStats.all.fourWickets > 0) {
+      list.push({
+        id: "4w",
+        title: "4-Wicket Haul",
+        tournament: "Career Milestones",
+        description: `Took 4 wickets in an innings with best figures of ${bowlingStats.all.bestBowling}`,
+      });
+    }
+    if (battingStats.all.runs >= 100) {
+      list.push({
+        id: "runs100",
+        title: "Century Run Milestone",
+        tournament: "Career Milestones",
+        description: `Accumulated ${battingStats.all.runs} career runs`,
+      });
+    }
+    if (bowlingStats.all.wickets >= 5) {
+      list.push({
+        id: "wkt5",
+        title: "Wicket-Taker Milestone",
+        tournament: "Career Milestones",
+        description: `Claimed ${bowlingStats.all.wickets} career wickets`,
+      });
+    }
+    return list;
+  }, [battingStats.all, bowlingStats.all]);
 
   const tabs = [
     {
@@ -768,128 +1151,40 @@ export default function PlayerProfile() {
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
     >
-      {/* Live Matches */}
-      {liveMatches.length > 0 && (
-        <>
-          <ThemedText
-            className={`text-lg font-bold mb-4 ${
-              isDarkMode ? "text-white" : "text-gray-900"
-            }`}
-          >
-            🔴 Live Matches
-          </ThemedText>
+      <ThemedText
+        className={`text-lg font-bold mb-4 ${
+          isDarkMode ? "text-white" : "text-gray-900"
+        }`}
+      >
+        Matches
+      </ThemedText>
 
-          {liveMatches.map((match) => (
-            <View key={match.id} className="mb-4">
+      {loadingMatches ? (
+        <View className="py-12 items-center justify-center">
+          <ActivityIndicator size="small" color="#3B82F6" />
+        </View>
+      ) : playerMatches.length > 0 ? (
+        playerMatches.map((m, idx) => {
+          const matchId = typeof m === "string" ? m : (m?._id || m?.id || m?.matchId);
+          const matchObj = typeof m === "object" ? m : (detailedMatchesMap[String(matchId)] || null);
+          return (
+            <View key={matchId || idx} className="mb-4">
               <ScoreCard
-                match={match}
-                onPress={() => console.log("Live match pressed:", match.id)}
+                matchId={matchId}
+                match={matchObj}
+                fullWidth={true}
+                startDate={matchObj?.startDate || matchObj?.createdAt || m?.startDate || m?.createdAt}
+                onPress={() => {
+                  navigation.navigate(SCREENS.MatchScoreCard, {
+                    matchId: matchId,
+                    score: matchObj || null,
+                  });
+                }}
               />
-              <View className={`p-3 rounded-b-lg ${isDarkMode ? "bg-gray-700" : "bg-blue-50"}`}>
-                <ThemedText className={`text-sm font-medium ${isDarkMode ? "text-blue-300" : "text-blue-700"}`}>
-                  {player.shortName}: {match.playerPerformance}
-                </ThemedText>
-              </View>
             </View>
-          ))}
-        </>
-      )}
-
-      {/* Recent Matches */}
-      {recentMatches.length > 0 && (
-        <>
-          <ThemedText
-            className={`text-lg font-bold mb-4 mt-6 ${
-              isDarkMode ? "text-white" : "text-gray-900"
-            }`}
-          >
-            📊 Recent Matches
-          </ThemedText>
-
-          {recentMatches.map((match) => (
-            <TouchableOpacity
-              key={match.id}
-              className={`p-4 rounded-xl mb-3 ${
-                isDarkMode ? "bg-gray-800" : "bg-white"
-              } shadow-sm`}
-              onPress={() => {
-                // Navigate to match details
-              }}
-            >
-              <View className="flex-row justify-between items-center mb-2">
-                <ThemedText
-                  className={`text-sm font-medium ${
-                    isDarkMode ? "text-gray-400" : "text-gray-500"
-                  }`}
-                >
-                  {match.date}
-                </ThemedText>
-                <View className="flex-row items-center">
-                  <Ionicons
-                    name="chevron-forward-outline"
-                    size={16}
-                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                  />
-                </View>
-              </View>
-
-              <ThemedText
-                className={`text-base font-semibold mb-1 ${
-                  isDarkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {match.team1} vs {match.team2}
-              </ThemedText>
-
-              <ThemedText
-                className={`text-sm mb-2 ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                {match.score}
-              </ThemedText>
-
-              <View className="flex-row justify-between items-center">
-                <ThemedText
-                  className={`text-sm ${
-                    match.result.includes("won")
-                      ? "text-green-600"
-                      : "text-red-600"
-                  }`}
-                >
-                  {match.result}
-                </ThemedText>
-                <ThemedText
-                  className={`text-sm font-medium ${
-                    isDarkMode ? "text-blue-400" : "text-blue-600"
-                  }`}
-                >
-                  {match.playerPerformance}
-                </ThemedText>
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          <TouchableOpacity
-            className={`p-4 rounded-xl items-center mt-2 ${
-              isDarkMode ? "bg-gray-800" : "bg-white"
-            } shadow-sm`}
-            onPress={() => {
-              // Navigate to all matches
-            }}
-          >
-            <ThemedText
-              className={`text-blue-600 font-medium ${
-                isDarkMode ? "text-blue-400" : "text-blue-600"
-              }`}
-            >
-              View All Matches
-            </ThemedText>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {liveMatches.length === 0 && recentMatches.length === 0 && (
+          );
+        })
+      ) : (
         <View className="items-center justify-center py-12">
           <Ionicons name="calendar-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
           <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -1106,30 +1401,35 @@ export default function PlayerProfile() {
           <ThemedText className="text-white text-xl font-bold">
             Player Profile
           </ThemedText>
-          <TouchableOpacity
-                    onPress={() => navigation.navigate(SCREENS.EditPlayerProfile)}
-                    className="p-2"
-                  >
-                    <Ionicons name="create-outline" size={24} color="#2563EB" />
-                  </TouchableOpacity>
+          {isSelf ? (
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.EditPlayerProfile, { player })}
+              className="w-10 h-10 rounded-full items-center justify-center bg-black/20"
+            >
+              <Ionicons name="create-outline" size={20} color="white" />
+            </TouchableOpacity>
+          ) : (
+            <View className="w-10 h-10" />
+          )}
         </View>
 
         <View className="flex-row items-center">
-          <View className="w-20 h-20 rounded-full bg-white items-center justify-center mr-4">
-            {player.photo ? (
-              <Image
-                source={{ uri: player.photo }}
-                className="w-20 h-20 rounded-full"
-              />
-            ) : (
-              <Ionicons name="person" size={40} color="#3B82F6" />
-            )}
+          <View className="mr-4">
+            <PlayerAvatar
+              player={{
+                name: player.name,
+                username: player.name,
+                profileImg: player.photo,
+                profileImage: player.photo,
+              }}
+              size={76}
+            />
           </View>
-          <View>
-            <ThemedText className="text-white text-2xl font-bold">
+          <View className="flex-1">
+            <ThemedText className="text-white text-2xl font-bold" numberOfLines={1}>
               {player.name}
             </ThemedText>
-            <ThemedText className="text-blue-100 text-base">
+            <ThemedText className="text-blue-100 text-base" numberOfLines={1}>
               {player.shortName}
             </ThemedText>
             <View className="flex-row items-center mt-1">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { 
   View, 
   Text, 
@@ -10,7 +10,7 @@ import {
   Easing,
   TouchableOpacity
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Header from "./Header";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
@@ -24,6 +24,7 @@ import MatchFullCommentary from "./MatchFullCommentry";
 import CurrentSquad from "./CurrentSquad";
 import MatchLive from "./MatchLive";
 import ThemedText from "../custom/ThemedText";
+import { getMatchStatusDisplay } from "@/utils/Common";
 
 export default function MatchScoreCard({
     matchID: matchIDProp,
@@ -45,6 +46,9 @@ export default function MatchScoreCard({
     const colorScheme = useColorScheme();
     const isDarkMode = colorScheme === 'dark';
     
+    const [headToHeadStats, setHeadToHeadStats] = useState({});
+    const [teamsRecentForm, setTeamsRecentForm] = useState({});
+
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
     const slideAnim = useState(new Animated.Value(50))[0];
@@ -1146,8 +1150,10 @@ export default function MatchScoreCard({
         Promise.all([
             matchesApi.getMatchById(matchID),
             matchesApi.getMatchScore(matchID).catch(() => null),
+            matchesApi.getHeadToHead(matchID).catch(() => null),
+            matchesApi.getTeamsRecentForm(matchID).catch(() => null),
         ])
-            .then(([matchRes, scoreRes]) => {
+            .then(([matchRes, scoreRes, h2hRes, formRes]) => {
                 const matchData = matchRes?.match || matchRes?.data || matchRes;
                 const scoreData = scoreRes?.data;
                 if (matchData) {
@@ -1157,6 +1163,16 @@ export default function MatchScoreCard({
                         ...(scoreData && typeof scoreData === "object" ? scoreData : {}),
                     }));
                 }
+                if (h2hRes?.data?.data) {
+                    setHeadToHeadStats(h2hRes.data.data);
+                } else if (h2hRes?.data) {
+                    setHeadToHeadStats(h2hRes.data);
+                }
+                if (formRes?.data?.data) {
+                    setTeamsRecentForm(formRes.data.data);
+                } else if (formRes?.data) {
+                    setTeamsRecentForm(formRes.data);
+                }
             })
             .catch(err => console.log('Error fetching match by id:', err))
             .finally(() => setLoading(false));
@@ -1164,7 +1180,41 @@ export default function MatchScoreCard({
 
     // Start animations on component mount
 
-    // Socket.IO event handlers (remain exactly the same)
+    // Re-verify and refresh match score on focus (e.g. returning from PlayerProfile)
+    useFocusEffect(
+        useCallback(() => {
+            if (!matchID) return;
+            matchesApi.getMatchById(matchID)
+                .then((matchRes) => {
+                    const matchData = matchRes?.match || matchRes?.data || matchRes;
+                    if (matchData && (matchData._id || matchData.teams)) {
+                        setScore(prev => ({
+                            ...prev,
+                            ...matchData,
+                        }));
+                    }
+                })
+                .catch(() => {});
+
+            matchesApi.getMatchScore(matchID)
+                .then((scoreRes) => {
+                    const scoreData = scoreRes?.data;
+                    if (scoreData && typeof scoreData === "object" && scoreData.success !== false) {
+                        setScore(prev => ({
+                            ...prev,
+                            ...scoreData,
+                        }));
+                    }
+                })
+                .catch(() => {});
+
+            if (isConnected) {
+                emit('score', { matchId: matchID, matchID, getCompleteScore: true });
+            }
+        }, [matchID, isConnected, emit])
+    );
+
+    // Socket.IO event handlers (matching website socketConn setup)
     useEffect(() => {
         console.log('🔌 Socket effect triggered:', { isConnected, matchID });
         console.log('🔌 isConnected value:', isConnected);
@@ -1176,21 +1226,35 @@ export default function MatchScoreCard({
 
         console.log('✅ Setting up socket event handlers for match:', matchID);
 
-        // Handle generic score updates
+        // Handle generic score updates strictly for this matchID
         const handleScore = (data) => {
-            console.log('📊 Score data received:', data);
-            if (data && typeof data === 'object' && data.success !== false) {
-                setScore(prevScore => ({
-                    ...prevScore,
-                    ...data
-                }));
+            if (!data || typeof data !== 'object' || data.success === false) return;
+
+            const incomingId = String(
+                data.matchId ||
+                data.matchID ||
+                data._id ||
+                data.id ||
+                data.match ||
+                data.fullCommentary?.[0]?.match ||
+                ""
+            );
+            if (incomingId && String(matchID) && incomingId !== String(matchID)) {
+                console.log('⚠️ [MatchScoreCard] Ignoring score update from different match:', incomingId, 'expected:', matchID);
+                return;
             }
+
+            console.log('📊 Score data received for match:', matchID);
+            setScore(prevScore => ({
+                ...prevScore,
+                ...data
+            }));
         };
 
-        // Subscribe to events
+        // Subscribe to events (pass getCompleteScore: true matching website)
         console.log('📡 Subscribing to socket events...');
         try {
-            emit('score', { matchId: matchID, matchID });
+            emit('score', { matchId: matchID, matchID, getCompleteScore: true });
             on("score", handleScore);
             console.log('✅ Socket event handlers set up successfully');
         } catch (error) {
@@ -1238,18 +1302,7 @@ export default function MatchScoreCard({
         backgroundColor: isConnected ? (isDarkMode ? '#2e7d32' : '#4caf50') : (isDarkMode ? '#c62828' : '#f44336'),
     };
 
-    // Defensive render if loading or score data not yet received
-    const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
-    if (loading || score.isLoading || isScoreEmpty) {
-        return (
-            <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-                <ThemedText style={{ marginTop: 16, fontSize: 15, fontWeight: "600", color: isDarkMode ? '#94A3B8' : '#64748B' }}>
-                    Loading match scorecard...
-                </ThemedText>
-            </SafeAreaView>
-        );
-    }
+
 
     // HARDCODED FULL SCORECARD MOCK DATA - COMMENTED OUT (API ONLY)
     /*
@@ -1523,104 +1576,283 @@ export default function MatchScoreCard({
     const currentInningScore = (score?.inning && score.inning[score.inning.length - 1]) || score;
     const isChasing = score?.matchCurrentStatus === "INNINGS_II";
 
-    const tabs = [
-        {
+    // Detect Super Over and match ended status
+    const matchStatusRaw = String(score?.matchCurrentStatus || score?.status || "").toUpperCase();
+
+    const hasEndedStatus =
+        matchStatusRaw === "MATCH_COMPLETED" ||
+        matchStatusRaw === "MATCH_ENDED" ||
+        matchStatusRaw === "COMPLETED" ||
+        matchStatusRaw === "END" ||
+        Boolean(score?.isMatchEnded || score?.isMatchCompleted);
+
+    const rawPrompt = score?.matchResult?.prompt || score?.description || "";
+    const lowerPrompt = rawPrompt.toLowerCase();
+
+    const hasWinningResult = Boolean(
+        score?.matchResult?.prompt ||
+        score?.matchResult?.winner ||
+        score?.matchResult?.winTeam ||
+        score?.matchResult?.winningTeam ||
+        (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over"))
+    );
+
+    const isMatchEnded = Boolean(
+        (hasEndedStatus || hasWinningResult) &&
+        matchStatusRaw !== "INNINGS_I_ENDED" &&
+        matchStatusRaw !== "INNINGS_BREAK"
+    );
+
+    const isSuperOverMatch = Boolean(
+        score?.isSuperOver ||
+        score?.score?.isSuperOver ||
+        score?.inning?.some((inn) => inn?.isSuperOver) ||
+        (Array.isArray(score?.inning) && score.inning.length > 2) ||
+        matchStatusRaw.includes("SUPER_OVER") ||
+        lowerPrompt.includes("super over")
+    );
+
+    const isSuperOverEnded = isSuperOverMatch && isMatchEnded;
+
+    // Separate regular innings from Super Over innings
+    const allInnings = Array.isArray(score?.inning) ? score.inning : [];
+    const superOverInnings = allInnings.filter(inn => inn?.isSuperOver);
+    const regularInnings = allInnings.filter(inn => !inn?.isSuperOver);
+
+    // If superOverInnings has no isSuperOver tags but total innings > 2:
+    let trueRegularInnings = regularInnings;
+    let trueSuperOverInnings = superOverInnings;
+    if (superOverInnings.length === 0 && allInnings.length > 2) {
+        trueRegularInnings = allInnings.slice(0, 2);
+        trueSuperOverInnings = allInnings.slice(2);
+    }
+
+    const regInn1 = trueRegularInnings[0] || score?.innings_1 || score?.score?.innings_1;
+    const regInn2 = trueRegularInnings[1] || score?.innings_2 || score?.score?.innings_2;
+
+    const team1Name = regInn1?.batting?.battingTeam || regInn1?.battingTeam || score?.innings_1?.battingTeam || score?.teams?.[0]?.title || score?.teams?.[0]?.name || "Team 1";
+    let team2Name = regInn2?.batting?.battingTeam || regInn2?.battingTeam || score?.innings_2?.battingTeam || score?.teams?.[1]?.title || score?.teams?.[1]?.name || "Team 2";
+    if (team2Name === team1Name && score?.teams?.[1]?.title) {
+        team2Name = score.teams[1].title;
+    }
+
+    let inn1Runs = regInn1?.batting?.score?.runs ?? regInn1?.score?.runs ?? score?.innings_1?.score?.runs ?? score?.innings_1?.totalRuns ?? regInn1?.runs ?? "-";
+    let inn1Wickets = regInn1?.batting?.score?.wicket ?? regInn1?.score?.wicket ?? score?.innings_1?.score?.wicket ?? score?.innings_1?.totalWickets ?? regInn1?.wicket ?? regInn1?.wickets ?? "";
+    let inn1Overs = regInn1?.batting?.score?.over ?? regInn1?.score?.over ?? score?.innings_1?.score?.over ?? score?.innings_1?.totalOvers ?? regInn1?.over ?? regInn1?.overs ?? "0.0";
+
+    let inn2Runs = regInn2?.batting?.score?.runs ?? regInn2?.score?.runs ?? score?.innings_2?.score?.runs ?? score?.innings_2?.totalRuns ?? regInn2?.runs ?? "-";
+    let inn2Wickets = regInn2?.batting?.score?.wicket ?? regInn2?.score?.wicket ?? score?.innings_2?.score?.wicket ?? score?.innings_2?.totalWickets ?? regInn2?.wicket ?? regInn2?.wickets ?? "";
+    let inn2Overs = regInn2?.batting?.score?.over ?? regInn2?.score?.over ?? score?.innings_2?.score?.over ?? score?.innings_2?.totalOvers ?? regInn2?.over ?? regInn2?.overs ?? "0.0";
+
+    // If match tied and went to Super Over, ensure regular innings reflect the tied score
+    if (isSuperOverMatch) {
+        if (inn1Runs === "-" && score?.lastInningScore !== undefined) {
+            inn1Runs = score.lastInningScore;
+            inn1Wickets = score.lastInningWickets ?? "";
+        }
+        if (inn2Runs === "-" && inn1Runs !== "-") {
+            inn2Runs = inn1Runs;
+            inn2Overs = score?.totalOvers ? `${score.totalOvers}.0` : inn1Overs;
+        }
+    }
+
+    const inning1Overview = {
+        teamName: team1Name,
+        score: inn1Runs !== "-" ? `${inn1Runs}${inn1Wickets !== "" ? `/${inn1Wickets}` : ""}` : "-",
+        overs: `${inn1Overs} Ov`,
+    };
+
+    const inning2Overview = {
+        teamName: team2Name,
+        score: inn2Runs !== "-" ? `${inn2Runs}${inn2Wickets !== "" ? `/${inn2Wickets}` : ""}` : "-",
+        overs: `${inn2Overs} Ov`,
+    };
+
+    // Extract Super Over summaries (supporting multiple Super Overs: SO 1, SO 2, etc.) and winner prompt
+    let superOverWinnerPrompt = "";
+    const superOverList = [];
+
+    for (let i = 0; i < trueSuperOverInnings.length; i += 2) {
+        const soIndex = Math.floor(i / 2) + 1;
+        const so1 = trueSuperOverInnings[i];
+        const so2 = trueSuperOverInnings[i + 1];
+
+        const so1Team = so1?.batting?.battingTeam || team1Name;
+        const so1Runs = Number(so1?.batting?.score?.runs ?? 0);
+        const so1Wick = so1?.batting?.score?.wicket ?? 0;
+        const so1Ov = so1?.batting?.score?.over ?? "1.0";
+
+        const soPrefix = trueSuperOverInnings.length > 2 ? `Super Over ${soIndex}` : `Super Over`;
+
+        if (so2) {
+            const so2Team = so2?.batting?.battingTeam || team2Name;
+            const so2Runs = Number(so2?.batting?.score?.runs ?? 0);
+            const so2Wick = so2?.batting?.score?.wicket ?? 0;
+            const so2Ov = so2?.batting?.score?.over ?? "1.0";
+
+            superOverList.push({
+                title: soPrefix,
+                summary: `${soPrefix}: ${so1Team} ${so1Runs}/${so1Wick} (${so1Ov} Ov) vs ${so2Team} ${so2Runs}/${so2Wick} (${so2Ov} Ov)`,
+            });
+
+            // If this is the last Super Over played, determine winner if not tied
+            if (i + 2 >= trueSuperOverInnings.length) {
+                if (so2Runs > so1Runs) {
+                    superOverWinnerPrompt = `${so2Team} won in Super Over`;
+                } else if (so1Runs > so2Runs) {
+                    superOverWinnerPrompt = `${so1Team} won in Super Over`;
+                }
+            }
+        } else {
+            superOverList.push({
+                title: soPrefix,
+                summary: `${soPrefix}: ${so1Team} ${so1Runs}/${so1Wick} (${so1Ov} Ov)`,
+            });
+        }
+    }
+
+    let superOverSummary = superOverList.map(s => s.summary).join(" | ");
+    if (!superOverSummary && trueSuperOverInnings.length === 1) {
+        const so1 = trueSuperOverInnings[0];
+        const so1Team = so1?.batting?.battingTeam || team1Name;
+        const so1Score = `${so1?.batting?.score?.runs ?? 0}/${so1?.batting?.score?.wicket ?? 0} (${so1?.batting?.score?.over ?? "1.0"} Ov)`;
+        superOverSummary = `Super Over: ${so1Team} ${so1Score}`;
+    }
+
+    if (lowerPrompt.includes("super over") && (lowerPrompt.includes("won") || lowerPrompt.includes("win"))) {
+        superOverWinnerPrompt = rawPrompt;
+    } else if (!superOverWinnerPrompt && isSuperOverEnded) {
+        const winId = score?.matchResult?.winnerTeamId || score?.matchResult?.winner || score?.winner || score?.winnerTeamId;
+        const winTeamObj = (score?.teams || []).find(t => String(t?.teamId || t?._id || t?.id) === String(winId));
+        const winName = winTeamObj?.title || winTeamObj?.name || score?.matchResult?.winnerTeamName;
+        if (winName) {
+            superOverWinnerPrompt = `${winName} won in Super Over`;
+        } else if (rawPrompt && (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare"))) {
+            superOverWinnerPrompt = `${rawPrompt} in Super Over`;
+        } else {
+            superOverWinnerPrompt = "Match won in Super Over";
+        }
+    }
+
+    const tabs = useMemo(() => {
+        const list = [];
+
+        // When match is not ended, Live tab is at the beginning for immediate live match viewing
+        if (!isMatchEnded) {
+            list.push({
+                id: "stats",
+                label: "Live",
+                content: <MatchLive score={score} />,
+            });
+        }
+
+        // Info tab
+        list.push({
             id: "info",
             label: "Info",
-            content: <ScrollView 
-                style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}
-                showsVerticalScrollIndicator={false}
-                bounces={false}
-                overScrollMode="never"
-            > 
-                <MatchInfo score={score} />
-            </ScrollView>,
-        },
-        {
-            id: "stats",
-            label: "Live",
-            content: (
-                <ScrollView 
-                    style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}
-                    showsVerticalScrollIndicator={false}
-                    bounces={false}
-                    overScrollMode="never"
-                >
-                    <MatchLive score={score} />
-                </ScrollView>
-            ),
-        },
-        {
+            content: <MatchInfo score={score} headToHeadStats={headToHeadStats} teamsRecentForm={teamsRecentForm} />,
+        });
+
+        // Summary tab is placed between Info and Score Card
+        list.push({
+            id: "summary",
+            label: "Summary",
+            content: <MatchSummary matchData={score} score={score} />,
+        });
+
+        // Score Card tab
+        list.push({
             id: "scorecard",
             label: "Score Card",
             content: (
-                <ScrollView 
-                    style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}
-                    showsVerticalScrollIndicator={false}
-                    bounces={false}
-                    overScrollMode="never"
-                >
-                   <FullScoreCard score={currentInningScore} isChasing={isChasing} description={score?.description || (score?.prompt && score.prompt[0]) || ""} isFirstInning={!isChasing}/>
-                </ScrollView>
+                <FullScoreCard 
+                    score={score} 
+                    inning_I={score?.inning?.[0]} 
+                    isChasing={isChasing} 
+                    description={score?.description || (score?.prompt && score.prompt[0]) || ""} 
+                    isFirstInning={!isChasing}
+                />
             ),
-        },
-        {
+        });
+
+        // Commentary tab
+        list.push({
             id: "commentry",
             label: "Commentry",
-            content: (
-                <ScrollView 
-                    style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}
-                    showsVerticalScrollIndicator={false}
-                    bounces={false}
-                    overScrollMode="never"
-                >
-                    <MatchFullCommentary matchId={matchID} score={score} />
-                </ScrollView>
-            ),
-        },
-        {
+            content: <MatchFullCommentary matchId={matchID} score={score} />,
+        });
+
+        // Squad tab
+        list.push({
             id: "squad",
             label: "Squad",
-            content: (
-                <ScrollView 
-                    style={{backgroundColor: isDarkMode ? '#121212' : '#f8f9fa'}}
-                    showsVerticalScrollIndicator={false}
-                    bounces={false}
-                    overScrollMode="never"
-                >
-                    <CurrentSquad matchId={matchID} score={score} />
-                </ScrollView>
-            ),
-        },
-    ];
+            content: <CurrentSquad matchId={matchID} score={score} />,
+        });
+
+        return list;
+    }, [score, headToHeadStats, teamsRecentForm, isChasing, matchID, isDarkMode, isMatchEnded]);
+
+    const initialTabIndex = useMemo(() => {
+        if (isMatchEnded) {
+            const summaryIdx = tabs.findIndex(t => t.id === "summary");
+            return summaryIdx !== -1 ? summaryIdx : 0;
+        }
+        const liveIdx = tabs.findIndex(t => t.id === "stats");
+        return liveIdx !== -1 ? liveIdx : 0;
+    }, [isMatchEnded, tabs]);
+
+    // Defensive render if loading or score data not yet received (placed after all hooks to respect Rules of Hooks)
+    const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
+    if (loading || score.isLoading || isScoreEmpty) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <ThemedText style={{ marginTop: 16, fontSize: 15, fontWeight: "600", color: isDarkMode ? '#94A3B8' : '#64748B' }}>
+                    Loading match scorecard...
+                </ThemedText>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaProvider>
-            <SafeAreaView style={containerStyle} edges={['right', 'left']}>
+            <SafeAreaView style={containerStyle} edges={['top', 'right', 'left']}>
 
 
 
                     {/* Header */}
                     {!hideHeader && (
-                        <Header description={score?.title || "Team 1 vs Team 2"} />
+                        <Header
+                            description={
+                                score?.title ||
+                                (score?.teams?.[0]?.title && score?.teams?.[1]?.title
+                                    ? `${score.teams[0].title} vs ${score.teams[1].title}`
+                                    : "Match Scorecard")
+                            }
+                        />
                     )}
 
                     <MatchOverview
-                        team={score?.batting?.battingTeam}
+                        team={score?.batting?.battingTeam || (score?.teams?.[0]?.title ?? "Team 1")}
                         score={
-                            (score?.batting?.score?.runs || "0") + "/" + (score?.batting?.score?.wicket || 0)
+                            (score?.batting?.score?.runs ?? "0") + "/" + (score?.batting?.score?.wicket ?? 0)
                         }
-                        overs={(score?.batting?.score?.over || "0.0") + " " + "Ov"}
+                        overs={score?.batting?.score?.over ? `${score.batting.score.over} Ov` : "0.0 Ov"}
                         crr={score?.batting?.score?.CRR}
                         projjectedScore={score?.batting?.score?.projectedScore}
-                        matchStatus="End"
-                        result={score?.matchResult?.prompt}
-                        motm={score?.mom}
+                        matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : "Live")}
+                        result={isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || "")}
+                        motm={isMatchEnded ? score?.mom : null}
+                        isSuperOverEnded={isSuperOverEnded}
+                        inning1={inning1Overview}
+                        inning2={inning2Overview}
+                        superOverSummary={superOverSummary}
+                        superOverList={superOverList}
                     />
 
                     <TabSwitch 
                         tabs={tabs} 
-                        initialIndex={1}
+                        initialIndex={initialTabIndex}
                     />
             </SafeAreaView>
         </SafeAreaProvider>

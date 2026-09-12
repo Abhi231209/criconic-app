@@ -25,8 +25,6 @@ import { matchesApi } from "@/utils/api";
 const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
   const { theme, isDark } = useAppTheme();
 
-  console.log("Rendering BottomSheetContent");
-
   const menuItems = [
     {
       id: "resume",
@@ -355,4 +353,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MatchActionSheet;
+export default React.memo(MatchActionSheet);

@@ -44,6 +44,117 @@ export function convertBallToOvers(ball = 0) {
   return `${overs}.${remainingBalls}`;
 }
 
+export function calculateCRR(runs, overs) {
+  if (runs === undefined || runs === null || !overs) return "0.00";
+  const str = String(overs);
+  const parts = str.split(".");
+  const completedOvers = parseInt(parts[0], 10) || 0;
+  const ballsInCurrentOver = parseInt(parts[1], 10) || 0;
+  const totalBalls = completedOvers * 6 + ballsInCurrentOver;
+  if (totalBalls <= 0) return "0.00";
+  return ((Number(runs) / totalBalls) * 6).toFixed(2);
+}
+
+export const getMatchStatusDisplay = (status) => {
+  switch (status) {
+    case MATCH_STATUS.MATCH_SCHEDULED:
+    case MATCH_STATUS.MATCH_CREATED:
+      return "Upcoming";
+    case MATCH_STATUS.MATCH_IN_PROGRESS:
+    case MATCH_STATUS.INNINGS_I:
+    case MATCH_STATUS.INNINGS_II:
+    case MATCH_STATUS.MATCH_RESUMED:
+    case MATCH_STATUS.MATCH_STARTED:
+      return "Live";
+    case MATCH_STATUS.MATCH_COMPLETED:
+    case MATCH_STATUS.MATCH_TIE:
+    case MATCH_STATUS.MATCH_CANCELLED:
+    case MATCH_STATUS.MATCH_INTERRUPTED:
+    case MATCH_STATUS.MATCH_SUSPENDED:
+    case MATCH_STATUS.RAIN_DELAY:
+    case MATCH_STATUS.MATCH_PAUSED:
+    case MATCH_STATUS.MATCH_ENDED:
+      return "End";
+    default:
+      return status || "";
+  }
+};
+
+export const getBatsmenDescription = (player) => {
+  if (player?.notOut) {
+    return "not out";
+  }
+  const info = player?.dismissalInfo;
+  if (!info) {
+    return player?.howOut || "";
+  }
+
+  const type = String(info.dismissalType || "").toLowerCase().trim().replace(/_/g, "-");
+
+  const getPlayerName = (p) => {
+    if (!p) return "";
+    if (typeof p === "string") return p;
+    return p.username || p.name || p.playerName || "";
+  };
+
+  const caughtBy = getPlayerName(info.caughtBy || info.catcher || info.fielder);
+  const bowler = getPlayerName(info.bowler || info.bowlerName);
+  const stumpBy = getPlayerName(info.stumpBy || info.keeper || info.wicketKeeper);
+  const f1 = getPlayerName(info.runOutfielderOne || info.fielderOne || info.fielder || info.runOutBy);
+  const f2 = getPlayerName(info.runOutfielderTwo || info.fielderTwo);
+
+  if (type === "caught") {
+    if (caughtBy && bowler && caughtBy !== bowler) {
+      return `c ${caughtBy} b ${bowler}`;
+    } else if (bowler) {
+      return `c&b ${bowler}`;
+    } else if (caughtBy) {
+      return `c ${caughtBy}`;
+    }
+    return bowler ? `c b ${bowler}` : "c";
+  }
+
+  if (type === "stumped") {
+    if (stumpBy && bowler) return `st ${stumpBy} b ${bowler}`;
+    if (bowler) return `st b ${bowler}`;
+    if (stumpBy) return `st ${stumpBy}`;
+    return "stumped";
+  }
+
+  if (type === "caught and bowled" || type === "caught-and-bowled" || type === "c&b") {
+    return bowler ? `c&b ${bowler}` : "c&b";
+  }
+
+  if (type === "run-out" || type === "run out" || type === "runout") {
+    const fielderStr = f2 ? `${f1}/${f2}` : f1;
+    return fielderStr ? `run out (${fielderStr})` : "run out";
+  }
+
+  if (type === "bowled") {
+    return bowler ? `b ${bowler}` : "b";
+  }
+
+  if (type === "lbw") {
+    return bowler ? `lbw b ${bowler}` : "lbw";
+  }
+
+  if (type === "hit-wicket" || type === "hit wicket") {
+    return bowler ? `hit wicket b ${bowler}` : "hit wicket";
+  }
+
+  if (type === "mankaded") {
+    return bowler ? `mankaded b ${bowler}` : "mankaded";
+  }
+
+  if (type.includes("retire")) {
+    return info.dismissalType || "Retired";
+  }
+
+  // General fallback
+  if (bowler) return `b ${bowler}`;
+  return info.dismissalType || player?.howOut || "";
+};
+
 export const MATCH_ACTION = {
   TOSS: "TOSS",
   MATCH_START: "MATCH_START",
@@ -73,6 +184,8 @@ export const MATCH_ACTION = {
   SUPER_OVER: "SUPER_OVER",
   UNDO_LAST_BALL: "UNDO_LAST_BALL",
   CHANGE_STRIKE: "CHANGE_STRIKE",
+  MATCH_TIE: "MATCH_TIE",
+  END_OF_MATCH: "END_OF_MATCH",
 };
 
 export const MATCH_STATUS_STAGE = {

@@ -306,7 +306,12 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           icon={Clock}
           variant="danger"
           isDarkMode={isDarkMode}
-          onPress={onInningsComplete}
+          onPress={() => {
+            onClose?.();
+            setTimeout(() => {
+              onInningsComplete?.();
+            }, 200);
+          }}
         />
       </View>
     </View>

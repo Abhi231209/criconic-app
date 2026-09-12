@@ -65,6 +65,30 @@ export default function ThemedText({
   const fontKey = classFontKey || styleWeight;
   const fontFamily = fontMap[fontKey] || fontMap['400'];
 
+  const sanitizeChild = (child) => {
+    if (
+      child !== null &&
+      child !== undefined &&
+      typeof child === 'object' &&
+      !React.isValidElement(child)
+    ) {
+      return (
+        child.name ||
+        child.playerName ||
+        child.title ||
+        child.prompt ||
+        child.message ||
+        child.description ||
+        ''
+      );
+    }
+    return child;
+  };
+
+  const safeChildren = Array.isArray(children)
+    ? React.Children.map(children, sanitizeChild)
+    : sanitizeChild(children);
+
   return (
     <Text
       className={`${cleanedClassName} ${darkColor || lightColor}`}
@@ -82,7 +106,7 @@ export default function ThemedText({
       ]}
       {...props}
     >
-      {children}
+      {safeChildren}
     </Text>
   );
 }

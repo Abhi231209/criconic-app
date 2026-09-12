@@ -3,16 +3,17 @@ import React, {
   createContext,
   useContext,
   useRef,
-  useMemo,
   useState,
   useCallback,
 } from "react";
-import { View, StyleSheet, Platform } from "react-native";
+import { StyleSheet } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetView,
-  BottomSheetKeyboardAvoidingView,
+  BottomSheetBackdrop,
+  useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
+import { Easing } from "react-native-reanimated";
 import useAppTheme from "@/hooks/useAppTheme";
 
 const BottomSheetContext = createContext({
@@ -20,16 +21,32 @@ const BottomSheetContext = createContext({
   closeSheet: () => {},
 });
 
+const DEFAULT_SNAP_POINTS = ["60%", "85%"];
+
 export const BottomSheetProvider = ({ children }) => {
-  const { isDark, colors } = useAppTheme();
+  const { isDark } = useAppTheme();
   const bottomSheetModalRef = useRef(null);
   const [content, setContent] = useState(null);
+  const [snapPoints, setSnapPoints] = useState(DEFAULT_SNAP_POINTS);
 
-  // tweak snap points as needed
-  const snapPoints = useMemo(() => ["45%", "80%"], []);
+  // Snappy, instant animation (160ms with cubic easing)
+  const animationConfigs = useBottomSheetTimingConfigs({
+    duration: 160,
+    easing: Easing.out(Easing.cubic),
+  });
 
-  const openSheet = useCallback((node) => {
+  const openSheet = useCallback((node, customSnapPoints) => {
     setContent(node);
+    const targetPoints = (customSnapPoints && Array.isArray(customSnapPoints))
+      ? customSnapPoints
+      : DEFAULT_SNAP_POINTS;
+    setSnapPoints((prev) => {
+      if (prev.length === targetPoints.length && prev.every((p, i) => p === targetPoints[i])) {
+        return prev;
+      }
+      return targetPoints;
+    });
+    // Request animation frame ensures React renders the content and snap points before presenting
     requestAnimationFrame(() => {
       bottomSheetModalRef.current?.present();
     });
@@ -37,20 +54,45 @@ export const BottomSheetProvider = ({ children }) => {
 
   const closeSheet = useCallback(() => {
     bottomSheetModalRef.current?.dismiss();
-    // clear content after a short delay (avoid flicker)
-    setTimeout(() => setContent(null), 300);
   }, []);
+
+  const handleDismiss = useCallback(() => {
+    setContent(null);
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  const contextValue = React.useMemo(
+    () => ({ openSheet, closeSheet }),
+    [openSheet, closeSheet]
+  );
 
   const sheetBg = isDark ? "#1E293B" : "#FFFFFF";
 
   return (
-    <BottomSheetContext.Provider value={{ openSheet, closeSheet }}>
+    <BottomSheetContext.Provider value={contextValue}>
       {children}
 
       <BottomSheetModal
         ref={bottomSheetModalRef}
         index={0}
-        snapPoints={["60%", "80%"]}
+        snapPoints={snapPoints}
+        enableDynamicSizing={false}
+        enablePanDownToClose={true}
+        animationConfigs={animationConfigs}
+        backdropComponent={renderBackdrop}
+        onDismiss={handleDismiss}
         backgroundStyle={{ backgroundColor: sheetBg }}
         handleIndicatorStyle={{ backgroundColor: isDark ? "#64748B" : "#CBD5E1" }}
       >

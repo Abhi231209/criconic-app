@@ -124,6 +124,7 @@ export default function AppNavigator() {
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
+        swipeEnabled: false,
         drawerType: "back",
         headerShown: false, // Set true if you want header
         drawerStyle: {

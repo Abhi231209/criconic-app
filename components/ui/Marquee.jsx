@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Animated, Dimensions } from "react-native";
 import ThemedText from "./custom/ThemedText";
 
-export default function Marquee({ description, children, className }) {
+export default function Marquee({ description, children, className, textClassName, textStyle }) {
   const windowWidth = Dimensions.get("window").width;
   const translateX = useRef(new Animated.Value(0)).current;
   const textRef = useRef(null);
@@ -42,17 +42,25 @@ export default function Marquee({ description, children, className }) {
 
   return (
     <View
-      className={"overflow-hidden " + (className || "")}
+      className="overflow-hidden"
       onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
     >
       <Animated.Text
         ref={textRef}
         className="whitespace-nowrap"
         onLayout={(e) => setTextWidth(e.nativeEvent.layout.width)}
-        style={{ transform: [{ translateX }] }}
+        style={[{ transform: [{ translateX }] }, textStyle]}
       >
-        {/* {children || description} */}
-       {children ? children : <ThemedText>{description}</ThemedText> } 
+        {children ? (
+          children
+        ) : (
+          <ThemedText
+            className={textClassName || className}
+            style={textStyle}
+          >
+            {description}
+          </ThemedText>
+        )}
       </Animated.Text>
     </View>
   );
