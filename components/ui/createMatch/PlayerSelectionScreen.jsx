@@ -14,6 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
+import RightDrawer from "@/components/ui/custom/RightDrawer";
+import MatchSetting from "./MatchSetting";
 import SCREENS from "@/screens";
 import { matchesApi, request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
@@ -24,7 +26,7 @@ import { useSelector } from "react-redux";
 export default function PlayerSelectionScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { emit } = useSocket();
+  const { emit, isConnected } = useSocket();
   const authUser = useSelector((state) => state?.auth?.user);
   const effectiveUserId = User.id || authUser?._id || authUser?.id;
 
@@ -177,6 +179,9 @@ export default function PlayerSelectionScreen() {
   const [targetScore, setTargetScore] = useState(route.params?.targetScore || null);
   const isLeavingRef = useRef(false);
 
+  // Settings Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
   useEffect(() => {
     if (isInningsTwoParam) {
       setIsInningsTwo(true);
@@ -213,6 +218,7 @@ export default function PlayerSelectionScreen() {
           setIsStatusChecked(true);
           return;
         }
+
 
         const statusUpper = String(m.status || "").toUpperCase();
         const isInningBreak =
@@ -887,28 +893,43 @@ export default function PlayerSelectionScreen() {
     >
         {/* Header */}
         <View
-          className={`px-4 py-4 border-b flex-row items-center ${
+          className={`px-4 py-4 border-b flex-row items-center justify-between ${
             isDarkMode
               ? "bg-gray-800 border-gray-700"
               : "bg-white border-gray-200"
           }`}
         >
+          <View className="flex-row items-center flex-1">
+            <TouchableOpacity
+              onPress={handleBack}
+              className="p-2 mr-2"
+            >
+              <Ionicons name="arrow-back" size={24} color="#2563EB" />
+            </TouchableOpacity>
+            <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+              {isSuperOver
+                ? "Select Players - Super Over"
+                : isInningsTwo
+                ? "Select Players - Innings 2"
+                : "Select Players"}
+            </ThemedText>
+          </View>
           <TouchableOpacity
-            onPress={handleBack}
-            className="p-2 mr-2"
+            onPress={() => setIsDrawerOpen(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+            className="p-2 rounded-full"
           >
-            <Ionicons name="arrow-back" size={24} color="#2563EB" />
+            <Ionicons name="settings-outline" size={22} color={isDarkMode ? "#FFFFFF" : "#1F2937"} />
           </TouchableOpacity>
-          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-            {isSuperOver
-              ? "Select Players - Super Over"
-              : isInningsTwo
-              ? "Select Players - Innings 2"
-              : "Select Players"}
-          </ThemedText>
         </View>
 
-        <View className="flex-1 p-4">
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Match Info */}
           <View className={`p-4 rounded-xl mb-6 ${
             isDarkMode ? "bg-gray-800" : "bg-white"
@@ -980,7 +1001,7 @@ export default function PlayerSelectionScreen() {
           <TouchableOpacity
             onPress={handleStartMatch}
             disabled={!striker || !nonStriker || !bowler || isSubmitting}
-            className={`p-4 rounded-xl mt-4 flex-row items-center justify-center ${
+            className={`p-4 rounded-xl mt-2 flex-row items-center justify-center ${
               !striker || !nonStriker || !bowler || isSubmitting
                 ? "bg-gray-400"
                 : "bg-blue-500"
@@ -1018,7 +1039,7 @@ export default function PlayerSelectionScreen() {
               • Select the opening bowler from the bowling team
             </ThemedText>
           </View>
-        </View>
+        </ScrollView>
 
         {/* Player Selection Modal */}
         <Modal
@@ -1063,6 +1084,25 @@ export default function PlayerSelectionScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Right Drawer for Match & Live Settings */}
+        <RightDrawer
+          isVisible={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+        >
+          <MatchSetting
+            matchId={matchId}
+            onClose={() => setIsDrawerOpen(false)}
+            matchDetails={matchDetails}
+            isPreScorer={true}
+            score={{
+              batting: battingTeam,
+              bowling: bowlingTeam,
+              teams: [teamA, teamB],
+              tournament: matchDetails?.tournament,
+            }}
+          />
+        </RightDrawer>
       </SafeAreaView>
   );
 }

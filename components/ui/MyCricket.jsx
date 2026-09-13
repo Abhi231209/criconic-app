@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -30,12 +30,16 @@ export default function MyCricket() {
   const [activeTab, setActiveTab] = useState("matches");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const lastFetchRef = useRef(0);
 
   const [recentMatches, setRecentMatches] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [teams, setTeams] = useState([]);
 
-  const fetchData = async () => {
+  const fetchData = async (isManual = false) => {
+    if (isManual || (!recentMatches.length && !tournaments.length && !teams.length)) {
+      setLoading(true);
+    }
     try {
       // 1. Fetch user matches and platform matches (matching sports-arena Matches.jsx)
       const matchPromises = [];
@@ -154,18 +158,24 @@ export default function MyCricket() {
   };
 
   useEffect(() => {
+    lastFetchRef.current = Date.now();
     fetchData();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchData();
+      // Throttle tab focus fetch to 45s to avoid freezing UI or re-fetching repeatedly
+      if (Date.now() - lastFetchRef.current > 45000) {
+        lastFetchRef.current = Date.now();
+        fetchData();
+      }
     }, [userId])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    lastFetchRef.current = Date.now();
+    fetchData(true);
   };
 
   const TabButton = ({ title, tabName, icon }) => (

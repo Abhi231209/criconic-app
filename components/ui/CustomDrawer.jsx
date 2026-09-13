@@ -21,6 +21,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { logout as logoutAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
+import { getImageFullUrl } from "@/utils";
 
 import useAppTheme from "@/hooks/useAppTheme";
 
@@ -30,6 +31,22 @@ export default function CustomDrawer(props) {
   const authUser = useSelector((state) => state.auth?.user);
   const { isDark, toggleTheme } = useAppTheme();
   const isDarkMode = isDark;
+
+  const rawPhoto =
+    authUser?.profileImage ||
+    authUser?.profileImg ||
+    authUser?.photo ||
+    authUser?.avatar ||
+    authUser?.image ||
+    User?.user?.profileImage ||
+    User?.user?.profileImg;
+
+  const profileImageUrl = rawPhoto ? getImageFullUrl(rawPhoto) : null;
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [profileImageUrl]);
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -214,10 +231,12 @@ export default function CustomDrawer(props) {
         >
           <View className="flex-row items-center">
             <View className="w-12 h-12 rounded-full border-2 border-white/40 overflow-hidden mr-3 bg-white/20 items-center justify-center">
-              {authUser?.profileImage ? (
+              {profileImageUrl && !imageError ? (
                 <Image
-                  source={{ uri: authUser.profileImage }}
+                  source={{ uri: profileImageUrl }}
                   className="w-full h-full"
+                  resizeMode="cover"
+                  onError={() => setImageError(true)}
                 />
               ) : (
                 <Ionicons name="person" size={24} color="#FFFFFF" />

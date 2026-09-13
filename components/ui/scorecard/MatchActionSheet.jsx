@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -11,61 +12,161 @@ import {
   Trophy,
   Trash2,
   X,
-  Clock,
-  Users,
-  Target,
+  Layers,
   ChevronRight,
+  Video,
 } from "lucide-react-native";
 import SCREENS from "@/screens";
 import useAppTheme from "@/hooks/useAppTheme";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { MATCH_STATUS, matchRedirectBasedOnStatus } from "@/utils";
-import { matchesApi } from "@/utils/api";
+import request, { matchesApi } from "@/utils/api";
 
-const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
+const MatchActionSheet = ({
+  closeSheet,
+  navigation,
+  matchId,
+  matchStatus = "Upcoming",
+  isAccessToUpdate = true,
+  score,
+  matchDetails,
+  onDeleteSuccess,
+}) => {
   const { theme, isDark } = useAppTheme();
 
-  const menuItems = [
-    {
-      id: "resume",
-      title: "Resume Scoring",
-      subtitle: "Continue from where you left off",
-      icon: Play,
-      gradient: theme?.gradients?.actionPrimary || ["#3B82F6", "#2563EB"],
-      onPress: async () => {
-        closeSheet();
-        let currentStatus = matchStatus;
-        if (
-          matchId &&
-          (!currentStatus ||
-            currentStatus === MATCH_STATUS.MATCH_CREATED ||
-            currentStatus === MATCH_STATUS.MATCH_SCHEDULED)
-        ) {
-          try {
-            const res = await matchesApi.getMatchById(matchId, { errorAlert: false });
-            if (res?.data?.status) {
-              currentStatus = res.data.status;
+  const isEnded =
+    matchStatus === "End" ||
+    matchDetails?.status === MATCH_STATUS.MATCH_ENDED ||
+    matchDetails?.status === MATCH_STATUS.MATCH_COMPLETED ||
+    score?.matchCurrentStatus === MATCH_STATUS.MATCH_ENDED ||
+    score?.matchCurrentStatus === MATCH_STATUS.MATCH_COMPLETED;
+
+  const isLive =
+    matchStatus === "Live" ||
+    (!isEnded &&
+      (matchDetails?.status === MATCH_STATUS.MATCH_IN_PROGRESS ||
+        matchDetails?.status === MATCH_STATUS.MATCH_STARTED ||
+        score?.matchCurrentStatus === MATCH_STATUS.MATCH_IN_PROGRESS ||
+        score?.matchCurrentStatus === MATCH_STATUS.MATCH_STARTED ||
+        score?.matchCurrentStatus === MATCH_STATUS.INNINGS_I ||
+        score?.matchCurrentStatus === MATCH_STATUS.INNINGS_II));
+
+  const hasThemeConfigured = Boolean(
+    matchDetails?.selectedTheme ||
+    matchDetails?.themeConfig ||
+    matchDetails?.theme ||
+    score?.themeConfig ||
+    score?.selectedTheme
+  );
+
+  const menuItems = [];
+
+  // 1. Scoring Action: Only show when match is NOT ended and user has scoring access
+  if (!isEnded && isAccessToUpdate) {
+    if (isLive) {
+      menuItems.push({
+        id: "resume",
+        title: "Resume Scoring",
+        subtitle: "Continue live scoring from where you left off",
+        icon: Play,
+        gradient: theme?.gradients?.actionPrimary || ["#3B82F6", "#2563EB"],
+        onPress: async () => {
+          closeSheet();
+          let currentStatus = score?.matchCurrentStatus || matchDetails?.status || matchStatus;
+          if (
+            matchId &&
+            (!currentStatus ||
+              currentStatus === MATCH_STATUS.MATCH_CREATED ||
+              currentStatus === MATCH_STATUS.MATCH_SCHEDULED)
+          ) {
+            try {
+              const res = await matchesApi.getMatchById(matchId, { errorAlert: false });
+              if (res?.data?.status) {
+                currentStatus = res.data.status;
+              }
+            } catch (err) {
+              console.warn("[MatchActionSheet] Error fetching fresh match status:", err);
             }
-          } catch (err) {
-            console.warn("[MatchActionSheet] Error fetching fresh match status:", err);
           }
-        }
-        const target = matchRedirectBasedOnStatus(matchId, currentStatus);
-        navigation.navigate(target.screen, target.params);
-      },
+          const target = matchRedirectBasedOnStatus(matchId, currentStatus);
+          navigation.navigate(target.screen, target.params);
+        },
+      });
+    } else {
+      // Upcoming / Not started yet
+      menuItems.push({
+        id: "start",
+        title: "Start Scoring",
+        subtitle: "Setup match, toss, and team openers",
+        icon: Play,
+        gradient: theme?.gradients?.actionPrimary || ["#3B82F6", "#2563EB"],
+        onPress: async () => {
+          closeSheet();
+          const target = matchRedirectBasedOnStatus(matchId, matchDetails?.status || MATCH_STATUS.MATCH_CREATED);
+          navigation.navigate(target.screen, target.params);
+        },
+      });
+    }
+  }
+
+  // 2. Full Scorecard Action
+  menuItems.push({
+    id: "scorecard",
+    title: "View Full Scorecard",
+    subtitle: isEnded
+      ? "Check complete match statistics and scorecard"
+      : "Check live match statistics and scorecard",
+    icon: Trophy,
+    gradient: theme?.gradients?.actionSecondary || ["#8B5CF6", "#6D28D9"],
+    onPress: () => {
+      closeSheet();
+      navigation.navigate(SCREENS.MatchScoreCard, {
+        matchId,
+        initialScore: score,
+        initialMatch: matchDetails,
+      });
     },
-    {
-      id: "scorecard",
-      title: "View Full Scorecard",
-      subtitle: "Check complete match statistics",
-      icon: Trophy,
-      gradient: theme?.gradients?.actionSecondary || ["#8B5CF6", "#6D28D9"],
-      onPress: () => {
-        closeSheet();
-        navigation.navigate(SCREENS.MatchScoreCard, { matchId });
-      },
+  });
+
+  // 3. Overlay Setup Action (Requirement 5: options for overlay setup in match actions)
+  menuItems.push({
+    id: "overlay",
+    title: "Overlay Setup",
+    subtitle: hasThemeConfigured
+      ? "Edit theme & broadcast overlays"
+      : isLive
+      ? "Configure live stream graphics"
+      : "Configure overlay before match starts",
+    icon: Layers,
+    gradient: ["#F59E0B", "#D97706"],
+    onPress: () => {
+      closeSheet();
+      navigation.navigate(SCREENS.ThemeConfig, { matchId });
     },
-  ];
+  });
+
+  // 4. Live Stream Broadcast Action
+  menuItems.push({
+    id: "livestream",
+    title:
+      score?.streamUrl || matchDetails?.streamUrl
+        ? "Watch Live Stream"
+        : "Live Stream Broadcast",
+    subtitle:
+      score?.streamUrl || matchDetails?.streamUrl
+        ? "Watch live YouTube or Facebook stream"
+        : "Add YouTube or Facebook stream link to match",
+    icon: Video,
+    gradient: ["#EF4444", "#DC2626"],
+    onPress: () => {
+      closeSheet();
+      navigation.navigate(SCREENS.MatchScoreCard, {
+        matchId,
+        initialScore: score,
+        initialMatch: matchDetails,
+      });
+    },
+  });
 
   const handleDelete = () => {
     Alert.alert(
@@ -78,11 +179,25 @@ const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
         },
         {
           text: "Delete",
-          onPress: closeSheet,
           style: "destructive",
+          onPress: async () => {
+            closeSheet();
+            try {
+              const res = await request(`api/matches/delete/${matchId}`, {
+                method: "PUT",
+                errorAlert: false,
+              });
+              if (res?.data?.success || res?.status === 200) {
+                Alert.alert("Success", res?.data?.message || "Match deleted successfully");
+                onDeleteSuccess?.(matchId);
+              }
+            } catch (err) {
+              console.log("[MatchActionSheet] Delete match error:", err);
+            }
+          },
         },
       ],
-      { cancelable: true },
+      { cancelable: true }
     );
   };
 
@@ -93,15 +208,25 @@ const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
   const subtitleColor = isDark ? "#94A3B8" : "#64748B";
 
   return (
-    <View style={[styles.container, { backgroundColor: sheetBg }]}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: sheetBg }]}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled={true}
+      bounces={false}
+    >
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <ThemedText className="text-2xl font-bold" style={{ color: titleColor }}>
-            Match Options
+          <ThemedText className="text-xl font-bold" style={{ color: titleColor }}>
+            Match Actions
           </ThemedText>
-          <ThemedText className="text-sm font-medium" style={{ color: subtitleColor }}>
-            Manage your ongoing match
+          <ThemedText className="text-xs font-medium" style={{ color: subtitleColor }}>
+            {isEnded
+              ? "Match completed • Choose an action"
+              : isLive
+              ? "Match is live • Manage ongoing match"
+              : "Match upcoming • Setup and scoring"}
           </ThemedText>
         </View>
         <TouchableOpacity
@@ -109,7 +234,7 @@ const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
           style={[styles.closeButton, { backgroundColor: isDark ? "#334155" : "#F1F5F9" }]}
           activeOpacity={0.7}
         >
-          <X size={20} color={isDark ? "#F8FAFC" : "#64748B"} />
+          <X size={18} color={isDark ? "#F8FAFC" : "#64748B"} />
         </TouchableOpacity>
       </View>
 
@@ -136,220 +261,131 @@ const MatchActionSheet = ({ closeSheet, navigation, matchId, matchStatus }) => {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Icon size={22} color="#FFFFFF" />
+                <Icon size={19} color="#FFFFFF" />
               </LinearGradient>
 
               <View style={styles.menuContent}>
-                <ThemedText className="text-base font-semibold" style={{ color: titleColor }}>
+                <ThemedText className="text-sm font-semibold" style={{ color: titleColor }}>
                   {item.title}
                 </ThemedText>
-                <ThemedText className="text-xs font-normal" style={{ color: subtitleColor }}>
+                <ThemedText className="text-xs font-normal mt-0.5" style={{ color: subtitleColor }}>
                   {item.subtitle}
                 </ThemedText>
               </View>
 
-              <ChevronRight size={20} color={subtitleColor} />
+              <ChevronRight size={18} color={subtitleColor} />
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* Danger Zone */}
-      <View style={styles.dangerZone}>
-        <TouchableOpacity
-          style={[
-            styles.deleteButton,
-            {
-              backgroundColor: isDark ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
-              borderColor: "#EF4444",
-            },
-          ]}
-          onPress={handleDelete}
-          activeOpacity={0.7}
-        >
-          <Trash2 size={20} color="#EF4444" />
-          <View style={styles.deleteTextContainer}>
-            <ThemedText className="text-base font-semibold" style={{ color: "#EF4444" }}>
-              Delete Match
-            </ThemedText>
-            <ThemedText className="text-xs font-normal" style={{ color: isDark ? "#FCA5A5" : subtitleColor }}>
-              Permanently remove this match
-            </ThemedText>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Close Button */}
-      <TouchableOpacity
-        style={[
-          styles.closeBottomButton,
-          {
-            backgroundColor: isDark ? "#334155" : "#F1F5F9",
-            borderColor: itemBorder,
-          },
-        ]}
-        onPress={closeSheet}
-        activeOpacity={0.7}
-      >
-        <ThemedText className="text-base font-semibold" style={{ color: isDark ? "#F8FAFC" : "#334155" }}>
-          Close
-        </ThemedText>
-      </TouchableOpacity>
-    </View>
+      {/* Danger Zone: Delete Match */}
+      {isAccessToUpdate && (
+        <View style={styles.dangerZone}>
+          <TouchableOpacity
+            style={[
+              styles.deleteButton,
+              {
+                backgroundColor: isDark ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
+                borderColor: isDark ? "rgba(239, 68, 68, 0.4)" : "#FECACA",
+              },
+            ]}
+            onPress={handleDelete}
+            activeOpacity={0.7}
+          >
+            <View
+              style={[
+                styles.deleteIconContainer,
+                { backgroundColor: isDark ? "rgba(239, 68, 68, 0.25)" : "#FEE2E2" },
+              ]}
+            >
+              <Trash2 size={18} color="#EF4444" />
+            </View>
+            <View style={styles.deleteTextContainer}>
+              <ThemedText className="text-sm font-bold" style={{ color: "#EF4444" }}>
+                Delete Match
+              </ThemedText>
+              <ThemedText
+                className="text-[11px] font-normal"
+                style={{ color: isDark ? "#FCA5A5" : "#DC2626" }}
+              >
+                Permanently remove this match
+              </ThemedText>
+            </View>
+            <ChevronRight size={18} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      )}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    paddingBottom: 30,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  matchInfoCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  matchInfoHeader: {
-    flexDirection: "row",
-    alignItems: "center",
     marginBottom: 12,
   },
-  matchIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
-  },
-  matchInfoText: {
-    flex: 1,
-  },
-  matchTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  matchSubtitle: {
-    fontSize: 13,
-  },
-  matchStats: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statText: {
-    fontSize: 13,
-    fontWeight: "500",
   },
   menuContainer: {
-    gap: 12,
-    marginBottom: 24,
+    gap: 8,
+    marginBottom: 10,
   },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
   },
   menuIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
+    marginRight: 12,
   },
   menuContent: {
     flex: 1,
   },
-  menuTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  menuSubtitle: {
-    fontSize: 13,
-  },
   dangerZone: {
-    marginTop: "auto",
-    marginBottom: 16,
+    marginTop: 4,
+    marginBottom: 12,
   },
   deleteButton: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: "dashed",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  deleteIconContainer: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   deleteTextContainer: {
-    marginLeft: 12,
     flex: 1,
-  },
-  deleteTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  deleteSubtitle: {
-    fontSize: 13,
-  },
-  closeBottomButton: {
-    padding: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
   },
 });
 

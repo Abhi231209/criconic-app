@@ -21,7 +21,7 @@ const BottomSheetContext = createContext({
   closeSheet: () => {},
 });
 
-const DEFAULT_SNAP_POINTS = ["60%", "85%"];
+const DEFAULT_SNAP_POINTS = ["70%"];
 
 export const BottomSheetProvider = ({ children }) => {
   const { isDark } = useAppTheme();
@@ -46,10 +46,8 @@ export const BottomSheetProvider = ({ children }) => {
       }
       return targetPoints;
     });
-    // Request animation frame ensures React renders the content and snap points before presenting
-    requestAnimationFrame(() => {
-      bottomSheetModalRef.current?.present();
-    });
+    // Present immediately on the UI thread with zero delay
+    bottomSheetModalRef.current?.present();
   }, []);
 
   const closeSheet = useCallback(() => {

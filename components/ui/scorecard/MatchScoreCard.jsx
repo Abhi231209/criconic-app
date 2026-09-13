@@ -8,9 +8,16 @@ import {
   useColorScheme,
   Animated,
   Easing,
-  TouchableOpacity
+  TouchableOpacity,
+  Modal,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Header from "./Header";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
@@ -19,12 +26,14 @@ import MatchInfo from "./MatchInfo";
 import MatchSummary from "./MatchSummary";
 import FullScoreCard from "./FullScorecard";
 import { useSocket } from "@/contexts/SocketContext";
-import { matchesApi } from "@/utils/api";
+import { matchesApi, request } from "@/utils/api";
 import MatchFullCommentary from "./MatchFullCommentry";
 import CurrentSquad from "./CurrentSquad";
 import MatchLive from "./MatchLive";
+import MatchVideoPlayer from "./MatchVideoPlayer";
 import ThemedText from "../custom/ThemedText";
 import { getMatchStatusDisplay } from "@/utils/Common";
+import User from "@/utils/User";
 
 export default function MatchScoreCard({
     matchID: matchIDProp,
@@ -48,6 +57,9 @@ export default function MatchScoreCard({
     
     const [headToHeadStats, setHeadToHeadStats] = useState({});
     const [teamsRecentForm, setTeamsRecentForm] = useState({});
+    const [isStreamModalVisible, setIsStreamModalVisible] = useState(false);
+    const [streamInput, setStreamInput] = useState("");
+    const [isSavingStream, setIsSavingStream] = useState(false);
 
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
@@ -1127,55 +1139,94 @@ export default function MatchScoreCard({
     };
     */
 
-    const [loading, setLoading] = useState(true);
-    const [score, setScore] = useState({
-        success: true,
-        teams: [],
-        inning: [],
-        commentary: [],
-        fullCommentary: [],
-        matchConfig: {
-            showMatchSummary: false,
-            showMatchPreview: false,
-            showPlayingEleven: false,
+    const initialPassedScore =
+        route.params?.initialScore ||
+        route.params?.score ||
+        null;
+    const initialPassedMatch =
+        route.params?.initialMatch ||
+        route.params?.match ||
+        route.params?.matchDetails ||
+        null;
+
+    const [score, setScore] = useState(() => {
+        const base = {
+            success: true,
+            teams: [],
+            inning: [],
+            commentary: [],
+            fullCommentary: [],
+            matchConfig: {
+                showMatchSummary: false,
+                showMatchPreview: false,
+                showPlayingEleven: false,
+            },
+        };
+        if (initialPassedMatch && typeof initialPassedMatch === "object") {
+            Object.assign(base, initialPassedMatch);
         }
+        if (initialPassedScore && typeof initialPassedScore === "object") {
+            Object.assign(base, initialPassedScore);
+        }
+        return base;
     });
+
+    const hasInitialData = Boolean(
+        initialPassedScore?.title ||
+        initialPassedScore?.teams?.length ||
+        initialPassedScore?.batting?.score ||
+        initialPassedScore?.inning?.length ||
+        initialPassedMatch?.teams?.length
+    );
+
+    const [loading, setLoading] = useState(!hasInitialData);
 
     useEffect(() => {
         if (!matchID) {
             setLoading(false);
             return;
         }
-        setLoading(true);
+
+        // Fetch primary match and score data immediately
         Promise.all([
-            matchesApi.getMatchById(matchID),
+            matchesApi.getMatchById(matchID).catch(() => null),
             matchesApi.getMatchScore(matchID).catch(() => null),
-            matchesApi.getHeadToHead(matchID).catch(() => null),
-            matchesApi.getTeamsRecentForm(matchID).catch(() => null),
         ])
-            .then(([matchRes, scoreRes, h2hRes, formRes]) => {
+            .then(([matchRes, scoreRes]) => {
                 const matchData = matchRes?.match || matchRes?.data || matchRes;
-                const scoreData = scoreRes?.data;
-                if (matchData) {
+                const scoreData = scoreRes?.data?.data || scoreRes?.data;
+                if (matchData || scoreData) {
                     setScore(prev => ({
                         ...prev,
-                        ...matchData,
+                        ...(matchData && typeof matchData === "object" ? matchData : {}),
                         ...(scoreData && typeof scoreData === "object" ? scoreData : {}),
                     }));
                 }
+                setLoading(false);
+            })
+            .catch(err => console.log('Error fetching match by id:', err))
+            .finally(() => setLoading(false));
+
+        // Fetch secondary head-to-head and recent form in background without blocking screen render
+        matchesApi.getHeadToHead(matchID)
+            .then(h2hRes => {
                 if (h2hRes?.data?.data) {
                     setHeadToHeadStats(h2hRes.data.data);
                 } else if (h2hRes?.data) {
                     setHeadToHeadStats(h2hRes.data);
                 }
+            })
+            .catch(() => {});
+
+        matchesApi.getTeamsRecentForm(matchID)
+            .then(formRes => {
                 if (formRes?.data?.data) {
                     setTeamsRecentForm(formRes.data.data);
                 } else if (formRes?.data) {
                     setTeamsRecentForm(formRes.data);
                 }
             })
-            .catch(err => console.log('Error fetching match by id:', err))
-            .finally(() => setLoading(false));
+            .catch(() => {});
     }, [matchID]);
 
     // Start animations on component mount
@@ -1271,6 +1322,53 @@ export default function MatchScoreCard({
             }
         };
     }, [isConnected, matchID, emit, on, off]);
+
+    // Live video stream controls & permissions
+    const canEditStream = Boolean(
+        score?.accessToUpdate !== false &&
+        (score?.accessToUpdate || User?.isAdmin?.() || User?.isLogin?.())
+    );
+
+    useEffect(() => {
+        if (score?.streamUrl && setStreamUrl) {
+            setStreamUrl(score.streamUrl);
+        }
+    }, [score?.streamUrl, setStreamUrl]);
+
+    const handleSaveStream = async (linkToSave) => {
+        const urlValue = typeof linkToSave === "string" ? linkToSave.trim() : streamInput.trim();
+        setIsSavingStream(true);
+        try {
+            const res = await request(`api/matches/${matchID}/settings`, {
+                method: "PUT",
+                data: {
+                    action: "streamUrl",
+                    data: urlValue,
+                },
+            });
+            if (res?.data?.success !== false && res?.status !== 400 && res?.status !== 500) {
+                setScore((prev) => ({
+                    ...prev,
+                    streamUrl: urlValue,
+                }));
+                if (setStreamUrl) {
+                    setStreamUrl(urlValue);
+                }
+                setIsStreamModalVisible(false);
+                Alert.alert(
+                    "Success",
+                    urlValue ? "Live match stream updated successfully!" : "Live match stream removed."
+                );
+            } else {
+                Alert.alert("Notice", res?.data?.message || "Failed to update stream URL.");
+            }
+        } catch (error) {
+            console.warn("[MatchScoreCard] Error saving stream URL:", error);
+            Alert.alert("Error", error?.message || "Failed to update stream URL.");
+        } finally {
+            setIsSavingStream(false);
+        }
+    };
 
     // Styles for light/dark mode
     const containerStyle = {
@@ -1832,6 +1930,47 @@ export default function MatchScoreCard({
                         />
                     )}
 
+                    {/* Live Match Video Player / Add Stream CTA */}
+                    {Boolean(score?.streamUrl) ? (
+                        <MatchVideoPlayer
+                            streamUrl={score.streamUrl}
+                            isDarkMode={isDarkMode}
+                            canEdit={canEditStream}
+                            onEditStream={() => {
+                                setStreamInput(score.streamUrl || "");
+                                setIsStreamModalVisible(true);
+                            }}
+                        />
+                    ) : canEditStream ? (
+                        <TouchableOpacity
+                            onPress={() => {
+                                setStreamInput("");
+                                setIsStreamModalVisible(true);
+                            }}
+                            className={`mx-3 my-1.5 px-3.5 py-2.5 rounded-xl flex-row items-center justify-between border ${
+                                isDarkMode
+                                    ? "bg-gray-800/80 border-gray-700 active:bg-gray-700"
+                                    : "bg-blue-50/80 border-blue-200 active:bg-blue-100"
+                            }`}
+                            activeOpacity={0.7}
+                        >
+                            <View className="flex-row items-center gap-2.5">
+                                <View className="w-7 h-7 rounded-full bg-red-500/15 items-center justify-center">
+                                    <Ionicons name="videocam" size={15} color="#EF4444" />
+                                </View>
+                                <View>
+                                    <ThemedText className={`text-xs font-bold ${isDarkMode ? "text-white" : "text-blue-900"}`}>
+                                        Add Live Match Stream
+                                    </ThemedText>
+                                    <ThemedText className={`text-[11px] ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                        Stream YouTube or Facebook live video on scorecard
+                                    </ThemedText>
+                                </View>
+                            </View>
+                            <Ionicons name="add-circle" size={20} color="#3B82F6" />
+                        </TouchableOpacity>
+                    ) : null}
+
                     <MatchOverview
                         team={score?.batting?.battingTeam || (score?.teams?.[0]?.title ?? "Team 1")}
                         score={
@@ -1854,6 +1993,129 @@ export default function MatchScoreCard({
                         tabs={tabs} 
                         initialIndex={initialTabIndex}
                     />
+
+                    {/* Live Stream URL Configuration Sheet (In-Tree overlay to avoid destroying/suspending WebView surface) */}
+                    {isStreamModalVisible && (
+                        <View
+                            style={StyleSheet.absoluteFillObject}
+                            className="z-50 justify-end bg-black/60"
+                        >
+                            <TouchableOpacity
+                                style={StyleSheet.absoluteFillObject}
+                                activeOpacity={1}
+                                onPress={() => setIsStreamModalVisible(false)}
+                            />
+                            <KeyboardAvoidingView
+                                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                                keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
+                            >
+                                <View
+                                    className={`rounded-t-3xl p-5 border-t ${
+                                        isDarkMode
+                                            ? "bg-gray-900 border-gray-800"
+                                            : "bg-white border-gray-200"
+                                    }`}
+                                >
+                                    <View className="flex-row items-center justify-between mb-4">
+                                        <View className="flex-row items-center gap-2">
+                                            <View className="w-8 h-8 rounded-full bg-red-500/20 items-center justify-center">
+                                                <Ionicons name="videocam" size={18} color="#EF4444" />
+                                            </View>
+                                            <View>
+                                                <ThemedText className={`text-base font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                                    Match Live Stream
+                                                </ThemedText>
+                                                <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                                    Embed YouTube or Facebook video stream
+                                                </ThemedText>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity
+                                            onPress={() => setIsStreamModalVisible(false)}
+                                            className="p-1.5 rounded-full bg-gray-500/20"
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        >
+                                            <Ionicons name="close" size={18} color={isDarkMode ? "#FFF" : "#000"} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View className="mb-4">
+                                        <ThemedText className={`text-xs font-semibold mb-1.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                                            Stream URL (YouTube / Facebook / Direct)
+                                        </ThemedText>
+                                        <View
+                                            style={{
+                                                flexDirection: "row",
+                                                alignItems: "center",
+                                                minHeight: 48,
+                                                paddingHorizontal: 12,
+                                                borderRadius: 12,
+                                                borderWidth: 1,
+                                                borderColor: isDarkMode ? "#374151" : "#D1D5DB",
+                                                backgroundColor: isDarkMode ? "#1F2937" : "#F9FAFB",
+                                            }}
+                                        >
+                                            <TextInput
+                                                value={streamInput}
+                                                onChangeText={setStreamInput}
+                                                placeholder="https://www.youtube.com/watch?v=..."
+                                                placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
+                                                autoCapitalize="none"
+                                                autoCorrect={false}
+                                                style={{
+                                                    flex: 1,
+                                                    minHeight: 40,
+                                                    fontSize: 14,
+                                                    color: isDarkMode ? "#FFFFFF" : "#111827",
+                                                }}
+                                            />
+                                            {Boolean(streamInput) && (
+                                                <TouchableOpacity
+                                                    onPress={() => setStreamInput("")}
+                                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                                >
+                                                    <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                        <ThemedText className={`text-[11px] mt-1.5 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                            Supports: YouTube live & watch links, youtu.be, Facebook videos & live streams.
+                                        </ThemedText>
+                                    </View>
+
+                                    <View className="flex-row items-center gap-3">
+                                        {Boolean(score?.streamUrl) && (
+                                            <TouchableOpacity
+                                                onPress={() => handleSaveStream("")}
+                                                disabled={isSavingStream}
+                                                className="flex-1 py-3 rounded-xl bg-red-600/10 border border-red-500/30 items-center justify-center"
+                                            >
+                                                <ThemedText className="text-red-500 font-bold text-sm">
+                                                    Remove Stream
+                                                </ThemedText>
+                                            </TouchableOpacity>
+                                        )}
+
+                                        <TouchableOpacity
+                                            onPress={() => handleSaveStream(streamInput)}
+                                            disabled={isSavingStream}
+                                            className={`flex-1 py-3 rounded-xl items-center justify-center ${
+                                                isSavingStream ? "bg-blue-400" : "bg-blue-600 active:bg-blue-700"
+                                            }`}
+                                        >
+                                            {isSavingStream ? (
+                                                <ActivityIndicator size="small" color="#FFFFFF" />
+                                            ) : (
+                                                <ThemedText className="text-white font-bold text-sm">
+                                                    {score?.streamUrl ? "Update Stream" : "Save & Stream"}
+                                                </ThemedText>
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </KeyboardAvoidingView>
+                        </View>
+                    )}
             </SafeAreaView>
         </SafeAreaProvider>
     );

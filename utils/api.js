@@ -204,12 +204,18 @@ export const upload = async (fileInput, folderName = "general") => {
 
     if (typeof fileInput === "string") {
       const filename = fileInput.split("/").pop() || "upload.jpg";
-      const match = /\\.(\\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : "image/jpeg";
+      const match = /\.([a-zA-Z0-9]+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : "jpg";
+      const mime =
+        ext === "png"
+          ? "image/png"
+          : ext === "webp"
+          ? "image/webp"
+          : "image/jpeg";
       formData.append("image", {
         uri: fileInput,
         name: filename,
-        type,
+        type: mime,
       });
     } else if (fileInput && fileInput.uri) {
       formData.append("image", {
@@ -230,6 +236,7 @@ export const upload = async (fileInput, folderName = "general") => {
     const res = await axios.post(`${apiUrl}upload`, formData, {
       headers,
       withCredentials: true,
+      transformRequest: (data) => data,
     });
 
     return res?.data;

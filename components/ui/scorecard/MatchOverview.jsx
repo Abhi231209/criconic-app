@@ -77,12 +77,14 @@ export default function MatchOverview({
       ? "text-blue-500" 
       : "text-emerald-500";
 
+  const hasSuperOver = Boolean(isSuperOverEnded || superOverList?.length > 0 || superOverSummary);
+
   return (
     <View className={`p-4 ${bgColor}`}>
       {/* Team name and match status */}
       <View className="flex-row justify-between items-center mb-2">
         <ThemedText className={`text-lg font-semibold ${textColor}`} numberOfLines={1}>
-          {isSuperOverEnded && inning1?.teamName && inning2?.teamName
+          {hasSuperOver && inning1?.teamName && inning2?.teamName
             ? `${inning1.teamName} vs ${inning2.teamName}`
             : teamName}
         </ThemedText>
@@ -91,8 +93,8 @@ export default function MatchOverview({
         ) : null}
       </View>
 
-      {/* When match went to Super Over and has ended: show Inning 1 & Inning 2 scores */}
-      {isSuperOverEnded && inning1 && inning2 ? (
+      {/* When match went to Super Over (live or ended): show Inning 1 & Inning 2 scores */}
+      {hasSuperOver && inning1 && inning2 ? (
         <View className="my-1.5 py-1 border-y border-dashed border-gray-200 dark:border-gray-700/60">
           {/* Inning 1 */}
           <View className="flex-row justify-between items-center py-1">
@@ -143,6 +145,15 @@ export default function MatchOverview({
         <View className="flex-row items-baseline">
           <ThemedText className={`text-3xl font-bold ${textColor}`}>{scoreText}</ThemedText>
           <ThemedText className={`ml-2 text-base font-medium ${textColor}`}>({oversText})</ThemedText>
+        </View>
+      )}
+
+      {/* Live Super Over current score if super over is ongoing */}
+      {hasSuperOver && !isSuperOverEnded && (
+        <View className="flex-row items-baseline mt-1.5">
+          <ThemedText className="text-sm font-bold text-amber-500 mr-2">⚡ Super Over:</ThemedText>
+          <ThemedText className={`text-2xl font-bold ${textColor}`}>{scoreText}</ThemedText>
+          <ThemedText className={`ml-2 text-sm font-medium ${labelColor}`}>({oversText})</ThemedText>
         </View>
       )}
 

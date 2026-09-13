@@ -307,9 +307,19 @@ export const confirmLeavePreScore = ({
 
 export const getImageFullUrl = (img) => {
   if (!img || typeof img !== "string") return "";
-  if (img.startsWith("http://") || img.startsWith("https://")) {
-    return img;
+  const trimmed = img.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("ph://") ||
+    trimmed.startsWith("assets-library://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
+  ) {
+    return trimmed;
   }
-  const cleanImg = img.startsWith("/") ? img.slice(1) : img;
+  const cleanImg = trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
   return `${BASE_URL}${cleanImg}`;
 };

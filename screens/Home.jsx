@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
   ImageBackground,
   useColorScheme,
+  RefreshControl,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
@@ -30,6 +31,8 @@ export default function Home({}) {
 
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const lastFocusFetch = React.useRef(Date.now());
 
   const { matchesIds, setMatchesIds, refresh: refreshMatches } = useMatches({
     initialCondition: MATCHES_CONDITION,
@@ -37,7 +40,11 @@ export default function Home({}) {
 
   useFocusEffect(
     useCallback(() => {
-      refreshMatches?.();
+      // Throttle tab focus refreshes to avoid freezing UI or re-fetching every tab switch
+      if (Date.now() - lastFocusFetch.current > 60000) {
+        lastFocusFetch.current = Date.now();
+        refreshMatches?.();
+      }
     }, [refreshMatches])
   );
 
@@ -63,6 +70,21 @@ export default function Home({}) {
       }
     }
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    lastFocusFetch.current = Date.now();
+    try {
+      await Promise.all([
+        refreshMatches ? Promise.resolve(refreshMatches()) : Promise.resolve(),
+        getConfig(),
+      ]);
+    } catch (err) {
+      console.log("[Home] Refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshMatches]);
 
   useEffect(() => {
     getConfig();
@@ -115,6 +137,14 @@ export default function Home({}) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
           className="px-4"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#2563EB"]}
+              tintColor={isDarkMode ? "#60A5FA" : "#2563EB"}
+            />
+          }
         >
           {/* Quick-Start Actions Row */}
           <View className="mt-3 mb-2">
@@ -308,7 +338,7 @@ export default function Home({}) {
           <SectionHeader
             title="Recent Matches"
             actionText="View All"
-            onAction={() => navigation.navigate(SCREENS.MyCricket)}
+            onAction={() => navigation.navigate(SCREENS.AllMatches)}
           />
 
           {matchesIds && matchesIds.length > 0 ? (
@@ -433,7 +463,7 @@ export default function Home({}) {
           ))}
         </ScrollView>
 
-        <AnimatedFooter />
+        <AnimatedFooter currentTab="Home" />
       </View>
     </View>
   );

@@ -40,6 +40,7 @@ import ChangeSquad from "@/components/ui/createMatch/ChangeSquad/ChangeSquad";
 import ChangeBowler from "@/components/ui/createMatch/ChangeSquad/ChangeBowler";
 import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
+import AllMatches from "@/components/ui/AllMatches";
 import useAppTheme from "@/hooks/useAppTheme";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -113,6 +114,7 @@ function MainStack() {
       <Stack.Screen name={SCREENS.ChangeBowler} component={ChangeBowler} />
       <Stack.Screen name={SCREENS.ThemeConfig} component={ThemeConfig} />
       <Stack.Screen name={SCREENS.GoLiveSetup} component={GoLiveSetupScreen} />
+      <Stack.Screen name={SCREENS.AllMatches} component={AllMatches} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );

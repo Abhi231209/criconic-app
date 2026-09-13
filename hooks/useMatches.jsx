@@ -43,7 +43,17 @@ function useMatches({
 
         cache.current[apiUrl] = content;
         if (isRefresh) {
-          setMatchesIds(content);
+          setMatchesIds((prev) => {
+            if (prev.length === content.length) {
+              const same = prev.every((p, i) => {
+                const id1 = String(p?._id || p?.id || p);
+                const id2 = String(content[i]?._id || content[i]?.id || content[i]);
+                return id1 === id2;
+              });
+              if (same) return prev;
+            }
+            return content;
+          });
         } else {
           setMatchesIds((prev) => {
             // Deduplicate incoming IDs
@@ -108,7 +118,6 @@ function useMatches({
 
   const refresh = useCallback(async () => {
     pageRef.current = 1;
-    cache.current = {};
     setHasData(true);
     await fetchPage(1, true);
   }, [fetchPage]);

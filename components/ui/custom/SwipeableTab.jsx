@@ -1,12 +1,11 @@
 // components/ui/custom/SwipeableTabs.jsx
 import React, { useRef, useEffect } from 'react';
 import { View, PanResponder, Dimensions } from 'react-native';
-import ThemedText from './ThemedText';
 
 const { width } = Dimensions.get('window');
 
 const SwipeableTabs = ({ 
-  tabs, 
+  tabs = [], 
   activeTab, 
   onTabChange, 
   children,
@@ -17,7 +16,7 @@ const SwipeableTabs = ({
   const onTabChangeRef = useRef(onTabChange);
 
   useEffect(() => {
-    tabsRef.current = tabs;
+    tabsRef.current = tabs || [];
     activeTabRef.current = activeTab;
     onTabChangeRef.current = onTabChange;
   }, [tabs, activeTab, onTabChange]);
@@ -28,11 +27,11 @@ const SwipeableTabs = ({
       onMoveShouldSetPanResponder: (e, gestureState) => {
         // Only capture if horizontal movement is dominant and exceeds minimum threshold
         return (
-          Math.abs(gestureState.dx) > 20 &&
+          Math.abs(gestureState.dx) > 25 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
         );
       },
-      onPanResponderTerminationRequest: () => false,
+      onPanResponderTerminationRequest: () => true,
       onPanResponderRelease: (e, gestureState) => {
         const currentTabs = tabsRef.current || [];
         const currentActive = activeTabRef.current;

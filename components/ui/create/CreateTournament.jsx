@@ -275,16 +275,26 @@ export default function CreateTournament() {
       let logoUrl = formData.logo;
       if (formData.logo && !formData.logo.startsWith('http')) {
         const uploadRes = await upload(formData.logo, 'tournament');
-        if (uploadRes?.data?.url) {
-          logoUrl = uploadRes.data.url;
+        const uploadedLogo =
+          uploadRes?.url ||
+          uploadRes?.data?.url ||
+          uploadRes?.data ||
+          (typeof uploadRes === 'string' ? uploadRes : null);
+        if (uploadedLogo) {
+          logoUrl = uploadedLogo;
         }
       }
 
       let bannerUrl = formData.coverImage;
       if (formData.coverImage && !formData.coverImage.startsWith('http')) {
         const uploadRes = await upload(formData.coverImage, 'tournament');
-        if (uploadRes?.data?.url) {
-          bannerUrl = uploadRes.data.url;
+        const uploadedBanner =
+          uploadRes?.url ||
+          uploadRes?.data?.url ||
+          uploadRes?.data ||
+          (typeof uploadRes === 'string' ? uploadRes : null);
+        if (uploadedBanner) {
+          bannerUrl = uploadedBanner;
         }
       }
 
@@ -305,6 +315,8 @@ export default function CreateTournament() {
         entryFee: formData.entryFee || '',
         logo: logoUrl || '',
         banner: bannerUrl || '',
+        logoImage: logoUrl || '',
+        bannerImage: bannerUrl || '',
       };
 
       const res = await tournamentsApi.createTournament(payload);
