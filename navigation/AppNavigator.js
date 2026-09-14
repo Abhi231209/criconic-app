@@ -42,6 +42,12 @@ import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
 import AllMatches from "@/components/ui/AllMatches";
 import useAppTheme from "@/hooks/useAppTheme";
+import ChangePassword from "@/screens/ChangePassword";
+import MyQR from "@/screens/MyQR";
+import HomeConfig from "@/screens/admin/HomeConfig";
+import SetupAds from "@/screens/admin/SetupAds";
+import BlogPosts from "@/screens/admin/BlogPosts";
+import QRScanner from "@/screens/QRScanner";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -115,6 +121,15 @@ function MainStack() {
       <Stack.Screen name={SCREENS.ThemeConfig} component={ThemeConfig} />
       <Stack.Screen name={SCREENS.GoLiveSetup} component={GoLiveSetupScreen} />
       <Stack.Screen name={SCREENS.AllMatches} component={AllMatches} />
+      <Stack.Screen
+        name={SCREENS.ChangePassword}
+        component={ChangePassword}
+      />
+      <Stack.Screen name={SCREENS.MyQR} component={MyQR} />
+      <Stack.Screen name={SCREENS.HomeConfig} component={HomeConfig} />
+      <Stack.Screen name={SCREENS.SetupAds} component={SetupAds} />
+      <Stack.Screen name={SCREENS.BlogPosts} component={BlogPosts} />
+      <Stack.Screen name={SCREENS.QRScanner} component={QRScanner} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );

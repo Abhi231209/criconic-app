@@ -339,6 +339,8 @@ export const teamsApi = {
     request(`api/teams/${id}`, { method: "PUT", data, ...options }),
   addPlayerToTeam: (teamId, data, options = {}) =>
     request(`api/teams/addPlayer/${teamId}`, { method: "PUT", data, ...options }),
+  joinTeamAsPlayer: (teamId, data, options = {}) =>
+    request(`api/teams/${teamId}/players`, { method: "POST", data, ...options }),
   getTeamPlayers: (teamId, options = {}) =>
     request(`api/teams/${teamId}/players`, { method: "GET", errorAlert: false, ...options }),
 };
@@ -354,6 +356,8 @@ export const tournamentsApi = {
     request("api/tournaments/create", { method: "POST", data, ...options }),
   updateTournament: (id, data, options = {}) =>
     request(`api/tournaments/${id}`, { method: "PUT", data, ...options }),
+  addTeamToTournament: (tournamentId, data, options = {}) =>
+    request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
   getMatchesByTournament: (id, options = {}) =>

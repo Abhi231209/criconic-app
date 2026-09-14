@@ -8,24 +8,28 @@ import {
   useColorScheme,
   FlatList,
   ActivityIndicator,
+  Modal,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import QRCode from "react-native-qrcode-svg";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
-import SwipeableTabs from "../custom/SwipeableTab";
 import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
 import { tournamentsApi, matchesApi, request } from "@/utils/api";
 import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
+import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 
 export default function TournamentProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const [activeTab, setActiveTab] = useState("overview");
+  const [showQrModal, setShowQrModal] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     batting: false,
     bowling: false
@@ -308,10 +312,10 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           tournamentsApi.getPointsTable(tournamentId),
           request(`api/tournaments/leaderboard/${tournamentId}?type=batting`).catch(() => null),
           (async () => {
-            const r1 = await request(`api/tournaments/leaderboard/${tournamentId}?type=bowling`).catch(() => null);
+            const r1 = await request(`api/tournaments/leaderboard/${tournamentId}?type=fielding`).catch(() => null);
             const s1 = r1?.data?.stats || r1?.stats || r1?.data;
             if (Array.isArray(s1) && s1.length > 0) return r1;
-            return request(`api/tournaments/leaderboard/${tournamentId}?type=fielding`).catch(() => null);
+            return request(`api/tournaments/leaderboard/${tournamentId}?type=bowling`).catch(() => null);
           })(),
         ]);
 
@@ -452,6 +456,17 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       });
     } catch {
       return String(dateVal);
+    }
+  };
+
+  const handleShareTournament = async () => {
+    try {
+      await Share.share({
+        message: `Join ${tournament?.name || "Tournament"} on Criconic!\nTournament ID: ${tournamentId}`,
+        title: tournament?.name || "Tournament QR",
+      });
+    } catch (e) {
+      console.warn("Share tournament error:", e);
     }
   };
 
@@ -677,34 +692,66 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
   };
 
   const toDisplayText = (value, fallback = "") => {
-    if (value === null || value === undefined) return fallback;
-    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (value === null || value === undefined) return String(fallback ?? "");
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.toLowerCase() === "null" || trimmed.toLowerCase() === "undefined") {
+        return String(fallback ?? "");
+      }
+      return trimmed;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? String(value) : String(fallback ?? "");
+    }
     if (typeof value === "boolean") return value ? "Yes" : "No";
     if (typeof value === "object") {
-      return (
-        value.username ||
-        value.name ||
-        value.title ||
-        value.shortName ||
-        value.playerName ||
-        value.teamName ||
-        value._id ||
-        value.id ||
-        fallback
-      );
+      if (Array.isArray(value)) {
+        if (value.length === 0) return String(fallback ?? "");
+        return toDisplayText(value[0], fallback);
+      }
+      const candidate =
+        (typeof value.username === "string" ? value.username : null) ||
+        (typeof value.playerName === "string" ? value.playerName : null) ||
+        (typeof value.name === "string" ? value.name : null) ||
+        (typeof value.title === "string" ? value.title : null) ||
+        (typeof value.shortName === "string" ? value.shortName : null) ||
+        (typeof value.teamName === "string" ? value.teamName : null) ||
+        (typeof value._id === "string" ? value._id : null) ||
+        (typeof value.id === "string" ? value.id : null);
+
+      if (candidate) return candidate.trim();
+
+      if (value.name && typeof value.name === "object") {
+        const full = `${value.name.first || ""} ${value.name.last || ""}`.trim();
+        if (full) return full;
+      }
+      return String(fallback ?? "");
+    }
+    return String(fallback ?? "");
+  };
+
+  const toDisplayNumber = (value, fallback = 0) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+    if (typeof value === "string") {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    if (typeof value === "object" && value !== null) {
+      const candidate = value.value ?? value.count ?? value.total ?? value.num;
+      if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+      if (typeof candidate === "string") {
+        const parsed = parseFloat(candidate);
+        if (Number.isFinite(parsed)) return parsed;
+      }
     }
     return fallback;
   };
 
-  const toDisplayNumber = (value, fallback = 0) => {
-    const raw = typeof value === "object" ? toDisplayText(value, "") : value;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
-
   const formatStatNumber = (value, fallback = "0.00") => {
-    const parsed = toDisplayNumber(value, NaN);
-    return Number.isFinite(parsed) ? parsed.toFixed(2) : fallback;
+    if (value === null || value === undefined) return fallback;
+    const num = toDisplayNumber(value, NaN);
+    if (!Number.isFinite(num)) return fallback;
+    return num.toFixed(2);
   };
 
   const TabButton = ({ title, tabName, icon }) => (
@@ -740,113 +787,154 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
   );
 
   const renderLeaderboardItem = (item, index, type) => {
-    const playerName =
-      toDisplayText(item.playerName) ||
-      toDisplayText(item.name) ||
-      toDisplayText(item.player) ||
-      toDisplayText(item.playerId) ||
-      toDisplayText(item.bowler) ||
-      toDisplayText(item.batsman) ||
-      "Player";
-    const teamName =
-      toDisplayText(item.teamName) ||
-      toDisplayText(item.team) ||
-      toDisplayText(item.teamId) ||
-      "";
-    const wickets = toDisplayNumber(
-      item.wickets ?? item.totalWickets ?? item.wicketsTaken ?? item.wicket,
-      0
-    );
-    const runs = toDisplayNumber(item.runs ?? item.totalRuns, 0);
-    const innings = toDisplayNumber(
-      item.matchesPlayed ?? item.innings ?? item.matches ?? item.totalMatches,
-      0
-    );
-    const average = toDisplayText(item.battingAverage ?? item.average ?? item.avg, "0.00");
-    const strikeRate = toDisplayText(item.strikeRate ?? item.sr, "0.00");
-    const economy = formatStatNumber(item.economyRate ?? item.economy ?? item.econ);
-    const profileImage = item.profileImg || item.player?.profileImg || item.playerId?.profileImg;
-    const primaryStat =
-      type === "batting"
-        ? `${runs} runs`
-        : `${wickets} wkts`;
-    const secondaryStat =
-      type === "batting"
-        ? `Avg: ${average} • SR: ${strikeRate}`
-        : `Eco: ${economy} • Inn: ${innings}`;
+    try {
+      if (!item || typeof item !== "object") return null;
+      const playerName =
+        toDisplayText(item.playerName) ||
+        toDisplayText(item.name) ||
+        toDisplayText(item.player) ||
+        toDisplayText(item.bowler) ||
+        toDisplayText(item.batsman) ||
+        toDisplayText(item.username) ||
+        "Player";
+      const teamName =
+        toDisplayText(item.teamName) ||
+        toDisplayText(item.team) ||
+        "";
+      const wickets = toDisplayNumber(
+        item.wickets ?? item.totalWickets ?? item.wicketsTaken ?? item.wicket,
+        0
+      );
+      const runs = toDisplayNumber(item.runs ?? item.totalRuns ?? item.run, 0);
+      const innings = toDisplayNumber(
+        item.matchesPlayed ?? item.innings ?? item.matches ?? item.totalMatches,
+        0
+      );
+      const average = formatStatNumber(item.battingAverage ?? item.average ?? item.avg, "0.00");
+      const strikeRate = formatStatNumber(item.strikeRate ?? item.sr, "0.00");
+      const economy = formatStatNumber(item.economyRate ?? item.economy ?? item.econ, "0.00");
 
-    return (
-      <View
-        key={toDisplayText(item.id || item._id || item.playerId || item.player, `${type}_${index}`)}
-        className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}
-      >
-        <View className="flex-row justify-between items-center">
-          <View className="flex-row items-center flex-1 mr-2">
-            <ThemedText
-              className={`text-lg font-bold mr-3 ${
-                index < 3
-                  ? "text-yellow-600"
-                  : isDarkMode
-                  ? "text-gray-400"
-                  : "text-gray-600"
-              }`}
-            >
-              #{index + 1}
-            </ThemedText>
-            {profileImage ? (
-              <Image
-                source={{ uri: getImageFullUrl(profileImage) }}
-                className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
-                resizeMode="cover"
-              />
-            ) : null}
-            <View className="flex-1">
+      const rawProfileImg =
+        (typeof item.profileImg === "string" ? item.profileImg : null) ||
+        (typeof item.profilePic === "string" ? item.profilePic : null) ||
+        (typeof item.profileImage === "string" ? item.profileImage : null) ||
+        (typeof item.player?.profileImg === "string" ? item.player.profileImg : null) ||
+        (typeof item.playerId?.profileImg === "string" ? item.playerId.profileImg : null) ||
+        (typeof item.playerInfo?.profileImg === "string" ? item.playerInfo.profileImg : null);
+      const profileImage = rawProfileImg && rawProfileImg.trim() ? getImageFullUrl(rawProfileImg) : null;
+      const avatarChar = String(playerName || "P").charAt(0).toUpperCase();
+
+      const primaryStat =
+        type === "batting"
+          ? `${runs} runs`
+          : `${wickets} wkts`;
+      const secondaryStat =
+        type === "batting"
+          ? `Avg: ${average} • SR: ${strikeRate}`
+          : `Eco: ${economy} • Inn: ${innings}`;
+
+      const rawPlayerId =
+        (typeof item.playerId === "object" ? item.playerId?._id || item.playerId?.id : item.playerId) ||
+        (typeof item.player === "object" ? item.player?._id || item.player?.id : item.player) ||
+        (typeof item.playerInfo === "object" ? item.playerInfo?._id || item.playerInfo?.id : item.playerInfo) ||
+        item.id ||
+        item._id;
+      const pId = typeof rawPlayerId === "string" ? rawPlayerId : `${type}_${index}`;
+
+      return (
+        <TouchableOpacity
+          key={`${type}_${pId}_${index}`}
+          onPress={() => {
+            if (pId && !pId.startsWith("batting_") && !pId.startsWith("bowling_")) {
+              navigation.navigate(SCREENS.PlayerProfile, {
+                playerId: String(pId),
+              });
+            }
+          }}
+          activeOpacity={0.7}
+          className={`p-3 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}
+        >
+          <View className="flex-row justify-between items-center">
+            <View className="flex-row items-center flex-1 mr-2">
               <ThemedText
-                numberOfLines={1}
-                className={`font-semibold ${
-                  isDarkMode ? "text-white" : "text-gray-900"
+                className={`text-lg font-bold mr-3 ${
+                  index < 3
+                    ? "text-yellow-600"
+                    : isDarkMode
+                    ? "text-gray-400"
+                    : "text-gray-600"
                 }`}
               >
-                {playerName}
+                #{index + 1}
               </ThemedText>
-              {teamName ? (
-                <ThemedText
-                  numberOfLines={1}
-                  className={`text-xs ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
+              {profileImage ? (
+                <Image
+                  source={{ uri: profileImage }}
+                  className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
+                  resizeMode="cover"
+                />
+              ) : (
+                <View
+                  className={`w-10 h-10 rounded-full mr-3 items-center justify-center ${
+                    isDarkMode ? "bg-blue-900" : "bg-blue-100"
                   }`}
                 >
-                  {teamName}
+                  <ThemedText className={`text-sm font-bold ${isDarkMode ? "text-blue-300" : "text-blue-700"}`}>
+                    {avatarChar}
+                  </ThemedText>
+                </View>
+              )}
+              <View className="flex-1">
+                <ThemedText
+                  numberOfLines={1}
+                  className={`font-semibold ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {playerName}
                 </ThemedText>
-              ) : null}
+                {teamName ? (
+                  <ThemedText
+                    numberOfLines={1}
+                    className={`text-xs ${
+                      isDarkMode ? "text-gray-400" : "text-gray-600"
+                    }`}
+                  >
+                    {teamName}
+                  </ThemedText>
+                ) : null}
+              </View>
+            </View>
+
+            <View className="items-end">
+              <ThemedText
+                className={`text-sm font-semibold ${
+                  type === "batting"
+                    ? isDarkMode
+                      ? "text-green-400"
+                      : "text-green-600"
+                    : isDarkMode
+                    ? "text-blue-400"
+                    : "text-blue-600"
+                }`}
+              >
+                {primaryStat}
+              </ThemedText>
+              <ThemedText
+                className={`text-xs ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                {secondaryStat}
+              </ThemedText>
             </View>
           </View>
-
-          <View className="items-end">
-            <ThemedText
-              className={`text-sm font-semibold ${
-                type === "batting"
-                  ? isDarkMode
-                    ? "text-green-400"
-                    : "text-green-600"
-                  : isDarkMode
-                  ? "text-blue-400"
-                  : "text-blue-600"
-              }`}
-            >
-              {primaryStat}
-            </ThemedText>
-            <ThemedText
-              className={`text-xs ${
-                isDarkMode ? "text-gray-400" : "text-gray-600"
-              }`}
-            >
-              {secondaryStat}
-            </ThemedText>
-          </View>
-        </View>
-      </View>
-    );
+        </TouchableOpacity>
+      );
+    } catch (e) {
+      console.warn("[TournamentProfile] Error rendering leaderboard item:", e);
+      return null;
+    }
   };
 
   const renderOverview = () => (
@@ -1122,6 +1210,74 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
             </View>
           </View>
         </View>
+      </View>
+
+      {/* Tournament QR Code Card */}
+      <View
+        className={`p-5 rounded-xl mb-4 ${
+          isDarkMode ? "bg-gray-800" : "bg-white"
+        } shadow-sm items-center`}
+      >
+        <View className="w-full flex-row items-center justify-between mb-3">
+          <View className="flex-row items-center flex-1 pr-2">
+            <View className="w-10 h-10 bg-indigo-100 rounded-full items-center justify-center mr-3 dark:bg-indigo-900/40">
+              <Ionicons name="qr-code-outline" size={20} color="#6366F1" />
+            </View>
+            <View className="flex-1">
+              <ThemedText
+                className={`text-lg font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                Tournament QR Code
+              </ThemedText>
+              <ThemedText
+                className={`text-xs ${
+                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Scan to register team or join
+              </ThemedText>
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={handleShareTournament}
+            className="w-9 h-9 rounded-full items-center justify-center bg-gray-100 dark:bg-gray-700"
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="share-social-outline"
+              size={18}
+              color={isDarkMode ? "#FFFFFF" : "#111827"}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View
+          className={`p-4 rounded-xl items-center justify-center my-2 ${
+            isDarkMode ? "bg-white" : "bg-gray-50 border border-gray-200"
+          }`}
+        >
+          <QRCode
+            value={JSON.stringify({
+              type: SCANNER_TYPE_ACTION?.TOURNAMENT?.type || "TOURNAMENT",
+              action:
+                SCANNER_TYPE_ACTION?.TOURNAMENT?.action?.JOIN?.type ||
+                "JOIN",
+              value: String(tournamentId),
+            })}
+            size={180}
+            backgroundColor="transparent"
+            color="#000000"
+          />
+        </View>
+        <ThemedText
+          className={`text-xs text-center mt-2 font-medium ${
+            isDarkMode ? "text-gray-400" : "text-gray-500"
+          }`}
+        >
+          * Scan this QR code using Criconic app camera to register team
+        </ThemedText>
       </View>
 
       {/* Leaderboard Section */}
@@ -1400,7 +1556,14 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               <TouchableOpacity
                 onPress={() => {
                   if (targetTeamId) {
-                    navigation.navigate(SCREENS.TeamProfile, { teamId: targetTeamId, team: item });
+                    const unnestedItem =
+                      item.teamId && typeof item.teamId === "object"
+                        ? { ...item.teamId, ...item }
+                        : item;
+                    navigation.navigate(SCREENS.TeamProfile, {
+                      teamId: String(targetTeamId),
+                      team: unnestedItem,
+                    });
                   }
                 }}
                 className={`p-4 rounded-lg mb-3 ${
@@ -1802,6 +1965,14 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
             </View>
 
             <View className="flex-row items-center gap-2">
+              <TouchableOpacity
+                onPress={() => setShowQrModal(true)}
+                className="w-9 h-9 rounded-full items-center justify-center bg-black/40 border border-white/20"
+                activeOpacity={0.7}
+                accessibilityLabel="Tournament QR Code"
+              >
+                <Ionicons name="qr-code-outline" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
               {canCreateMatch && (
                 <TouchableOpacity
                   onPress={handleCreateTournamentMatch}
@@ -1983,7 +2154,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         </View>
       </View>
 
-      {/* Content with Swipeable Tabs or Loading Spinner */}
+      {/* Content */}
       {isLoading && !tournamentData ? (
         <View className="flex-1 items-center justify-center py-20">
           <ActivityIndicator size="large" color="#2563EB" />
@@ -1992,21 +2163,141 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           </ThemedText>
         </View>
       ) : (
-        <SwipeableTabs
-          tabs={tabs}
-          activeTab={activeTab}
-          onTabChange={switchTab}
-          isDarkMode={isDarkMode}
-        >
-          <View className="flex-1">
-            {activeTab === "overview" && renderOverview()}
-            {activeTab === "matches" && renderMatches()}
-            {activeTab === "teams" && renderTeams()}
-            {activeTab === "standings" && renderStandings()}
-            {activeTab === "leaderboard" && renderLeaderboard()}
-          </View>
-        </SwipeableTabs>
+        <View className="flex-1">
+          {activeTab === "overview" && renderOverview()}
+          {activeTab === "matches" && renderMatches()}
+          {activeTab === "teams" && renderTeams()}
+          {activeTab === "standings" && renderStandings()}
+          {activeTab === "leaderboard" && renderLeaderboard()}
+        </View>
       )}
+
+      {/* Tournament QR Modal */}
+      <Modal
+        visible={showQrModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <View className="flex-1 bg-black/70 justify-center items-center p-5">
+          <View
+            className={`w-full max-w-sm rounded-2xl p-6 items-center ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            }`}
+          >
+            <View className="w-full flex-row justify-between items-center mb-4">
+              <ThemedText
+                className={`text-lg font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                Tournament QR Code
+              </ThemedText>
+              <TouchableOpacity
+                onPress={() => setShowQrModal(false)}
+                className="w-8 h-8 rounded-full items-center justify-center bg-gray-200 dark:bg-gray-700"
+              >
+                <Ionicons
+                  name="close"
+                  size={20}
+                  color={isDarkMode ? "#FFFFFF" : "#111827"}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {tournament.logo ? (
+              <Image
+                source={{ uri: getImageFullUrl(tournament.logo) }}
+                className="w-16 h-16 rounded-full mb-2 bg-gray-100"
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                className={`w-16 h-16 rounded-full mb-2 items-center justify-center ${
+                  isDarkMode ? "bg-blue-900" : "bg-blue-100"
+                }`}
+              >
+                <ThemedText
+                  className={`text-xl font-bold ${
+                    isDarkMode ? "text-blue-300" : "text-blue-700"
+                  }`}
+                >
+                  {tournament.shortName || tournament.name?.substring(0, 3)}
+                </ThemedText>
+              </View>
+            )}
+
+            <ThemedText
+              className={`text-base font-bold text-center mb-1 ${
+                isDarkMode ? "text-white" : "text-gray-900"
+              }`}
+            >
+              {tournament.name}
+            </ThemedText>
+            {tournament.location ? (
+              <ThemedText
+                className={`text-xs text-center mb-3 ${
+                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                {tournament.location}
+              </ThemedText>
+            ) : null}
+
+            <View className="p-4 bg-white rounded-xl shadow-sm my-2">
+              <QRCode
+                value={JSON.stringify({
+                  type: SCANNER_TYPE_ACTION?.TOURNAMENT?.type || "TOURNAMENT",
+                  action:
+                    SCANNER_TYPE_ACTION?.TOURNAMENT?.action?.JOIN?.type ||
+                    "JOIN",
+                  value: String(tournamentId),
+                })}
+                size={200}
+                backgroundColor="transparent"
+                color="#000000"
+              />
+            </View>
+
+            <ThemedText
+              className={`text-center mt-3 text-xs font-semibold px-2 ${
+                isDarkMode ? "text-gray-300" : "text-gray-600"
+              }`}
+            >
+              * Scan this QR code using Criconic app camera to join tournament
+            </ThemedText>
+
+            <View className="flex-row gap-3 mt-6 w-full">
+              <TouchableOpacity
+                onPress={handleShareTournament}
+                className="flex-1 py-2.5 rounded-xl bg-gray-200 dark:bg-gray-700 flex-row items-center justify-center"
+              >
+                <Ionicons
+                  name="share-social-outline"
+                  size={16}
+                  color={isDarkMode ? "#FFFFFF" : "#111827"}
+                />
+                <ThemedText
+                  className={`font-semibold text-sm ml-1.5 ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  Share
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowQrModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 items-center justify-center"
+              >
+                <ThemedText className="text-white font-semibold text-sm">
+                  Close
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

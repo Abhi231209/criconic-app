@@ -178,13 +178,11 @@ export default function NavBar({ handleSearch }) {
               )}
             </TouchableOpacity>
 
-            {/* QR Scanner Trigger */}
+            {/* Camera / QR Scanner Trigger */}
             {!showInput && (
               <TouchableOpacity
                 onPress={() => {
-                  setQRScanner(true);
-                  bottomSheetHandler(true, "top");
-                  navigation.openDrawer();
+                  navigation.navigate(SCREENS.QRScanner);
                 }}
                 activeOpacity={0.7}
                 className={`w-10 h-10 rounded-full items-center justify-center ml-2 ${
@@ -192,7 +190,7 @@ export default function NavBar({ handleSearch }) {
                 }`}
               >
                 <Ionicons
-                  name="qr-code-outline"
+                  name="camera-outline"
                   size={20}
                   color={isDarkMode ? "#FFFFFF" : "#1E293B"}
                 />

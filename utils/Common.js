@@ -240,3 +240,33 @@ export const LiveSettings = {
   [MatchSettingEnum.SHOW_COMPARISON_GRAPH]:
     "Show Comparison Graph on Live Screen",
 };
+
+export const SCANNER_TYPE_ACTION = {
+  TOURNAMENT: {
+    type: "TOURNAMENT",
+    action: {
+      JOIN: {
+        type: "JOIN",
+        isEnabled: true,
+      },
+    },
+  },
+  TEAM: {
+    type: "TEAM",
+    action: {
+      JOIN: {
+        type: "JOIN",
+        isEnabled: true,
+      },
+    },
+  },
+  PLAYER: {
+    type: "PLAYER",
+    action: {
+      JOIN: {
+        type: "JOIN",
+        isEnabled: true,
+      },
+    },
+  },
+};

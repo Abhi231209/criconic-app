@@ -14,15 +14,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
-import SwipeableTabs from "../custom/SwipeableTab";
 import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
 import request, { matchesApi, userApi } from "@/utils/api";
 import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
 
-export default function PlayerProfile() {
-  const navigation = useNavigation();
-  const route = useRoute();
+export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const [activeTab, setActiveTab] = useState("overview");

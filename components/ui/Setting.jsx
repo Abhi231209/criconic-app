@@ -16,10 +16,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
-import AnimatedFooter from "./AnimatedFooter";
 import { useSelector, useDispatch } from "react-redux";
 import { logout as logoutAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
+import { getImageFullUrl } from "@/utils";
+import User from "@/utils/User";
 
 export default function Settings() {
   const navigation = useNavigation();
@@ -29,22 +30,45 @@ export default function Settings() {
 
   const authUser = useSelector((state) => state.auth?.user);
 
-  // User data from Redux auth
+  // Check admin role (Role 1 = SUPER_ADMIN, Role 2 = ADMIN)
+  const isAdmin =
+    authUser?.role === 1 ||
+    authUser?.role === 2 ||
+    User?.isAdmin?.() ||
+    User?.user?.role === 1 ||
+    User?.user?.role === 2;
+
+  // Retrieve full profile image url
+  const rawPhoto =
+    authUser?.profileImg ||
+    authUser?.profileImage ||
+    authUser?.photo ||
+    authUser?.avatar ||
+    authUser?.image ||
+    User?.user?.profileImage ||
+    User?.user?.profileImg;
+
+  const profileImageUrl = rawPhoto ? getImageFullUrl(rawPhoto) : null;
+
+  // User data
   const user = {
     name:
       authUser?.username ||
       authUser?.name ||
       authUser?.fullName ||
+      User?.name ||
       "User",
-    email: authUser?.email || authUser?.mobile || "user@criconic.com",
-    profileImage: authUser?.profileImage || authUser?.avatar || null,
+    email:
+      authUser?.email ||
+      authUser?.mobile ||
+      User?.email ||
+      "user@criconic.com",
+    profileImage: profileImageUrl,
   };
 
   // Settings states
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(isDarkMode);
-  const [privacyEnabled, setPrivacyEnabled] = useState(false);
-  const [adsEnabled, setAdsEnabled] = useState(true);
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -72,16 +96,25 @@ export default function Settings() {
     ]);
   };
 
-  const handleChangePassword = () => {
-    navigation.navigate(SCREENS.ChangePassword);
+  const handleProfile = () => {
+    const pId = authUser?._id || authUser?.id || User.id;
+    if (pId) {
+      navigation.navigate(SCREENS.PlayerProfile, { playerId: String(pId) });
+    } else {
+      Alert.alert("Notice", "User profile ID not found.");
+    }
   };
 
   const handleEditProfile = () => {
-    navigation.navigate(SCREENS.EditProfile);
+    navigation.navigate(SCREENS.EditPlayerProfile);
   };
 
   const handleMyQR = () => {
     navigation.navigate(SCREENS.MyQR);
+  };
+
+  const handleChangePassword = () => {
+    navigation.navigate(SCREENS.ChangePassword);
   };
 
   const handleSetupAds = () => {
@@ -131,6 +164,7 @@ export default function Settings() {
         isDarkMode ? styles.settingsItemDark : styles.settingsItemLight,
       ]}
       disabled={isSwitch}
+      activeOpacity={0.7}
     >
       <View style={styles.settingsItemContent}>
         <View style={[styles.iconContainer, { backgroundColor: color + "20" }]}>
@@ -191,73 +225,83 @@ export default function Settings() {
 
   return (
     <SafeAreaView
-      className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
+      style={[
+        styles.container,
+        isDarkMode ? styles.containerDark : styles.containerLight,
+      ]}
     >
-      <View
-        style={[
-          styles.container,
-          isDarkMode ? styles.containerDark : styles.containerLight,
-        ]}
+      {/* Header */}
+      <LinearGradient
+        colors={isDarkMode ? ["#1F2937", "#111827"] : ["#3B82F6", "#1D4ED8"]}
+        style={styles.header}
       >
-        {/* Header */}
-        <LinearGradient
-          colors={isDarkMode ? ["#1F2937", "#111827"] : ["#3B82F6", "#1D4ED8"]}
-          style={styles.header}
-        >
-          <View style={styles.headerContent}>
-            <View style={styles.avatarContainer}>
-              {user.profileImage ? (
-                <Image
-                  source={{ uri: user.profileImage }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <Ionicons name="person" size={36} color="white" />
-              )}
-            </View>
-            <ThemedText style={styles.userName}>{user.name}</ThemedText>
-            <ThemedText style={styles.userEmail}>{user.email}</ThemedText>
-          </View>
-        </LinearGradient>
+        {/* Top Navigation Row with Back Button */}
+        <View style={styles.topNavRow}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <ThemedText style={styles.topNavTitle}>Settings</ThemedText>
+          <View style={styles.topNavSpacer} />
+        </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[
-            styles.scrollViewContent,
-            { paddingBottom: 80 },
-          ]}
-          showsVerticalScrollIndicator={true}
-        >
-          {/* Profile Section */}
-          <SettingsSection title="PROFILE">
-            <SettingsItem
-              icon="person-outline"
-              title="Profile"
-              onPress={() => navigation.navigate(SCREENS.Profile)}
-              color="#3B82F6"
-            />
-            <SettingsItem
-              icon="qr-code-outline"
-              title="My QR"
-              onPress={handleMyQR}
-              color="#10B981"
-            />
+        {/* User Avatar & Info */}
+        <View style={styles.headerContent}>
+          <View style={styles.avatarContainer}>
+            {user.profileImage ? (
+              <Image
+                source={{ uri: user.profileImage }}
+                style={styles.avatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <Ionicons name="person" size={36} color="white" />
+            )}
+          </View>
+          <ThemedText style={styles.userName}>{user.name}</ThemedText>
+          <ThemedText style={styles.userEmail}>{user.email}</ThemedText>
+        </View>
+      </LinearGradient>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Section */}
+        <SettingsSection title="PROFILE">
+          <SettingsItem
+            icon="person-outline"
+            title="Profile"
+            onPress={handleProfile}
+            color="#3B82F6"
+          />
+          <SettingsItem
+            icon="qr-code-outline"
+            title="My QR"
+            onPress={handleMyQR}
+            color="#10B981"
+          />
+          <SettingsItem
+            icon="create-outline"
+            title="Edit Profile"
+            onPress={handleEditProfile}
+            color="#8B5CF6"
+          />
+        </SettingsSection>
+
+        {/* Admin Management Section - Gated by isAdmin */}
+        {isAdmin && (
+          <SettingsSection title="ADMIN MANAGEMENT">
             <SettingsItem
               icon="megaphone-outline"
               title="Setup Ads"
               onPress={handleSetupAds}
               color="#F59E0B"
             />
-            <SettingsItem
-              icon="create-outline"
-              title="Edit Profile"
-              onPress={handleEditProfile}
-              color="#8B5CF6"
-            />
-          </SettingsSection>
-
-          {/* App Settings */}
-          <SettingsSection title="APP SETTINGS">
             <SettingsItem
               icon="home-outline"
               title="Home Config"
@@ -270,93 +314,81 @@ export default function Settings() {
               onPress={handleBlogPosts}
               color="#06B6D4"
             />
-            <SettingsItem
-              icon="notifications-outline"
-              title="Notifications"
-              isSwitch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+          </SettingsSection>
+        )}
+
+        {/* App Settings */}
+        <SettingsSection title="APP PREFERENCES">
+          <SettingsItem
+            icon="notifications-outline"
+            title="Notifications"
+            isSwitch
+            value={notificationsEnabled}
+            onValueChange={setNotificationsEnabled}
+            color="#EF4444"
+          />
+          <SettingsItem
+            icon="moon-outline"
+            title="Dark Mode"
+            isSwitch
+            value={darkModeEnabled}
+            onValueChange={setDarkModeEnabled}
+            color="#6366F1"
+          />
+        </SettingsSection>
+
+        {/* Account Settings */}
+        <SettingsSection title="ACCOUNT">
+          <SettingsItem
+            icon="key-outline"
+            title="Change Password"
+            onPress={handleChangePassword}
+            color="#06B6D4"
+          />
+          <SettingsItem
+            icon="help-buoy-outline"
+            title="Help & Support"
+            onPress={handleContactSupport}
+            color="#8B5CF6"
+          />
+          <SettingsItem
+            icon="star-outline"
+            title="Rate App"
+            onPress={handleRateApp}
+            color="#F59E0B"
+          />
+        </SettingsSection>
+
+        {/* Logout Button */}
+        <TouchableOpacity
+          onPress={handleLogout}
+          style={[
+            styles.logoutButton,
+            isDarkMode ? styles.logoutButtonDark : styles.logoutButtonLight,
+          ]}
+          activeOpacity={0.7}
+        >
+          <View style={styles.logoutButtonContent}>
+            <Ionicons
+              name="log-out-outline"
+              size={20}
               color="#EF4444"
+              style={styles.logoutIcon}
             />
-            <SettingsItem
-              icon="moon-outline"
-              title="Dark Mode"
-              isSwitch
-              value={darkModeEnabled}
-              onValueChange={setDarkModeEnabled}
-              color="#6366F1"
-            />
-            <SettingsItem
-              icon="lock-closed-outline"
-              title="Privacy"
-              isSwitch
-              value={privacyEnabled}
-              onValueChange={setPrivacyEnabled}
-              color="#84CC16"
-            />
-            <SettingsItem
-              icon="card-outline"
-              title="Ads"
-              isSwitch
-              value={adsEnabled}
-              onValueChange={setAdsEnabled}
-              color="#F97316"
-            />
-          </SettingsSection>
+            <ThemedText style={styles.logoutText}>LOGOUT</ThemedText>
+          </View>
+        </TouchableOpacity>
 
-          {/* Account Settings */}
-          <SettingsSection title="ACCOUNT">
-            <SettingsItem
-              icon="key-outline"
-              title="Change Password"
-              onPress={handleChangePassword}
-              color="#06B6D4"
-            />
-            <SettingsItem
-              icon="help-buoy-outline"
-              title="Help & Support"
-              onPress={handleContactSupport}
-              color="#8B5CF6"
-            />
-            <SettingsItem
-              icon="star-outline"
-              title="Rate App"
-              onPress={handleRateApp}
-              color="#F59E0B"
-            />
-          </SettingsSection>
-
-          {/* Logout Button */}
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={[
-              styles.logoutButton,
-              isDarkMode ? styles.logoutButtonDark : styles.logoutButtonLight,
-            ]}
-          >
-            <View style={styles.logoutButtonContent}>
-              <Ionicons
-                name="log-out-outline"
-                size={20}
-                color="#EF4444"
-                style={styles.logoutIcon}
-              />
-              <ThemedText style={styles.logoutText}>LOGOUT</ThemedText>
-            </View>
-          </TouchableOpacity>
-
-          {/* App Version */}
-          <ThemedText
-            style={[
-              styles.versionText,
-              isDarkMode ? styles.versionTextDark : styles.versionTextLight,
-            ]}
-          >
-            Cricket App v1.0.0
-          </ThemedText>
-        </ScrollView>
-        <AnimatedFooter currentTab="Profile" />
-      </View>
+        {/* App Version */}
+        <ThemedText
+          style={[
+            styles.versionText,
+            isDarkMode ? styles.versionTextDark : styles.versionTextLight,
+          ]}
+        >
+          Cricket App v1.0.0
+        </ThemedText>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -366,31 +398,53 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   containerLight: {
-    backgroundColor: "#f3f4f6", // bg-gray-100
+    backgroundColor: "#F3F4F6",
   },
   containerDark: {
-    backgroundColor: "#111827", // bg-gray-900
+    backgroundColor: "#111827",
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+  topNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  backButton: {
+    padding: 6,
+    borderRadius: 8,
+  },
+  topNavTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  topNavSpacer: {
+    width: 36,
   },
   headerContent: {
     alignItems: "center",
   },
   avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.4)",
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
   },
   userName: {
     color: "white",
@@ -398,8 +452,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   userEmail: {
-    color: "#bfdbfe", // text-blue-100
+    color: "#BFDBFE",
     marginTop: 4,
+    fontSize: 14,
   },
   scrollView: {
     flex: 1,
@@ -409,45 +464,46 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   settingsSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: "500",
-    paddingHorizontal: 20,
+    fontSize: 13,
+    fontWeight: "600",
+    paddingHorizontal: 16,
     paddingVertical: 8,
+    letterSpacing: 0.5,
   },
   sectionTitleLight: {
-    color: "#6b7280", // text-gray-500
+    color: "#6B7280",
   },
   sectionTitleDark: {
-    color: "#9ca3af", // text-gray-400
+    color: "#9CA3AF",
   },
   settingsSectionContent: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: "hidden",
   },
   sectionContentLight: {
     backgroundColor: "white",
   },
   sectionContentDark: {
-    backgroundColor: "#1f2937", // bg-gray-800
+    backgroundColor: "#1F2937",
   },
   settingsItem: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
   },
   settingsItemLight: {
     backgroundColor: "white",
-    borderBottomColor: "#e5e7eb", // border-gray-200
+    borderBottomColor: "#F3F4F6",
   },
   settingsItemDark: {
-    backgroundColor: "#1f2937", // bg-gray-800
-    borderBottomColor: "#374151", // border-gray-700
+    backgroundColor: "#1F2937",
+    borderBottomColor: "#374151",
   },
   settingsItemContent: {
     flexDirection: "row",
@@ -455,34 +511,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
+    marginRight: 14,
   },
   settingsItemText: {
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: "500",
   },
   textWhite: {
-    color: "white",
+    color: "#FFFFFF",
   },
   textBlack: {
-    color: "#111827", // text-gray-900
+    color: "#111827",
   },
   logoutButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 12,
     alignItems: "center",
-    marginTop: 24,
+    marginTop: 12,
   },
   logoutButtonLight: {
-    backgroundColor: "#fee2e2", // bg-red-100
+    backgroundColor: "#FEE2E2",
   },
   logoutButtonDark: {
-    backgroundColor: "rgba(127, 29, 29, 0.3)", // bg-red-900/30
+    backgroundColor: "rgba(127, 29, 29, 0.3)",
   },
   logoutButtonContent: {
     flexDirection: "row",
@@ -492,17 +549,19 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   logoutText: {
-    color: "#dc2626", // text-red-600
-    fontWeight: "500",
+    color: "#DC2626",
+    fontWeight: "700",
+    fontSize: 15,
   },
   versionText: {
     textAlign: "center",
-    marginTop: 32,
+    marginTop: 24,
+    fontSize: 12,
   },
   versionTextLight: {
-    color: "#9ca3af", // text-gray-400
+    color: "#9CA3AF",
   },
   versionTextDark: {
-    color: "#6b7280", // text-gray-500
+    color: "#6B7280",
   },
 });

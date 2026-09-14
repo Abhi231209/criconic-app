@@ -23,6 +23,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
+import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { tournamentsApi, upload } from '@/utils/api';
 
 const formatDate = (date) => {
@@ -462,13 +463,23 @@ export default function CreateTournament() {
             />
           )}
 
-          {/* Venue */}
-          <InputField
-            label="Venue"
-            value={formData.venue}
-            onChange={(text) => setFormData({ ...formData, venue: text })}
-            placeholder="Enter venue address"
-          />
+          {/* Venue (Google Location Search) */}
+          <View style={{ zIndex: 1000 }} className="mb-2">
+            <LocationSearch
+              label="Venue"
+              value={formData.venue}
+              onChangeText={(text) => setFormData({ ...formData, venue: text })}
+              onSelectLocation={(loc) => {
+                const venueText =
+                  loc?.description ||
+                  loc?.structured_formatting?.main_text ||
+                  "";
+                setFormData({ ...formData, venue: venueText });
+              }}
+              placeholder="Search or enter venue / ground address"
+              isDarkMode={isDarkMode}
+            />
+          </View>
 
           {/* Max Teams */}
           {/* <View className="mb-4">
