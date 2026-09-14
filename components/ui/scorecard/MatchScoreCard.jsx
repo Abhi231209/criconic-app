@@ -60,6 +60,7 @@ export default function MatchScoreCard({
     const [isStreamModalVisible, setIsStreamModalVisible] = useState(false);
     const [streamInput, setStreamInput] = useState("");
     const [isSavingStream, setIsSavingStream] = useState(false);
+    const isFirstMountRef = useRef(true);
 
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
@@ -1235,9 +1236,15 @@ export default function MatchScoreCard({
     useFocusEffect(
         useCallback(() => {
             if (!matchID) return;
+            // Prevent duplicate initial network fetch since useEffect handles initial mount
+            if (isFirstMountRef.current) {
+                isFirstMountRef.current = false;
+                return;
+            }
+
             matchesApi.getMatchById(matchID)
                 .then((matchRes) => {
-                    const matchData = matchRes?.match || matchRes?.data || matchRes;
+                    const matchData = matchRes?.match || matchRes?.data?.data || matchRes?.data;
                     if (matchData && (matchData._id || matchData.teams)) {
                         setScore(prev => ({
                             ...prev,
@@ -1249,11 +1256,14 @@ export default function MatchScoreCard({
 
             matchesApi.getMatchScore(matchID)
                 .then((scoreRes) => {
-                    const scoreData = scoreRes?.data;
+                    const scoreData = scoreRes?.data?.data || scoreRes?.data;
                     if (scoreData && typeof scoreData === "object" && scoreData.success !== false) {
+                        const actualScore = scoreData?.data && (scoreData.data.batting || scoreData.data.inning || scoreData.data.teams)
+                            ? scoreData.data
+                            : scoreData;
                         setScore(prev => ({
                             ...prev,
-                            ...scoreData,
+                            ...actualScore,
                         }));
                     }
                 })
@@ -1323,17 +1333,53 @@ export default function MatchScoreCard({
         };
     }, [isConnected, matchID, emit, on, off]);
 
-    // Live video stream controls & permissions
+    // Live video stream controls & permissions (strictly scorers/admins to prevent flicker)
+    const currentUserId = User.id || User.user?._id || User.user?.id;
+    const isUserOwnerOrScorer = Boolean(
+        currentUserId && (
+            (score?.userId && (score.userId?._id || score.userId) === currentUserId) ||
+            (score?.createdBy && (score.createdBy?._id || score.createdBy) === currentUserId) ||
+            (score?.user && (score.user?._id || score.user) === currentUserId) ||
+            (score?.scorer && (score.scorer?._id || score.scorer) === currentUserId) ||
+            (Array.isArray(score?.scorers) &&
+                score.scorers.some((s) => (s?._id || s) === currentUserId)) ||
+            (Array.isArray(score?.admin) &&
+                score.admin.some((a) => (a?._id || a) === currentUserId)) ||
+            (typeof User.isAdmin === "function" && User.isAdmin())
+        )
+    );
     const canEditStream = Boolean(
-        score?.accessToUpdate !== false &&
-        (score?.accessToUpdate || User?.isAdmin?.() || User?.isLogin?.())
+        score?.accessToUpdate === true || isUserOwnerOrScorer
     );
 
-    useEffect(() => {
-        if (score?.streamUrl && setStreamUrl) {
-            setStreamUrl(score.streamUrl);
+    // Stream URL validator
+    const isValidStreamUrl = (url) => {
+        if (!url || typeof url !== "string") return false;
+        const clean = url.trim();
+        if (
+            !clean ||
+            clean === "null" ||
+            clean === "undefined" ||
+            clean === "false" ||
+            clean === "true" ||
+            clean === "[object Object]"
+        ) {
+            return false;
         }
-    }, [score?.streamUrl, setStreamUrl]);
+        return (
+            clean.startsWith("http://") ||
+            clean.startsWith("https://") ||
+            clean.startsWith("rtmp://") ||
+            /^[a-zA-Z0-9_-]{11}$/.test(clean)
+        );
+    };
+    const hasValidStream = isValidStreamUrl(score?.streamUrl);
+
+    useEffect(() => {
+        if (hasValidStream && typeof setStreamUrl === "function") {
+            setStreamUrl(score.streamUrl.trim());
+        }
+    }, [hasValidStream, score?.streamUrl, setStreamUrl]);
 
     const handleSaveStream = async (linkToSave) => {
         const urlValue = typeof linkToSave === "string" ? linkToSave.trim() : streamInput.trim();
@@ -1869,6 +1915,7 @@ export default function MatchScoreCard({
                     isChasing={isChasing} 
                     description={score?.description || (score?.prompt && score.prompt[0]) || ""} 
                     isFirstInning={!isChasing}
+                    matchId={matchID}
                 />
             ),
         });
@@ -1931,9 +1978,9 @@ export default function MatchScoreCard({
                     )}
 
                     {/* Live Match Video Player / Add Stream CTA */}
-                    {Boolean(score?.streamUrl) ? (
+                    {hasValidStream ? (
                         <MatchVideoPlayer
-                            streamUrl={score.streamUrl}
+                            streamUrl={score.streamUrl.trim()}
                             isDarkMode={isDarkMode}
                             canEdit={canEditStream}
                             onEditStream={() => {
@@ -1979,6 +2026,7 @@ export default function MatchScoreCard({
                         overs={score?.batting?.score?.over ? `${score.batting.score.over} Ov` : "0.0 Ov"}
                         crr={score?.batting?.score?.CRR}
                         projjectedScore={score?.batting?.score?.projectedScore}
+                        matchTotalOver={score?.totalOvers || score?.matchTotalOver || 20}
                         matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : "Live")}
                         result={isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || "")}
                         motm={isMatchEnded ? score?.mom : null}

@@ -9,10 +9,12 @@ import {
   Alert,
   BackHandler,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import RightDrawer from "@/components/ui/custom/RightDrawer";
 import MatchSetting from "./MatchSetting";
@@ -20,6 +22,7 @@ import SCREENS from "@/screens";
 import { matchesApi, request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import { MatchSettingEnum } from "@/utils/Common";
 import User from "@/utils/User";
 import { useSelector } from "react-redux";
 
@@ -181,6 +184,73 @@ export default function PlayerSelectionScreen() {
 
   // Settings Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Wagon Wheel & Pitch Map Check-based Tracking States
+  const [isWagonWheelEnabled, setIsWagonWheelEnabled] = useState(true);
+  const [isPitchMapEnabled, setIsPitchMapEnabled] = useState(true);
+
+  // Hydrate tracking preferences from AsyncStorage and match config
+  useEffect(() => {
+    if (!matchId) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const storedWW = await AsyncStorage.getItem(`@criconic_ww_${matchId}`);
+        const storedPM = await AsyncStorage.getItem(`@criconic_pm_${matchId}`);
+
+        if (isMounted) {
+          if (storedWW !== null) {
+            setIsWagonWheelEnabled(storedWW === "true");
+          } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
+            const ww = matchDetails.config.recordWagonWheel;
+            setIsWagonWheelEnabled(typeof ww === "boolean" ? ww : !!ww?.active);
+          }
+
+          if (storedPM !== null) {
+            setIsPitchMapEnabled(storedPM === "true");
+          } else if (matchDetails?.config?.recordPitchMap !== undefined) {
+            const pm = matchDetails.config.recordPitchMap;
+            setIsPitchMapEnabled(typeof pm === "boolean" ? pm : !!pm?.active);
+          }
+        }
+      } catch (err) {
+        console.warn("[PlayerSelectionScreen] Error hydrating tracking options:", err);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [matchId]);
+
+  const handleToggleWagonWheel = async (val) => {
+    setIsWagonWheelEnabled(val);
+    if (!matchId) return;
+    try {
+      await AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val));
+      matchesApi.updateMatch(matchId, { config: { recordWagonWheel: val } }).catch(() => {});
+      request(`api/matches/${matchId}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_WAGON_WHEEL, data: val },
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("Failed to persist wagon wheel setting:", e);
+    }
+  };
+
+  const handleTogglePitchMap = async (val) => {
+    setIsPitchMapEnabled(val);
+    if (!matchId) return;
+    try {
+      await AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val));
+      matchesApi.updateMatch(matchId, { config: { recordPitchMap: val } }).catch(() => {});
+      request(`api/matches/${matchId}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_PITCH_MAP, data: val },
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("Failed to persist pitch map setting:", e);
+    }
+  };
 
   useEffect(() => {
     if (isInningsTwoParam) {
@@ -683,6 +753,26 @@ export default function PlayerSelectionScreen() {
         emit && emit("start", { matchId, userId: effectiveUserId });
       }
 
+      // Persist tracking preferences for this match
+      if (matchId) {
+        AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(isWagonWheelEnabled)).catch(() => {});
+        AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(isPitchMapEnabled)).catch(() => {});
+        matchesApi.updateMatch(matchId, {
+          config: {
+            recordWagonWheel: isWagonWheelEnabled,
+            recordPitchMap: isPitchMapEnabled,
+          },
+        }).catch(() => {});
+        request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: { action: MatchSettingEnum.RECORD_WAGON_WHEEL, data: isWagonWheelEnabled },
+        }).catch(() => {});
+        request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: { action: MatchSettingEnum.RECORD_PITCH_MAP, data: isPitchMapEnabled },
+        }).catch(() => {});
+      }
+
       setOpenersCompleted(true);
       isLeavingRef.current = true;
 
@@ -704,6 +794,8 @@ export default function PlayerSelectionScreen() {
         isInningsTwo,
         isSuperOver,
         currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        isWagonWheelEnabled,
+        isPitchMapEnabled,
       };
 
       navigation.navigate(SCREENS.ScorerScreen, navParams);
@@ -729,6 +821,8 @@ export default function PlayerSelectionScreen() {
         isInningsTwo,
         isSuperOver,
         currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        isWagonWheelEnabled,
+        isPitchMapEnabled,
       });
     } finally {
       setIsSubmitting(false);
@@ -997,6 +1091,75 @@ export default function PlayerSelectionScreen() {
             {renderSelectionButton('bowler', bowler, 'Bowler')}
           </View>
 
+          {/* Match Scoring Features */}
+          <View className={`p-4 rounded-xl mb-6 ${
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+          } shadow-sm border`}>
+            <View className="flex-row items-center mb-3">
+              <View className="w-8 h-8 rounded-full bg-blue-500/10 items-center justify-center mr-2.5">
+                <Ionicons name="analytics-outline" size={18} color="#3B82F6" />
+              </View>
+              <View className="flex-1">
+                <ThemedText className="text-base font-bold text-gray-900 dark:text-white">
+                  Match Scoring Features
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                  Enable Wagon Wheel & Pitch Map tracking for deliveries
+                </ThemedText>
+              </View>
+            </View>
+
+            {/* Wagon Wheel toggle */}
+            <View className={`flex-row items-center justify-between py-2.5 border-t ${
+              isDarkMode ? "border-gray-700/60" : "border-gray-100"
+            }`}>
+              <View className="flex-row items-center flex-1 mr-3">
+                <View className="w-7 h-7 rounded-lg bg-blue-500/10 items-center justify-center mr-2.5">
+                  <Ionicons name="disc-outline" size={16} color="#3B82F6" />
+                </View>
+                <View className="flex-1">
+                  <ThemedText className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Record Wagon Wheel
+                  </ThemedText>
+                  <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                    Prompt shot direction & zone for scored balls
+                  </ThemedText>
+                </View>
+              </View>
+              <Switch
+                value={isWagonWheelEnabled}
+                onValueChange={handleToggleWagonWheel}
+                thumbColor={isWagonWheelEnabled ? "#3B82F6" : "#CBD5E1"}
+                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
+              />
+            </View>
+
+            {/* Pitch Map toggle */}
+            <View className={`flex-row items-center justify-between py-2.5 border-t ${
+              isDarkMode ? "border-gray-700/60" : "border-gray-100"
+            }`}>
+              <View className="flex-row items-center flex-1 mr-3">
+                <View className="w-7 h-7 rounded-lg bg-amber-500/10 items-center justify-center mr-2.5">
+                  <Ionicons name="locate-outline" size={16} color="#F59E0B" />
+                </View>
+                <View className="flex-1">
+                  <ThemedText className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Record Pitch Map
+                  </ThemedText>
+                  <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                    Prompt line & length pitching spot for deliveries
+                  </ThemedText>
+                </View>
+              </View>
+              <Switch
+                value={isPitchMapEnabled}
+                onValueChange={handleTogglePitchMap}
+                thumbColor={isPitchMapEnabled ? "#F59E0B" : "#CBD5E1"}
+                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#FDE68A" }}
+              />
+            </View>
+          </View>
+
           {/* Start Match Button */}
           <TouchableOpacity
             onPress={handleStartMatch}
@@ -1095,6 +1258,18 @@ export default function PlayerSelectionScreen() {
             onClose={() => setIsDrawerOpen(false)}
             matchDetails={matchDetails}
             isPreScorer={true}
+            onSettingsChange={(newSettings) => {
+              if (newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL] !== undefined) {
+                const val = !!newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL];
+                setIsWagonWheelEnabled(val);
+                AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val)).catch(() => {});
+              }
+              if (newSettings[MatchSettingEnum.RECORD_PITCH_MAP] !== undefined) {
+                const val = !!newSettings[MatchSettingEnum.RECORD_PITCH_MAP];
+                setIsPitchMapEnabled(val);
+                AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val)).catch(() => {});
+              }
+            }}
             score={{
               batting: battingTeam,
               bowling: bowlingTeam,

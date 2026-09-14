@@ -27,10 +27,10 @@ import {
   ExternalLink,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ThemedText from "../custom/ThemedText";
 import SCREENS from "@/screens";
-import { useNavigation } from "@react-navigation/native";
-import { request } from "@/utils/api";
+import { request, matchesApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
@@ -126,7 +126,7 @@ const ActionButton = ({ title, icon, onPress, variant = "primary", isDarkMode, d
   );
 };
 
-export default function MatchSetting({ matchId, onInningsComplete, onClose, score, matchDetails, isPreScorer = false }) {
+export default function MatchSetting({ matchId, onInningsComplete, onClose, score, matchDetails, isPreScorer = false, onSettingsChange }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const navigation = useNavigation();
@@ -154,11 +154,40 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       if (typeof content.streamUrl === "string") {
         setStreamingLink(content.streamUrl);
       }
-      setMatchConfigs(content);
+
+      let storedWW = null;
+      let storedPM = null;
+      try {
+        storedWW = await AsyncStorage.getItem(`@criconic_ww_${matchId}`);
+        storedPM = await AsyncStorage.getItem(`@criconic_pm_${matchId}`);
+      } catch {}
+
+      setMatchConfigs((prev) => {
+        const merged = { ...prev, ...content };
+        if (storedWW !== null) {
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = storedWW === "true";
+        } else if (content[MatchSettingEnum.RECORD_WAGON_WHEEL] !== undefined) {
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = !!content[MatchSettingEnum.RECORD_WAGON_WHEEL];
+        } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
+          const ww = matchDetails.config.recordWagonWheel;
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = typeof ww === "boolean" ? ww : !!ww?.active;
+        }
+
+        if (storedPM !== null) {
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = storedPM === "true";
+        } else if (content[MatchSettingEnum.RECORD_PITCH_MAP] !== undefined) {
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = !!content[MatchSettingEnum.RECORD_PITCH_MAP];
+        } else if (matchDetails?.config?.recordPitchMap !== undefined) {
+          const pm = matchDetails.config.recordPitchMap;
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = typeof pm === "boolean" ? pm : !!pm?.active;
+        }
+
+        return merged;
+      });
     } catch (err) {
       console.error("loadConfigs error:", err);
     }
-  }, [matchId]);
+  }, [matchId, matchDetails?.config?.recordWagonWheel, matchDetails?.config?.recordPitchMap]);
 
   useEffect(() => {
     loadConfigs();
@@ -166,15 +195,30 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
 
   const updateMatchSetting = async (action, value) => {
     if (!matchId) return;
+    setMatchConfigs((prev) => ({
+      ...prev,
+      [action]: value,
+    }));
+    onSettingsChange?.({ [action]: value });
+
+    // Sync tracking toggles with AsyncStorage and MongoDB match config
+    if (action === MatchSettingEnum.RECORD_WAGON_WHEEL) {
+      AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(value)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordWagonWheel: value } }).catch(() => {});
+    } else if (action === MatchSettingEnum.RECORD_PITCH_MAP) {
+      AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(value)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordPitchMap: value } }).catch(() => {});
+    }
+
     try {
       await request(`api/matches/${matchId}/settings`, {
         method: "PUT",
         data: { action, data: value },
+      }).catch((err) => {
+        console.warn("Backend settings update notice:", err?.message || err);
       });
-      await loadConfigs();
     } catch (err) {
-      console.error("updateMatchSetting error:", err);
-      Alert.alert("Error", "Failed to update setting. Please try again.");
+      console.warn("updateMatchSetting error:", err);
     }
   };
 
@@ -253,10 +297,22 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const rawUrlKey = liveMatchData?.url || "";
   const publicLiveUrl = rawUrlKey ? `${WEB_URL}/go-live/${rawUrlKey}` : "";
 
-  const getSetting = (key) => matchConfigs?.[key] || {};
+  const getSetting = (key) => matchConfigs?.[key];
   const getActive = (key) => {
-    const s = getSetting(key);
-    return typeof s === "boolean" ? s : !!s?.active;
+    const s = matchConfigs?.[key];
+    if (typeof s === "boolean") return s;
+    if (typeof s === "object" && s !== null && s.active !== undefined) return !!s.active;
+
+    // Check matchDetails config fallback
+    const fallback = matchDetails?.config?.[key];
+    if (typeof fallback === "boolean") return fallback;
+    if (typeof fallback === "object" && fallback !== null && fallback.active !== undefined) return !!fallback.active;
+
+    // For wagon wheel and pitch map, default to true if not yet explicitly set
+    if (key === MatchSettingEnum.RECORD_WAGON_WHEEL || key === MatchSettingEnum.RECORD_PITCH_MAP) {
+      return true;
+    }
+    return false;
   };
 
   // ---- PLAYER SETTINGS SECTION ----
@@ -314,6 +370,20 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         description="Continue match with only one batter"
         value={getActive(MatchSettingEnum.SINGLE_BATSMAN_ALLOWED)}
         onToggle={(v) => updateMatchSetting(MatchSettingEnum.SINGLE_BATSMAN_ALLOWED, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Record Wagon Wheel"
+        description="Prompt shot direction for scored deliveries"
+        value={getActive(MatchSettingEnum.RECORD_WAGON_WHEEL)}
+        onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_WAGON_WHEEL, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Record Pitch Map"
+        description="Prompt ball pitching line & length for deliveries"
+        value={getActive(MatchSettingEnum.RECORD_PITCH_MAP)}
+        onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_PITCH_MAP, v)}
         isDarkMode={isDarkMode}
       />
       <View style={[styles.inputRow, { borderBottomColor: C.divider }]}>

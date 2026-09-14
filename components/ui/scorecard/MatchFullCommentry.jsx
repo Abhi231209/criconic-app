@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { View, ScrollView, Pressable, useWindowDimensions, ActivityIndicator, RefreshControl } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Animated, { 
@@ -92,32 +92,52 @@ export default function MatchFullCommentary({ matchId, score }) {
   };
 
   // Extract all known players from match data for intelligent name resolution
-  const allMatchPlayers = React.useMemo(() => {
+  const { allMatchPlayers, battingPlayerNames, bowlingPlayerNames } = useMemo(() => {
     const list = [];
-    const seen = new Set();
-    const add = (p) => {
+    const seen = new Map();
+    const battingNames = new Set();
+    const bowlingNames = new Set();
+
+    const add = (p, role = "") => {
       if (!p) return;
       const name = p.name || p.username || p.playerName;
       const id = p.id || p._id || p.playerId;
-      if (name && typeof name === "string" && name.trim().length > 1 && !seen.has(name.toLowerCase())) {
-        seen.add(name.toLowerCase());
-        list.push({ id, name: name.trim(), username: name.trim() });
+      if (name && typeof name === "string" && name.trim().length > 1) {
+        const lower = name.trim().toLowerCase();
+        if (role === "batsman") battingNames.add(lower);
+        if (role === "bowler") bowlingNames.add(lower);
+
+        if (!seen.has(lower)) {
+          const entry = { id, name: name.trim(), username: name.trim(), role };
+          seen.set(lower, entry);
+          list.push(entry);
+        } else if (role && !seen.get(lower).role) {
+          seen.get(lower).role = role;
+        }
       }
     };
-    (score?.teams || []).forEach((t) => {
-      (t?.players || []).forEach(add);
-    });
+
     (score?.inning || []).forEach((inn) => {
-      (inn?.playedBatsman || []).forEach(add);
-      (inn?.batsman || []).forEach(add);
-      (inn?.batsmanUpcoming || []).forEach(add);
-      (inn?.bowling?.allBowlers || []).forEach(add);
-      (inn?.bowling?.bowlers || []).forEach(add);
-      (inn?.bowlers || []).forEach(add);
+      (inn?.playedBatsman || []).forEach((p) => add(p, "batsman"));
+      (inn?.batsman || []).forEach((p) => add(p, "batsman"));
+      (inn?.batsmanUpcoming || []).forEach((p) => add(p, "batsman"));
+      (inn?.bowling?.allBowlers || []).forEach((p) => add(p, "bowler"));
+      (inn?.bowling?.bowlers || []).forEach((p) => add(p, "bowler"));
+      (inn?.bowlers || []).forEach((p) => add(p, "bowler"));
     });
-    (score?.batsman || []).forEach(add);
-    add(score?.bowler);
-    return list.sort((a, b) => b.name.length - a.name.length);
+    (score?.batsman || []).forEach((p) => add(p, "batsman"));
+    add(score?.bowler, "bowler");
+    (score?.bowling?.lastTwoBowlers || []).forEach((p) => add(p, "bowler"));
+
+    (score?.teams || []).forEach((t) => {
+      (t?.players || []).forEach((p) => add(p, ""));
+    });
+
+    return {
+      allMatchPlayers: list.sort((a, b) => b.name.length - a.name.length),
+      battingPlayerNames: battingNames,
+      bowlingPlayerNames: bowlingNames,
+    };
   }, [score]);
 
   const parseCommentaryItem = useCallback((c, idx, pageNum = 1) => {
@@ -145,21 +165,59 @@ export default function MatchFullCommentary({ matchId, score }) {
     // Pattern 2: Match against known players in match
     if ((!bMan || !bowl) && desc && allMatchPlayers.length > 0) {
       const found = allMatchPlayers.filter(p => desc.toLowerCase().includes(p.name.toLowerCase()));
-      if (found.length >= 2) {
-        if (!bowl) {
-          bowl = found[0].name;
-          bowlObj = found[0];
-        }
-        if (!bMan) {
-          bMan = found[1].name;
-          bObj = found[1];
-        }
-      } else if (found.length === 1) {
-        if (!bMan) {
-          bMan = found[0].name;
-          bObj = found[0];
+      
+      let foundBowler = found.find(p => bowlingPlayerNames.has(p.name.toLowerCase()));
+      let foundBatsman = found.find(p => battingPlayerNames.has(p.name.toLowerCase()) && p !== foundBowler);
+
+      if (!foundBowler && !foundBatsman && found.length >= 2) {
+        const first = found[0];
+        const second = found[1];
+        const firstIdx = desc.toLowerCase().indexOf(first.name.toLowerCase());
+        const secondIdx = desc.toLowerCase().indexOf(second.name.toLowerCase());
+
+        if (desc.toLowerCase().includes(`from ${second.name.toLowerCase()}`) || desc.toLowerCase().includes(`off ${second.name.toLowerCase()}`)) {
+          foundBowler = second;
+          foundBatsman = first;
+        } else if (desc.toLowerCase().includes(`from ${first.name.toLowerCase()}`) || desc.toLowerCase().includes(`off ${first.name.toLowerCase()}`)) {
+          foundBowler = first;
+          foundBatsman = second;
+        } else if (firstIdx < secondIdx) {
+          if (desc.toLowerCase().includes(" to ")) {
+            foundBowler = first;
+            foundBatsman = second;
+          } else {
+            foundBatsman = first;
+            foundBowler = second;
+          }
         }
       }
+
+      if (!bowl && foundBowler) {
+        bowl = foundBowler.name;
+        bowlObj = foundBowler;
+      }
+      if (!bMan && foundBatsman) {
+        bMan = foundBatsman.name;
+        bObj = foundBatsman;
+      }
+
+      if (found.length === 1) {
+        if (bowlingPlayerNames.has(found[0].name.toLowerCase())) {
+          if (!bowl) { bowl = found[0].name; bowlObj = found[0]; }
+        } else {
+          if (!bMan) { bMan = found[0].name; bObj = found[0]; }
+        }
+      }
+    }
+
+    // Safety swap check: if bowl is batsman and bMan is bowler, swap them!
+    if (bowl && bMan && battingPlayerNames.has(bowl.toLowerCase()) && bowlingPlayerNames.has(bMan.toLowerCase())) {
+      const tempN = bowl;
+      const tempO = bowlObj;
+      bowl = bMan;
+      bowlObj = bObj;
+      bMan = tempN;
+      bObj = tempO;
     }
 
     return {
@@ -173,7 +231,7 @@ export default function MatchFullCommentary({ matchId, score }) {
       batsmanObj: bObj,
       bowlerObj: bowlObj,
     };
-  }, [allMatchPlayers]);
+  }, [allMatchPlayers, battingPlayerNames, bowlingPlayerNames]);
 
   // Map incoming score commentary as initial fallback
   const rawInitial = Array.isArray(score?.fullCommentary) 

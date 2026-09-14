@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
-  Dimensions,
   TouchableOpacity,
   Text,
-  StatusBar,
-  Animated,
-} from 'react-native';
+} from "react-native";
 import Svg, {
   Rect,
   Line,
@@ -18,479 +15,457 @@ import Svg, {
   Defs,
   LinearGradient,
   Stop,
-  Polygon,
-} from 'react-native-svg';
+  Text as SvgText,
+} from "react-native-svg";
 
+export const LENGTH_ZONES = [
+  { name: "Yorker", color: "#3B82F6", range: [0, 2] },
+  { name: "Full", color: "#06B6D4", range: [2, 4.5] },
+  { name: "Good Length", color: "#10B981", range: [4.5, 7.5] },
+  { name: "Short", color: "#F59E0B", range: [7.5, 11] },
+  { name: "Bouncer", color: "#EF4444", range: [11, 22] },
+];
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+export const getPitchLengthColor = (fromStumps) => {
+  const d = Number(fromStumps || 0);
+  if (d <= 2) return "#3B82F6";       // Yorker
+  if (d <= 4.5) return "#06B6D4";     // Full
+  if (d <= 7.5) return "#10B981";     // Good Length
+  if (d <= 11) return "#F59E0B";      // Short
+  return "#EF4444";                   // Bouncer
+};
 
-const PitchMap = () => {
-  const [pitchPoint, setPitchPoint] = useState(null);
-  const [shotPoint, setShotPoint] = useState(null);
-  const [showTrajectory, setShowTrajectory] = useState(false);
-  const [ballData, setBallData] = useState(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [drawerAnimation] = useState(new Animated.Value(screenWidth));
-  const [settings, setSettings] = useState({
-    showGrid: true,
-    showMeasurements: true,
-    showTrajectory: true,
-    ballSize: 8,
-    trajectoryThickness: 3,
-    showShadows: true,
-    show3DEffect: true,
-    measurementUnit: 'metric',
-    pitchType: 'hard',
-    showBoundary: true,
-  });
+const PitchMap = ({
+  onSelectPitch,
+  selectedPitch = null,
+  historicalPitches = [],
+  readOnly = false,
+  width = 300,
+  height = 360,
+  isDarkMode = false,
+  title = "",
+}) => {
+  const [pitchPoint, setPitchPoint] = useState(selectedPitch?.coordinates || null);
+  const [ballData, setBallData] = useState(selectedPitch || null);
 
-  const calculateBallData = (pitchPos, shotPos) => {
-    // Convert screen coordinates to cricket pitch measurements
-    const pitchLength = 22; // yards
-    const pitchWidth = 10; // feet
-    
-    // Calculate pitch impact position (relative to pitch dimensions)
-    const pitchTopY = vanishingPointY;
-    const pitchBottomY = screenHeight * 0.9;
-    const pitchLeftX = screenWidth * 0.3;
-    const pitchRightX = screenWidth * 0.7;
-    
-    // Normalize pitch position (0-1 scale)
-    const normalizedX = (pitchPos.x - pitchLeftX) / (pitchRightX - pitchLeftX);
-    const normalizedY = (pitchPos.y - pitchTopY) / (pitchBottomY - pitchTopY);
-    
-    // Convert to cricket measurements
-    const impactFromStumps = normalizedY * pitchLength; // yards from bowler's end
-    const impactFromCenter = (normalizedX - 0.5) * pitchWidth; // feet from center line
-    
-    // Calculate ball height after bounce
-    const bounceHeight = Math.abs(pitchPos.y - shotPos.y);
-    const maxScreenHeight = screenHeight * 0.6; // Maximum possible height on screen
-    const normalizedHeight = bounceHeight / maxScreenHeight;
-    const ballHeightFeet = normalizedHeight * 8; // Max realistic ball height ~8 feet
-    
-    // Calculate bounce angle and distance
-    const horizontalDistance = Math.abs(shotPos.x - pitchPos.x);
-    const bounceDistance = Math.sqrt(horizontalDistance * horizontalDistance + bounceHeight * bounceHeight);
-    const bounceAngle = Math.atan2(bounceHeight, horizontalDistance) * (180 / Math.PI);
-    
+  useEffect(() => {
+    if (selectedPitch) {
+      setPitchPoint(selectedPitch.coordinates || selectedPitch.rawCoordinates || null);
+      setBallData(selectedPitch);
+    } else if (selectedPitch === null && !readOnly) {
+      setPitchPoint(null);
+      setBallData(null);
+    }
+  }, [selectedPitch, readOnly]);
+
+  // Pitch coordinate boundaries in SVG
+  const pitchLeft = width * 0.22;
+  const pitchRight = width * 0.78;
+  const pitchTop = height * 0.12; // Bowler's end
+  const pitchBottom = height * 0.86; // Batsman's end
+  const pitchWidth = pitchRight - pitchLeft;
+  const pitchHeight = pitchBottom - pitchTop;
+
+  // Length calculation (22 yards pitch)
+  const calculatePitchData = (x, y) => {
+    // Normalization (0 to 1 inside pitch)
+    const normX = Math.max(0, Math.min(1, (x - pitchLeft) / pitchWidth));
+    // 0 is batsman end (bottom), 1 is bowler end (top)
+    const normY = Math.max(0, Math.min(1, (pitchBottom - y) / pitchHeight));
+
+    const yardsFromStumps = (normY * 22).toFixed(1);
+    // Line: -5 to +5 feet from center
+    const feetFromCenter = ((normX - 0.5) * 10).toFixed(1);
+
+    let lengthZone = "Good Length";
+    if (yardsFromStumps <= 2) lengthZone = "Yorker";
+    else if (yardsFromStumps <= 4.5) lengthZone = "Full";
+    else if (yardsFromStumps <= 7.5) lengthZone = "Good Length";
+    else if (yardsFromStumps <= 11) lengthZone = "Short";
+    else lengthZone = "Bouncer";
+
+    let lineZone = "Middle";
+    if (feetFromCenter < -1.8) lineZone = "Outside Off";
+    else if (feetFromCenter < -0.6) lineZone = "Off Stump";
+    else if (feetFromCenter <= 0.6) lineZone = "Middle Stump";
+    else if (feetFromCenter <= 1.8) lineZone = "Leg Stump";
+    else lineZone = "Down Leg";
+
     return {
+      coordinates: { x: Math.round(x), y: Math.round(y) },
       impactPoint: {
-        fromStumps: impactFromStumps.toFixed(1),
-        fromCenter: impactFromCenter.toFixed(1),
-        coordinates: { x: normalizedX.toFixed(2), y: normalizedY.toFixed(2) }
+        fromStumps: yardsFromStumps,
+        fromCenter: feetFromCenter,
+        lengthZone,
+        lineZone,
       },
-      ballHeight: {
-        feet: ballHeightFeet.toFixed(1),
-        meters: (ballHeightFeet * 0.3048).toFixed(2)
-      },
-      bounceData: {
-        angle: bounceAngle.toFixed(1),
-        distance: (bounceDistance / 50).toFixed(1) // Normalized distance
-      }
+      lengthZone,
+      lineZone,
+      timestamp: Date.now(),
     };
   };
 
   const handleTouch = (event) => {
+    if (readOnly) return;
     const { locationX, locationY } = event.nativeEvent;
-    
-    if (!pitchPoint) {
-      setPitchPoint({ x: locationX, y: locationY });
-      setShowTrajectory(true);
-    } else if (!shotPoint) {
-      const newShotPoint = { x: locationX, y: locationY };
-      setShotPoint(newShotPoint);
-      
-      // Calculate ball data
-      const data = calculateBallData(pitchPoint, newShotPoint);
-      setBallData(data);
-      
-      // Log the data for external use
-      console.log('Ball Impact Data:', {
-        timestamp: new Date().toISOString(),
-        pitchImpact: {
-          screenCoordinates: { x: pitchPoint.x, y: pitchPoint.y },
-          cricketMeasurements: {
-            yardsFromStumps: data.impactPoint.fromStumps,
-            feetFromCenter: data.impactPoint.fromCenter,
-            normalizedPosition: data.impactPoint.coordinates
-          }
-        },
-        ballHeight: {
-          afterBounce: {
-            feet: data.ballHeight.feet,
-            meters: data.ballHeight.meters
-          },
-          bounceAngle: data.bounceData.angle,
-          bounceDistance: data.bounceData.distance
-        },
-        shotPoint: {
-          screenCoordinates: { x: newShotPoint.x, y: newShotPoint.y }
-        }
-      });
-    } else {
-      setPitchPoint({ x: locationX, y: locationY });
-      setShotPoint(null);
-      setBallData(null);
-      setShowTrajectory(true);
+
+    // Confine touch to pitch rect with padding
+    if (
+      locationX < pitchLeft - 10 ||
+      locationX > pitchRight + 10 ||
+      locationY < pitchTop - 10 ||
+      locationY > pitchBottom + 10
+    ) {
+      return;
     }
+
+    const clampedX = Math.max(pitchLeft, Math.min(pitchRight, locationX));
+    const clampedY = Math.max(pitchTop, Math.min(pitchBottom, locationY));
+
+    const data = calculatePitchData(clampedX, clampedY);
+    setPitchPoint({ x: clampedX, y: clampedY });
+    setBallData(data);
+    onSelectPitch?.(data);
   };
 
-  const clearAll = () => {
+  const clearPitch = () => {
     setPitchPoint(null);
-    setShotPoint(null);
-    setShowTrajectory(false);
     setBallData(null);
+    onSelectPitch?.(null);
   };
 
-  // 3D Perspective calculations
-  const perspective = 0.6;
-  const vanishingPointY = screenHeight * 0.2;
-  
-  // 3D Pitch coordinates (perspective view)
-  const pitchTop = {
-    left: { x: screenWidth * 0.3, y: vanishingPointY },
-    right: { x: screenWidth * 0.7, y: vanishingPointY }
-  };
-  
-  const pitchBottom = {
-    left: { x: screenWidth * 0.1, y: screenHeight * 0.9 },
-    right: { x: screenWidth * 0.9, y: screenHeight * 0.9 }
-  };
+  // Convert yards from stumps & feet from center back to SVG coordinates for historical points
+  const getCoordinatesFromData = (item) => {
+    const coords = item.coordinates || item.rawCoordinates || item.pitchMap?.coordinates;
+    if (coords && coords.x && coords.y) {
+      return coords;
+    }
+    const fromStumps = Number(item.impactPoint?.fromStumps ?? item.pitchMap?.impactPoint?.fromStumps ?? 6);
+    const fromCenter = Number(item.impactPoint?.fromCenter ?? item.pitchMap?.impactPoint?.fromCenter ?? 0);
 
-  // Bowler position (far end, smaller due to perspective)
-  const bowlerPos = { x: screenWidth / 2, y: vanishingPointY + 20 };
-  
-  // Batsman position (near end, larger)
-  const batsmanPos = { x: screenWidth / 2, y: screenHeight * 0.8 };
+    const normY = fromStumps / 22;
+    const normX = fromCenter / 10 + 0.5;
+
+    return {
+      x: pitchLeft + normX * pitchWidth,
+      y: pitchBottom - normY * pitchHeight,
+    };
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden />
-      
-      <TouchableOpacity 
-        style={styles.fullScreenTouch}
+      {title ? (
+        <Text style={[styles.titleText, { color: isDarkMode ? "#F8FAFC" : "#0F172A" }]}>
+          {title}
+        </Text>
+      ) : null}
+
+      <TouchableOpacity
+        style={[
+          styles.pitchWrapper,
+          {
+            width,
+            height,
+            backgroundColor: isDarkMode ? "#092e20" : "#1e4e38",
+            borderColor: isDarkMode ? "#334155" : "#15803D",
+          },
+        ]}
         onPress={handleTouch}
-        activeOpacity={1}
+        activeOpacity={readOnly ? 1 : 0.9}
       >
-        <Svg width={screenWidth} height={screenHeight} style={styles.svg}>
+        <Svg width={width} height={height} style={styles.svg}>
           <Defs>
-            {/* Sky gradient */}
-            <LinearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="#87CEEB" />
-              <Stop offset="100%" stopColor="#E0F6FF" />
-            </LinearGradient>
-            
-            {/* Field gradient with 3D effect */}
-            <LinearGradient id="fieldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="#228B22" />
-              <Stop offset="50%" stopColor="#32CD32" />
-              <Stop offset="100%" stopColor="#006400" />
-            </LinearGradient>
-            
-            {/* Pitch gradient */}
-            <LinearGradient id="pitchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="#DEB887" />
-              <Stop offset="50%" stopColor="#D2B48C" />
-              <Stop offset="100%" stopColor="#A0522D" />
+            <LinearGradient id="pitchGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor="#d2b48c" />
+              <Stop offset="50%" stopColor="#e5c29f" />
+              <Stop offset="100%" stopColor="#d2b48c" />
             </LinearGradient>
           </Defs>
-          
-          {/* Sky Background */}
+
+          {/* Grass Field Background */}
+          <Rect x="0" y="0" width={width} height={height} fill={isDarkMode ? "#0b3323" : "#245a41"} />
+
+          {/* Cricket Pitch Strip */}
           <Rect
-            x="0"
-            y="0"
-            width={screenWidth}
-            height={screenHeight * 0.3}
-            fill="url(#skyGradient)"
-          />
-          
-          {/* 3D Cricket Field */}
-          <Path
-            d={`M 0 ${screenHeight * 0.3}
-                L 0 ${screenHeight}
-                L ${screenWidth} ${screenHeight}
-                L ${screenWidth} ${screenHeight * 0.3}
-                L ${screenWidth * 0.8} ${vanishingPointY}
-                L ${screenWidth * 0.2} ${vanishingPointY}
-                Z`}
-            fill="url(#fieldGradient)"
-          />
-          
-          {/* 3D Cricket Pitch (perspective trapezoid) */}
-          <Path
-            d={`M ${pitchTop.left.x} ${pitchTop.left.y}
-                L ${pitchTop.right.x} ${pitchTop.right.y}
-                L ${pitchBottom.right.x} ${pitchBottom.right.y}
-                L ${pitchBottom.left.x} ${pitchBottom.left.y}
-                Z`}
-            fill="url(#pitchGradient)"
+            x={pitchLeft}
+            y={pitchTop}
+            width={pitchWidth}
+            height={pitchHeight}
+            fill="url(#pitchGrad)"
             stroke="#8B4513"
-            strokeWidth="2"
+            strokeWidth="1.5"
+            rx={4}
           />
-          
-          {/* 3D Pitch Lines */}
-          {/* Bowling crease (far end) */}
+
+          {/* Length Section Lines & Indicators (from Batsman end upwards) */}
+          {/* Yorker Line (2y) */}
           <Line
-            x1={pitchTop.left.x + 20}
-            y1={pitchTop.left.y + 5}
-            x2={pitchTop.right.x - 20}
-            y2={pitchTop.right.y + 5}
-            stroke="#FFFFFF"
-            strokeWidth="2"
-          />
-          
-          {/* Batting crease (near end) */}
-          <Line
-            x1={pitchBottom.left.x + 50}
-            y1={pitchBottom.left.y - 20}
-            x2={pitchBottom.right.x - 50}
-            y2={pitchBottom.right.y - 20}
-            stroke="#FFFFFF"
-            strokeWidth="3"
-          />
-          
-          {/* Popping creases */}
-          <Line
-            x1={pitchTop.left.x + 15}
-            y1={pitchTop.left.y + 15}
-            x2={pitchTop.right.x - 15}
-            y2={pitchTop.right.y + 15}
-            stroke="#FFFFFF"
+            x1={pitchLeft}
+            y1={pitchBottom - (2 / 22) * pitchHeight}
+            x2={pitchRight}
+            y2={pitchBottom - (2 / 22) * pitchHeight}
+            stroke="#3B82F677"
             strokeWidth="1"
+            strokeDasharray="3,3"
           />
+          {/* Full Line (4.5y) */}
           <Line
-            x1={pitchBottom.left.x + 40}
-            y1={pitchBottom.left.y - 40}
-            x2={pitchBottom.right.x - 40}
-            y2={pitchBottom.right.y - 40}
+            x1={pitchLeft}
+            y1={pitchBottom - (4.5 / 22) * pitchHeight}
+            x2={pitchRight}
+            y2={pitchBottom - (4.5 / 22) * pitchHeight}
+            stroke="#06B6D477"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+          />
+          {/* Good Length Line (7.5y) */}
+          <Line
+            x1={pitchLeft}
+            y1={pitchBottom - (7.5 / 22) * pitchHeight}
+            x2={pitchRight}
+            y2={pitchBottom - (7.5 / 22) * pitchHeight}
+            stroke="#10B98177"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+          />
+          {/* Short Line (11y) */}
+          <Line
+            x1={pitchLeft}
+            y1={pitchBottom - (11 / 22) * pitchHeight}
+            x2={pitchRight}
+            y2={pitchBottom - (11 / 22) * pitchHeight}
+            stroke="#F59E0B77"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+          />
+
+          {/* Bowler End Crease (Top) */}
+          <Line
+            x1={pitchLeft + 4}
+            y1={pitchTop + 14}
+            x2={pitchRight - 4}
+            y2={pitchTop + 14}
             stroke="#FFFFFF"
             strokeWidth="2"
           />
-          
-          {/* 3D Stumps - Bowler's End (smaller, perspective) */}
+          {/* Bowler End Stumps */}
           <G>
-            <Rect x={bowlerPos.x - 6} y={bowlerPos.y + 10} width="2" height="8" fill="#FFFFFF" />
-            <Rect x={bowlerPos.x - 2} y={bowlerPos.y + 10} width="2" height="8" fill="#FFFFFF" />
-            <Rect x={bowlerPos.x + 2} y={bowlerPos.y + 10} width="2" height="8" fill="#FFFFFF" />
-            <Line x1={bowlerPos.x - 6} y1={bowlerPos.y + 10} x2={bowlerPos.x + 4} y2={bowlerPos.y + 10} stroke="#8B4513" strokeWidth="1" />
+            <Rect x={width / 2 - 8} y={pitchTop + 6} width="3" height="8" fill="#FFFFFF" />
+            <Rect x={width / 2 - 1.5} y={pitchTop + 6} width="3" height="8" fill="#FFFFFF" />
+            <Rect x={width / 2 + 5} y={pitchTop + 6} width="3" height="8" fill="#FFFFFF" />
           </G>
-          
-          {/* 3D Stumps - Batsman's End (larger, closer) */}
+          <SvgText
+            x={width / 2}
+            y={pitchTop - 4}
+            fill="#CBD5E1"
+            fontSize="9"
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            BOWLER END
+          </SvgText>
+
+          {/* Center Guide Line */}
+          <Line
+            x1={width / 2}
+            y1={pitchTop}
+            x2={width / 2}
+            y2={pitchBottom}
+            stroke="#A0522D55"
+            strokeWidth="1"
+            strokeDasharray="4,4"
+          />
+
+          {/* Batsman End Crease (Popping Crease) */}
+          <Line
+            x1={pitchLeft + 4}
+            y1={pitchBottom - 20}
+            x2={pitchRight - 4}
+            y2={pitchBottom - 20}
+            stroke="#FFFFFF"
+            strokeWidth="2.5"
+          />
+          {/* Batsman End Stumps */}
           <G>
-            <Rect x={batsmanPos.x - 12} y={batsmanPos.y - 10} width="4" height="15" fill="#FFFFFF" />
-            <Rect x={batsmanPos.x - 4} y={batsmanPos.y - 10} width="4" height="15" fill="#FFFFFF" />
-            <Rect x={batsmanPos.x + 4} y={batsmanPos.y - 10} width="4" height="15" fill="#FFFFFF" />
-            <Line x1={batsmanPos.x - 12} y1={batsmanPos.y - 10} x2={batsmanPos.x + 8} y2={batsmanPos.y - 10} stroke="#8B4513" strokeWidth="2" />
+            <Rect x={width / 2 - 9} y={pitchBottom - 8} width="4" height="10" fill="#FFFFFF" />
+            <Rect x={width / 2 - 2} y={pitchBottom - 8} width="4" height="10" fill="#FFFFFF" />
+            <Rect x={width / 2 + 5} y={pitchBottom - 8} width="4" height="10" fill="#FFFFFF" />
           </G>
-          
-          {/* 3D Bowler Figure (smaller, distant) */}
-          <G>
-            {/* Shadow */}
-            <Ellipse cx={bowlerPos.x + 2} cy={bowlerPos.y + 35} rx="8" ry="4" fill="rgba(0,0,0,0.3)" />
-            {/* Body */}
-            <Ellipse cx={bowlerPos.x} cy={bowlerPos.y + 25} rx="5" ry="12" fill="#FF6B35" />
-            {/* Head */}
-            <Circle cx={bowlerPos.x} cy={bowlerPos.y + 8} r="5" fill="#FFDBAC" />
-            {/* Arms in bowling action */}
-            <Path d={`M ${bowlerPos.x - 8} ${bowlerPos.y + 20} Q ${bowlerPos.x + 5} ${bowlerPos.y + 15} ${bowlerPos.x + 12} ${bowlerPos.y + 25}`} 
-                  fill="none" stroke="#FFDBAC" strokeWidth="3" />
-            {/* Legs */}
-            <Line x1={bowlerPos.x - 3} y1={bowlerPos.y + 37} x2={bowlerPos.x - 5} y2={bowlerPos.y + 45} stroke="#FFDBAC" strokeWidth="3" />
-            <Line x1={bowlerPos.x + 3} y1={bowlerPos.y + 37} x2={bowlerPos.x + 8} y2={bowlerPos.y + 42} stroke="#FFDBAC" strokeWidth="3" />
-          </G>
-          
-          {/* 3D Batsman Figure (larger, closer) */}
-          <G>
-            {/* Shadow */}
-            <Ellipse cx={batsmanPos.x + 3} cy={batsmanPos.y + 25} rx="15" ry="8" fill="rgba(0,0,0,0.4)" />
-            {/* Body */}
-            <Ellipse cx={batsmanPos.x} cy={batsmanPos.y - 5} rx="10" ry="25" fill="#4A90E2" />
-            {/* Head */}
-            <Circle cx={batsmanPos.x} cy={batsmanPos.y - 35} r="12" fill="#FFDBAC" />
-            {/* Helmet with 3D effect */}
-            <Path d={`M ${batsmanPos.x - 12} ${batsmanPos.y - 35} 
-                      A 12 12 0 0 1 ${batsmanPos.x + 12} ${batsmanPos.y - 35}
-                      L ${batsmanPos.x + 8} ${batsmanPos.y - 30}
-                      L ${batsmanPos.x - 8} ${batsmanPos.y - 30} Z`} 
-                  fill="#333" stroke="#555" strokeWidth="1" />
-            {/* Face guard */}
-            <Rect x={batsmanPos.x - 8} y={batsmanPos.y - 32} width="16" height="8" fill="none" stroke="#666" strokeWidth="1" />
-            
-            {/* Arms holding bat */}
-            <Line x1={batsmanPos.x - 15} y1={batsmanPos.y - 15} x2={batsmanPos.x + 20} y2={batsmanPos.y - 5} stroke="#FFDBAC" strokeWidth="6" />
-            
-            {/* Cricket Bat (3D effect) */}
-            <G>
-              <Rect x={batsmanPos.x + 20} y={batsmanPos.y - 10} width="6" height="35" fill="#D2691E" stroke="#8B4513" strokeWidth="1" />
-              <Rect x={batsmanPos.x + 20} y={batsmanPos.y + 25} width="6" height="12" fill="#654321" />
-              {/* Bat handle grip */}
-              <Rect x={batsmanPos.x + 21} y={batsmanPos.y + 25} width="4" height="8" fill="#000" />
-            </G>
-            
-            {/* Legs with 3D pads */}
-            <Line x1={batsmanPos.x - 8} y1={batsmanPos.y + 20} x2={batsmanPos.x - 12} y2={batsmanPos.y + 35} stroke="#FFDBAC" strokeWidth="6" />
-            <Line x1={batsmanPos.x + 8} y1={batsmanPos.y + 20} x2={batsmanPos.x + 12} y2={batsmanPos.y + 35} stroke="#FFDBAC" strokeWidth="6" />
-            
-            {/* 3D Pads */}
-            <Path d={`M ${batsmanPos.x - 18} ${batsmanPos.y + 5}
-                      L ${batsmanPos.x - 8} ${batsmanPos.y + 5}
-                      L ${batsmanPos.x - 8} ${batsmanPos.y + 25}
-                      L ${batsmanPos.x - 20} ${batsmanPos.y + 25}
-                      Z`} 
-                  fill="#FFFFFF" stroke="#DDD" strokeWidth="1" />
-            <Path d={`M ${batsmanPos.x + 8} ${batsmanPos.y + 5}
-                      L ${batsmanPos.x + 18} ${batsmanPos.y + 5}
-                      L ${batsmanPos.x + 20} ${batsmanPos.y + 25}
-                      L ${batsmanPos.x + 8} ${batsmanPos.y + 25}
-                      Z`} 
-                  fill="#FFFFFF" stroke="#DDD" strokeWidth="1" />
-          </G>
-          
-          {/* 3D Ball Trajectory */}
-          {showTrajectory && pitchPoint && (
-            <G>
-              {/* Ball path from bowler to pitch point (3D arc) */}
-              <Path
-                d={`M ${bowlerPos.x} ${bowlerPos.y + 40} 
-                    Q ${(bowlerPos.x + pitchPoint.x) / 2} ${(bowlerPos.y + pitchPoint.y) / 2 - 40} 
-                    ${pitchPoint.x} ${pitchPoint.y}`}
-                fill="none"
-                stroke="#FF4444"
-                strokeWidth="4"
-                strokeDasharray="10,5"
-              />
-              
-              {/* 3D Ball at pitch point */}
-              <G>
-                <Circle cx={pitchPoint.x + 2} cy={pitchPoint.y + 2} r="8" fill="rgba(255,0,0,0.3)" />
-                <Circle cx={pitchPoint.x} cy={pitchPoint.y} r="8" fill="#FF0000" stroke="#FFFFFF" strokeWidth="2" />
-                <Circle cx={pitchPoint.x - 2} cy={pitchPoint.y - 2} r="3" fill="#FF6666" />
-                
-                {/* Impact point crosshair */}
-                <Line x1={pitchPoint.x - 15} y1={pitchPoint.y} x2={pitchPoint.x + 15} y2={pitchPoint.y} 
-                      stroke="#FFFF00" strokeWidth="2" />
-                <Line x1={pitchPoint.x} y1={pitchPoint.y - 15} x2={pitchPoint.x} y2={pitchPoint.y + 15} 
-                      stroke="#FFFF00" strokeWidth="2" />
+          <SvgText
+            x={width / 2}
+            y={pitchBottom + 16}
+            fill="#CBD5E1"
+            fontSize="9"
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            BATSMAN END
+          </SvgText>
+
+          {/* Historical Delivery Dots */}
+          {(historicalPitches || []).map((hp, idx) => {
+            const pt = getCoordinatesFromData(hp);
+            const fromStumps = hp.impactPoint?.fromStumps ?? hp.pitchMap?.impactPoint?.fromStumps ?? 6;
+            const dotColor = getPitchLengthColor(fromStumps);
+            return (
+              <G key={`hist-pitch-${idx}`}>
+                <Circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r="5"
+                  fill={dotColor}
+                  stroke="#FFFFFF"
+                  strokeWidth="1"
+                  opacity="0.9"
+                />
               </G>
-              
-              {/* Ball path from pitch to shot point */}
-              {shotPoint && (
-                <>
-                  <Path
-                    d={`M ${pitchPoint.x} ${pitchPoint.y} 
-                        Q ${(pitchPoint.x + shotPoint.x) / 2} ${(pitchPoint.y + shotPoint.y) / 2 - 30} 
-                        ${shotPoint.x} ${shotPoint.y}`}
-                    fill="none"
-                    stroke="#00FF00"
-                    strokeWidth="4"
-                    strokeDasharray="10,5"
-                  />
-                  
-                  {/* 3D Ball at shot point */}
-                  <G>
-                    <Circle cx={shotPoint.x + 2} cy={shotPoint.y + 2} r="8" fill="rgba(0,255,0,0.3)" />
-                    <Circle cx={shotPoint.x} cy={shotPoint.y} r="8" fill="#00FF00" stroke="#FFFFFF" strokeWidth="2" />
-                    <Circle cx={shotPoint.x - 2} cy={shotPoint.y - 2} r="3" fill="#66FF66" />
-                    
-                    {/* Height indicator line */}
-                    <Line x1={pitchPoint.x} y1={pitchPoint.y} x2={shotPoint.x} y2={shotPoint.y} 
-                          stroke="#00FFFF" strokeWidth="2" strokeDasharray="3,3" />
-                    
-                    {/* Height measurement arc */}
-                    <Path d={`M ${pitchPoint.x} ${pitchPoint.y} Q ${(pitchPoint.x + shotPoint.x) / 2} ${Math.min(pitchPoint.y, shotPoint.y) - 20} ${shotPoint.x} ${shotPoint.y}`}
-                          fill="none" stroke="#FFFF00" strokeWidth="1" strokeDasharray="2,2" />
-                  </G>
-                </>
-              )}
-            </G>
-          )}
-          
-          {/* 3D Instructions Panel */}
-          <G>
-            <Path d="M 15 15 L 220 15 L 215 75 L 10 75 Z" fill="rgba(0,0,0,0.8)" />
-            <Text x="25" y="35" fill="#FFFFFF" fontSize="16" fontWeight="bold">
-              {!pitchPoint ? "Tap where ball pitches" : 
-               !shotPoint ? "Tap where batsman hits" : 
-               "Tap for new ball"}
-            </Text>
-            <Text x="25" y="55" fill="#FFFF00" fontSize="12">
-              🔴 Ball pitch | 🟢 Shot direction
-            </Text>
-          </G>
-          
-          {/* Ball Data Panel */}
-          {ballData && (
+            );
+          })}
+
+          {/* Currently Selected Pitch Point */}
+          {pitchPoint && (
             <G>
-              <Path d={`M ${screenWidth - 250} 15 L ${screenWidth - 15} 15 L ${screenWidth - 20} 140 L ${screenWidth - 255} 140 Z`} 
-                    fill="rgba(0,50,100,0.9)" stroke="#00AAFF" strokeWidth="2" />
-              
-              <Text x={screenWidth - 240} y="35" fill="#FFFFFF" fontSize="14" fontWeight="bold">
-                📊 BALL DATA
-              </Text>
-              
-              <Text x={screenWidth - 240} y="55" fill="#FFFF00" fontSize="12" fontWeight="bold">
-                IMPACT POINT:
-              </Text>
-              <Text x={screenWidth - 240} y="70" fill="#FFFFFF" fontSize="11">
-                {ballData.impactPoint.fromStumps}y from stumps
-              </Text>
-              <Text x={screenWidth - 240} y="85" fill="#FFFFFF" fontSize="11">
-                {ballData.impactPoint.fromCenter}ft from center
-              </Text>
-              
-              <Text x={screenWidth - 240} y="105" fill="#00FF00" fontSize="12" fontWeight="bold">
-                BALL HEIGHT:
-              </Text>
-              <Text x={screenWidth - 240} y="120" fill="#FFFFFF" fontSize="11">
-                {ballData.ballHeight.feet}ft ({ballData.ballHeight.meters}m)
-              </Text>
-              
-              <Text x={screenWidth - 240} y="135" fill="#FF6666" fontSize="10">
-                Angle: {ballData.bounceData.angle}°
-              </Text>
+              {/* Target Rings */}
+              <Circle
+                cx={pitchPoint.x}
+                cy={pitchPoint.y}
+                r="14"
+                fill="none"
+                stroke="#EF4444"
+                strokeWidth="2"
+                strokeDasharray="4,2"
+              />
+              <Circle
+                cx={pitchPoint.x}
+                cy={pitchPoint.y}
+                r="7"
+                fill="#EF4444"
+                stroke="#FFFFFF"
+                strokeWidth="2"
+              />
+              <Circle cx={pitchPoint.x} cy={pitchPoint.y} r="2.5" fill="#FFFFFF" />
             </G>
           )}
         </Svg>
       </TouchableOpacity>
-      
-      {/* 3D Clear Button */}
-      <TouchableOpacity style={styles.clearButton} onPress={clearAll}>
-        <Text style={styles.clearButtonText}>CLEAR</Text>
-      </TouchableOpacity>
+
+      {/* Touch prompt / Pitch Info Row */}
+      {!readOnly && (
+        <View style={styles.infoRow}>
+          <Text
+            style={[
+              styles.infoLabel,
+              { color: isDarkMode ? "#E2E8F0" : "#334155" },
+            ]}
+          >
+            {ballData?.lengthZone
+              ? `🎯 ${ballData.lengthZone} • ${ballData.lineZone} (${ballData.impactPoint.fromStumps}y)`
+              : "👆 Tap where the delivery pitched"}
+          </Text>
+          {pitchPoint && (
+            <TouchableOpacity
+              onPress={clearPitch}
+              style={styles.clearMiniBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearMiniBtnText}>Clear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Legend for Length Zones */}
+      <View style={styles.legendContainer}>
+        {LENGTH_ZONES.map((zone) => (
+          <View key={zone.name} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: zone.color }]} />
+            <Text
+              style={[
+                styles.legendText,
+                { color: isDarkMode ? "#94A3B8" : "#64748B" },
+              ]}
+            >
+              {zone.name}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#000',
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
   },
-  fullScreenTouch: {
-    flex: 1,
+  titleText: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  pitchWrapper: {
+    borderRadius: 12,
+    borderWidth: 1.5,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   svg: {
+    alignSelf: "center",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  infoLabel: {
+    fontSize: 13,
+    fontWeight: "600",
     flex: 1,
   },
-  clearButton: {
-    position: 'absolute',
-    top: 90,
-    right: 20,
-    backgroundColor: 'rgba(231, 76, 60, 0.9)',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+  clearMiniBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#FEE2E2",
   },
-  clearButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
+  clearMiniBtnText: {
+    fontSize: 11,
+    color: "#DC2626",
+    fontWeight: "700",
+  },
+  legendContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 10,
+    flexWrap: "wrap",
+    paddingHorizontal: 8,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: "500",
   },
 });
 

@@ -1,270 +1,546 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, PanResponder, TouchableOpacity } from 'react-native';
-import Svg, { Circle, Path, G, Text as SvgText, Line, Rect } from 'react-native-svg';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  PanResponder,
+  TouchableOpacity,
+  ScrollView,
+} from "react-native";
+import Svg, {
+  Circle,
+  Path,
+  G,
+  Text as SvgText,
+  Line,
+  Rect,
+} from "react-native-svg";
 
-const WagonWheel = () => {
-  const [currentShot, setCurrentShot] = useState(null);
+export const ZONES = [
+  { id: 1, name: "Deep Mid Wicket", shortName: "Mid Wkt", color: "#FF6B6B", startAngle: 0, endAngle: 45 },
+  { id: 2, name: "Long On", shortName: "Long On", color: "#4ECDC4", startAngle: 45, endAngle: 90 },
+  { id: 3, name: "Long Off", shortName: "Long Off", color: "#FFE66D", startAngle: 90, endAngle: 135 },
+  { id: 4, name: "Deep Cover", shortName: "Cover", color: "#1A535C", startAngle: 135, endAngle: 180 },
+  { id: 5, name: "Deep Point", shortName: "Point", color: "#FF9F1C", startAngle: 180, endAngle: 225 },
+  { id: 6, name: "Third Man", shortName: "Third Man", color: "#8B5CF6", startAngle: 225, endAngle: 270 },
+  { id: 7, name: "Deep Fine Leg", shortName: "Fine Leg", color: "#EC4899", startAngle: 270, endAngle: 315 },
+  { id: 8, name: "Deep Square Leg", shortName: "Sq Leg", color: "#10B981", startAngle: 315, endAngle: 360 },
+];
+
+export const getShotColor = (shot = {}) => {
+  if (shot.isWicket || shot.wagonWheel?.isWicket) return "#EF4444"; // Red for out
+  const runs = Number(shot.runs ?? shot.wagonWheel?.runs ?? 0);
+  if (runs >= 6) return "#A855F7"; // Purple for 6
+  if (runs >= 4) return "#10B981"; // Green for 4
+  if (runs > 0) return "#3B82F6";  // Blue for 1, 2, 3
+  return "#94A3B8";               // Slate for dot
+};
+
+const WagonWheel = ({
+  onSelectShot,
+  selectedShot = null,
+  historicalShots = [],
+  readOnly = false,
+  size = 280,
+  showLegend = true,
+  showZoneStats = false,
+  isDarkMode = false,
+  title = "",
+  runs = 0,
+  isBoundary = false,
+  isWicket = false,
+}) => {
+  const [currentShot, setCurrentShot] = useState(selectedShot);
   const [lastTouch, setLastTouch] = useState(null);
 
-  // Define the 8 zones with correct cricket field positions
-  const zones = [
-    { id: 1, name: 'Deep Mid Wicket', color: '#FF6B6B', startAngle: 0, endAngle: 45 },
-  { id: 2, name: 'Long On', color: '#4ECDC4', startAngle: 45, endAngle: 90 },
-  { id: 3, name: 'Long Off', color: '#FFE66D', startAngle: 90, endAngle: 135 },
-  { id: 4, name: 'Deep Cover', color: '#1A535C', startAngle: 135, endAngle: 180 },
-  { id: 5, name: 'Deep Point', color: '#FF9F1C', startAngle: 180, endAngle: 225 },
-  { id: 6, name: 'Third Man', color: '#6A0572', startAngle: 225, endAngle: 270 },
-  { id: 7, name: 'Deep Fine Leg', color: '#AB83A1', startAngle: 270, endAngle: 315 },
-  { id: 8, name: 'Deep Square Leg', color: '#5FAD41', startAngle: 315, endAngle: 360 },
-  ];
+  useEffect(() => {
+    if (selectedShot) {
+      setCurrentShot(selectedShot);
+      const zone = ZONES.find((z) => z.id === selectedShot.zone);
+      if (zone) {
+        setLastTouch({ zone: zone.name, angle: selectedShot.angle });
+      }
+    } else if (selectedShot === null && !readOnly) {
+      setCurrentShot(null);
+      setLastTouch(null);
+    }
+  }, [selectedShot, readOnly]);
 
-  // Create pan responder to handle touch events
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: (evt, gestureState) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      handleTouch(locationX, locationY);
-    },
-    onPanResponderMove: (evt, gestureState) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      handleTouch(locationX, locationY);
-    },
-  });
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const radius = size / 2 - 10;
+  const innerCircleRadius = radius * 0.52; // 30 yard circle
 
-  const handleTouch = (x, y) => {
-    const centerX = 150;
-    const centerY = 150;
-    
-    // Calculate angle from center to touch point
+  const handleTouchCoord = (x, y) => {
+    if (readOnly) return;
     const dx = x - centerX;
     const dy = y - centerY;
-    let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
     if (angle < 0) angle += 360;
-    
-    // Calculate distance from center
+
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Find which zone was touched
-    const zone = zones.find(z => {
-      // Handle the wrap-around case for zones that cross 360°
+    if (distance > radius) return; // outside boundary
+
+    const zone = ZONES.find((z) => {
       if (z.startAngle > z.endAngle) {
         return angle >= z.startAngle || angle < z.endAngle;
       }
       return angle >= z.startAngle && angle < z.endAngle;
     });
-    
-    if (zone && distance <= 140) { // Only register touches within the wheel
-      setLastTouch({ x, y, zone: zone.name });
-      
-      // Set the current shot
-      setCurrentShot({
-        id: Date.now(),
+
+    if (zone) {
+      const shotData = {
         zone: zone.id,
-        angle: angle,
-        distance: distance,
+        zoneName: zone.name,
+        angle: Math.round(angle),
+        distance: Math.min(Math.round(distance), radius),
+        normalizedDistance: (distance / radius).toFixed(2),
+        x: Math.round(x),
+        y: Math.round(y),
+        runs: Number(runs || 0),
+        isBoundary: Boolean(isBoundary),
+        isWicket: Boolean(isWicket),
         timestamp: Date.now(),
-      });
+      };
+      setLastTouch({ x, y, zone: zone.name });
+      setCurrentShot(shotData);
+      onSelectShot?.(shotData);
     }
   };
+
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => !readOnly,
+    onMoveShouldSetPanResponder: () => !readOnly,
+    onPanResponderGrant: (evt) => {
+      const { locationX, locationY } = evt.nativeEvent;
+      handleTouchCoord(locationX, locationY);
+    },
+    onPanResponderMove: (evt) => {
+      const { locationX, locationY } = evt.nativeEvent;
+      handleTouchCoord(locationX, locationY);
+    },
+  });
 
   const clearShot = () => {
     setCurrentShot(null);
     setLastTouch(null);
+    onSelectShot?.(null);
   };
 
   const renderZone = (zone) => {
-    const centerX = 150;
-    const centerY = 150;
-    const radius = 140;
-    
-    // Calculate path for each zone
-    const startAngleRad = (zone.startAngle * Math.PI) / 180;
-    const endAngleRad = (zone.endAngle * Math.PI) / 180;
-    
-    const startX = centerX + radius * Math.cos(startAngleRad);
-    const startY = centerY + radius * Math.sin(startAngleRad);
-    
-    const endX = centerX + radius * Math.cos(endAngleRad);
-    const endY = centerY + radius * Math.sin(endAngleRad);
-    
-    const largeArcFlag = zone.endAngle - zone.startAngle <= 180 ? "0" : "1";
-    
-    const pathData = [
-      `M ${centerX} ${centerY}`,
-      `L ${startX} ${startY}`,
-      `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}`,
-      'Z'
-    ].join(' ');
+    const startRad = (zone.startAngle * Math.PI) / 180;
+    const endRad = (zone.endAngle * Math.PI) / 180;
+
+    const startX = centerX + radius * Math.cos(startRad);
+    const startY = centerY + radius * Math.sin(startRad);
+    const endX = centerX + radius * Math.cos(endRad);
+    const endY = centerY + radius * Math.sin(endRad);
+
+    const largeArc = zone.endAngle - zone.startAngle <= 180 ? "0" : "1";
+    const pathData = `M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
+
+    const isSelected = currentShot?.zone === zone.id;
+    const fillOpacity = isSelected ? "55" : "22";
+
+    const midAngle = ((zone.startAngle + zone.endAngle) / 2) * (Math.PI / 180);
+    const labelDist = radius * 0.76;
+    const labelX = centerX + labelDist * Math.cos(midAngle);
+    const labelY = centerY + labelDist * Math.sin(midAngle);
 
     return (
       <G key={zone.id}>
         <Path
           d={pathData}
-          fill={`${zone.color}80`} // 80 = 50% opacity
-          stroke="#FFF"
+          fill={`${zone.color}${fillOpacity}`}
+          stroke={isDarkMode ? "#334155" : "#E2E8F0"}
           strokeWidth="1"
         />
-        {/* Zone label */}
         <SvgText
-          x={centerX + (radius * 0.7) * Math.cos(((zone.startAngle + zone.endAngle) / 2) * Math.PI / 180)}
-          y={centerY + (radius * 0.7) * Math.sin(((zone.startAngle + zone.endAngle) / 2) * Math.PI / 180)}
-          fill="#000"
-          fontSize="10"
+          x={labelX}
+          y={labelY}
+          fill={isDarkMode ? "#CBD5E1" : "#1E293B"}
+          fontSize={size < 260 ? "8" : "9"}
           fontWeight="bold"
           textAnchor="middle"
         >
-          {zone.name}
+          {zone.shortName}
         </SvgText>
       </G>
     );
   };
 
-  const renderShotMarker = () => {
+  // Render historical shots
+  const renderHistoricalShots = () => {
+    if (!historicalShots || historicalShots.length === 0) return null;
+
+    return historicalShots.map((shot, idx) => {
+      const shotAngle = Number(shot.angle ?? shot.wagonWheel?.angle ?? 0);
+      const rawDist = Number(shot.distance ?? shot.wagonWheel?.distance ?? radius * 0.8);
+      // scale distance if needed
+      const scaleFactor = radius / 140; // original wheel was 140 radius
+      const shotDistance = Math.min(rawDist > 20 ? rawDist * (scaleFactor < 1 ? scaleFactor : 1) : rawDist, radius);
+
+      const rad = (shotAngle * Math.PI) / 180;
+      const shotX = centerX + shotDistance * Math.cos(rad);
+      const shotY = centerY + shotDistance * Math.sin(rad);
+      const color = getShotColor({ ...(shot.wagonWheel || {}), ...shot });
+
+      return (
+        <G key={`hist-${idx}`}>
+          <Line
+            x1={centerX}
+            y1={centerY}
+            x2={shotX}
+            y2={shotY}
+            stroke={color}
+            strokeWidth="1.8"
+            strokeOpacity="0.85"
+          />
+          <Circle
+            cx={shotX}
+            cy={shotY}
+            r="4.5"
+            fill={color}
+            stroke="#FFFFFF"
+            strokeWidth="1"
+          />
+        </G>
+      );
+    });
+  };
+
+  // Render currently selected shot
+  const renderCurrentShot = () => {
     if (!currentShot) return null;
-    
-    const centerX = 150;
-    const centerY = 150;
-    const shotDistance = Math.min(currentShot.distance, 130); // Limit to wheel radius
-    
-    const shotX = centerX + shotDistance * Math.cos(currentShot.angle * Math.PI / 180);
-    const shotY = centerY + shotDistance * Math.sin(currentShot.angle * Math.PI / 180);
-    
-    const zone = zones.find(z => z.id === currentShot.zone);
-    
+    const shotDist = Math.min(Number(currentShot.distance || radius * 0.85), radius);
+    const rad = (Number(currentShot.angle || 0) * Math.PI) / 180;
+    const shotX = centerX + shotDist * Math.cos(rad);
+    const shotY = centerY + shotDist * Math.sin(rad);
+
+    const zone = ZONES.find((z) => z.id === currentShot.zone);
+    const markerColor = zone ? zone.color : "#2563EB";
+
     return (
       <G>
-        {/* Line from center to shot point */}
         <Line
           x1={centerX}
           y1={centerY}
           x2={shotX}
           y2={shotY}
-          stroke={zone.color}
-          strokeWidth="2"
+          stroke="#EF4444"
+          strokeWidth="3.5"
+          strokeDasharray="4,2"
         />
-        {/* Circle at shot point */}
         <Circle
           cx={shotX}
           cy={shotY}
           r="8"
-          fill={zone.color}
-          stroke="#000"
-          strokeWidth="1"
+          fill="#EF4444"
+          stroke="#FFFFFF"
+          strokeWidth="2.5"
         />
+        <Circle cx={shotX} cy={shotY} r="3" fill="#FFFFFF" />
       </G>
     );
   };
 
-  const renderLastTouchIndicator = () => {
-    if (!lastTouch) return null;
-    
-    return (
-      <G>
-        {/* Zone label at touch point */}
-        <SvgText
-          x={lastTouch.x}
-          y={lastTouch.y - 15}
-          fill="#000"
-          fontSize="12"
-          fontWeight="bold"
-          textAnchor="middle"
-        >
-          {lastTouch.zone}
-        </SvgText>
-      </G>
+  // Compute zone statistics
+  const zoneStats = ZONES.map((zone) => {
+    const shotsInZone = (historicalShots || []).filter(
+      (s) => (s.wagonWheel?.zone || s.zone) === zone.id
     );
-  };
+    const runsInZone = shotsInZone.reduce(
+      (sum, s) => sum + Number(s.runs || s.wagonWheel?.runs || 0),
+      0
+    );
+    return {
+      ...zone,
+      count: shotsInZone.length,
+      runs: runsInZone,
+    };
+  });
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Cricket Wagon Wheel - Shot Direction</Text>
-      
-      <View style={styles.wheelContainer} {...panResponder.panHandlers}>
-        <Svg height="300" width="300">
-          {/* Draw pitch in the center (shorter) */}
-          <Rect x="145" y="110" width="10" height="80" fill="#8B4513" />
-          
-          {/* Draw zones */}
-          {zones.map(zone => renderZone(zone))}
-          
-          {/* Draw batsman position */}
-          <Circle cx="150" cy="150" r="8" fill="#000" />
-          
-          {/* Draw shot marker */}
-          {renderShotMarker()}
-          
-          {/* Draw last touch indicator */}
-          {renderLastTouchIndicator()}
+      {title ? (
+        <Text
+          style={[
+            styles.titleText,
+            { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+          ]}
+        >
+          {title}
+        </Text>
+      ) : null}
+
+      <View
+        style={[
+          styles.wheelWrapper,
+          {
+            width: size,
+            height: size,
+            backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
+            borderColor: isDarkMode ? "#334155" : "#E2E8F0",
+          },
+        ]}
+        {...(readOnly ? {} : panResponder.panHandlers)}
+      >
+        <Svg height={size} width={size}>
+          {/* Ground Outfield */}
+          <Circle
+            cx={centerX}
+            cy={centerY}
+            r={radius}
+            fill={isDarkMode ? "#14532D33" : "#DCFCE766"}
+            stroke={isDarkMode ? "#22C55E" : "#16A34A"}
+            strokeWidth="3"
+          />
+
+          {/* Zones */}
+          {ZONES.map((zone) => renderZone(zone))}
+
+          {/* 30 Yard Infield Circle */}
+          <Circle
+            cx={centerX}
+            cy={centerY}
+            r={innerCircleRadius}
+            fill="none"
+            stroke={isDarkMode ? "#64748B88" : "#94A3B888"}
+            strokeWidth="1.5"
+            strokeDasharray="4,4"
+          />
+
+          {/* Pitch Rect in Center */}
+          <Rect
+            x={centerX - size * 0.02}
+            y={centerY - size * 0.12}
+            width={size * 0.04}
+            height={size * 0.24}
+            fill="#B45309"
+            rx={2}
+          />
+
+          {/* Batsman Marker (Center) */}
+          <Circle cx={centerX} cy={centerY} r="6" fill="#1E293B" stroke="#FFFFFF" strokeWidth="1.5" />
+
+          {/* Historical Shots */}
+          {renderHistoricalShots()}
+
+          {/* Current Active Shot */}
+          {renderCurrentShot()}
         </Svg>
       </View>
 
-      <View style={styles.infoContainer}>
-        <Text style={styles.infoText}>
-          {lastTouch ? `Shot direction: ${lastTouch.zone}` : 'Touch the wheel to set shot direction'}
-        </Text>
-      </View>
+      {/* Touch prompt / Selected Zone Info */}
+      {!readOnly && (
+        <View style={styles.infoRow}>
+          <Text
+            style={[
+              styles.infoLabel,
+              { color: isDarkMode ? "#E2E8F0" : "#334155" },
+            ]}
+          >
+            {lastTouch?.zone
+              ? `🎯 Shot: ${lastTouch.zone}`
+              : "👆 Tap on field to mark shot direction"}
+          </Text>
+          {currentShot && (
+            <TouchableOpacity
+              onPress={clearShot}
+              style={styles.clearMiniBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearMiniBtnText}>Clear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
-      <View style={styles.controls}>
-        <TouchableOpacity style={styles.clearButton} onPress={clearShot}>
-          <Text style={styles.clearButtonText}>Clear Shot</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Legend */}
+      {showLegend && (
+        <View style={styles.legendContainer}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: "#A855F7" }]} />
+            <Text style={[styles.legendText, { color: isDarkMode ? "#94A3B8" : "#64748B" }]}>
+              6 Runs
+            </Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: "#10B981" }]} />
+            <Text style={[styles.legendText, { color: isDarkMode ? "#94A3B8" : "#64748B" }]}>
+              4 Runs
+            </Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: "#3B82F6" }]} />
+            <Text style={[styles.legendText, { color: isDarkMode ? "#94A3B8" : "#64748B" }]}>
+              1-3 Runs
+            </Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: "#EF4444" }]} />
+            <Text style={[styles.legendText, { color: isDarkMode ? "#94A3B8" : "#64748B" }]}>
+              Wicket
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Zone Statistics Breakdown (Optional) */}
+      {showZoneStats && (
+        <View
+          style={[
+            styles.statsCard,
+            {
+              backgroundColor: isDarkMode ? "#1E293B" : "#F8FAFC",
+              borderColor: isDarkMode ? "#334155" : "#E2E8F0",
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.statsTitle,
+              { color: isDarkMode ? "#F1F5F9" : "#0F172A" },
+            ]}
+          >
+            Zone Breakdown
+          </Text>
+          <View style={styles.statsGrid}>
+            {zoneStats.map((z) => (
+              <View key={z.id} style={styles.statCell}>
+                <View style={[styles.statDot, { backgroundColor: z.color }]} />
+                <Text
+                  style={[
+                    styles.statCellName,
+                    { color: isDarkMode ? "#94A3B8" : "#64748B" },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {z.shortName}
+                </Text>
+                <Text
+                  style={[
+                    styles.statCellValue,
+                    { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                  ]}
+                >
+                  {z.runs}r ({z.count})
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#333',
+  titleText: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
   },
-  wheelContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    borderRadius: 150,
-    width: 300,
-    height: 300,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  wheelWrapper: {
+    borderRadius: 200,
+    borderWidth: 1.5,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
   },
-  infoContainer: {
-    alignItems: 'center',
-    marginBottom: 15,
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingHorizontal: 12,
+    marginTop: 8,
   },
-  infoText: {
-    fontSize: 18,
-    marginBottom: 5,
-    color: '#333',
-    fontWeight: '500',
+  infoLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
-  controls: {
-    alignItems: 'center',
-    marginBottom: 20,
+  clearMiniBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#FEE2E2",
   },
-  clearButton: {
-    backgroundColor: '#e74c3c',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+  clearMiniBtnText: {
+    fontSize: 11,
+    color: "#DC2626",
+    fontWeight: "700",
   },
-  clearButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  legendContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 10,
+    flexWrap: "wrap",
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  statsCard: {
+    width: "100%",
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  statsTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 6,
+  },
+  statCell: {
+    width: "48%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  statDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statCellName: {
+    fontSize: 11,
+    fontWeight: "500",
+    flex: 1,
+  },
+  statCellValue: {
+    fontSize: 11,
+    fontWeight: "700",
   },
 });
 

@@ -41,6 +41,27 @@ export const isFacebookVideoUrl = (url) => {
   return /facebook\.com|fb\.watch/i.test(url);
 };
 
+export const isValidVideoUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  const clean = url.trim();
+  if (
+    !clean ||
+    clean === "null" ||
+    clean === "undefined" ||
+    clean === "false" ||
+    clean === "true" ||
+    clean === "[object Object]"
+  ) {
+    return false;
+  }
+  return (
+    clean.startsWith("http://") ||
+    clean.startsWith("https://") ||
+    clean.startsWith("rtmp://") ||
+    /^[a-zA-Z0-9_-]{11}$/.test(clean)
+  );
+};
+
 export default function MatchVideoPlayer({
   streamUrl,
   isDarkMode = false,
@@ -51,15 +72,20 @@ export default function MatchVideoPlayer({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
+  const isValid = useMemo(() => isValidVideoUrl(streamUrl), [streamUrl]);
+
   const youtubeVideoId = useMemo(
-    () => extractYouTubeVideoId(streamUrl),
-    [streamUrl]
+    () => (isValid ? extractYouTubeVideoId(streamUrl) : null),
+    [isValid, streamUrl]
   );
-  const isFb = useMemo(() => isFacebookVideoUrl(streamUrl), [streamUrl]);
+  const isFb = useMemo(
+    () => (isValid ? isFacebookVideoUrl(streamUrl) : false),
+    [isValid, streamUrl]
+  );
 
   // Construct WebView source with proper origin and baseUrl
   const webViewSource = useMemo(() => {
-    if (!streamUrl) return null;
+    if (!isValid || !streamUrl) return null;
 
     if (youtubeVideoId) {
       const html = `
@@ -124,7 +150,7 @@ export default function MatchVideoPlayer({
     return { uri: streamUrl };
   }, [streamUrl, youtubeVideoId, isFb]);
 
-  if (!streamUrl) return null;
+  if (!isValid || !streamUrl) return null;
 
   return (
     <View

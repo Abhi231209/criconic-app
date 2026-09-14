@@ -213,6 +213,8 @@ export const MatchSettingEnum = {
   SHOW_MATCH_PREVIEW: "showMatchPreview",
   SHOW_PARTNERSHIP: "showPartnership",
   SHOW_TOSS: "showToss",
+  RECORD_WAGON_WHEEL: "recordWagonWheel",
+  RECORD_PITCH_MAP: "recordPitchMap",
 };
 
 export const MatchSettings = {
@@ -220,6 +222,8 @@ export const MatchSettings = {
   [MatchSettingEnum.COUNT_NO_BALL_RUN]: "Count No Ball Run",
   [MatchSettingEnum.COUNT_WIDE_RUN]: "Count Wide Run",
   [MatchSettingEnum.SINGLE_BATSMAN_ALLOWED]: "Allow Single Batsman",
+  [MatchSettingEnum.RECORD_WAGON_WHEEL]: "Record Wagon Wheel",
+  [MatchSettingEnum.RECORD_PITCH_MAP]: "Record Pitch Map",
   [MatchSettingEnum.LIVE_STREAMING_LINK]: {
     label: "Live Streaming Link",
     placeholder: "Paste Youtube/Facebook Video Link...",

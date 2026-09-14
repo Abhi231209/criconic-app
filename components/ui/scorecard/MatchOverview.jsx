@@ -12,6 +12,7 @@ export default function MatchOverview({
   overs = "0.0 Ov", 
   crr, 
   projjectedScore,
+  matchTotalOver = 20,
   matchStatus = "Live", 
   result, 
   motm,
@@ -52,7 +53,17 @@ export default function MatchOverview({
   const crrText = (computedCrr && computedCrr !== "0.00")
     ? computedCrr
     : ((crr !== undefined && crr !== null && typeof crr !== "object") ? String(crr) : "");
-  const projText = (projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object") ? String(projjectedScore) : "";
+  
+  let projText = (projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object" && String(projjectedScore) !== "0" && String(projjectedScore) !== "-") 
+    ? String(projjectedScore) 
+    : "";
+  if (!projText && crrText && crrText !== "0.00" && matchStatus === "Live") {
+    const crrNum = parseFloat(crrText) || 0;
+    const totalMatchOvers = Number(matchTotalOver || 20);
+    if (crrNum > 0 && totalMatchOvers > 0) {
+      projText = String(Math.round(crrNum * totalMatchOvers));
+    }
+  }
 
   // Safe extraction of result
   const resultText = typeof result === "string" 

@@ -31,6 +31,10 @@ import QuickActions from "./QuickActions";
 import { useBottomSheet } from "../custom/CustomBottomSheet";
 import PitchMap from "./PitchMap";
 import OutOptions from "./OutOptions";
+import BallTrackerModal from "./BallTrackerModal";
+import WagonPitchViewerModal from "./WagonPitchViewerModal";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MatchSettingEnum } from "@/utils/Common";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
 
@@ -157,6 +161,72 @@ export default function ScorerScreen() {
 
   // Out Options Modal State
   const [showOutModal, setShowOutModal] = useState(false);
+
+  // Check-based Wagon Wheel & Pitch Map Tracking States
+  const [isWagonWheelChecked, setIsWagonWheelChecked] = useState(
+    route.params?.isWagonWheelEnabled !== undefined ? Boolean(route.params.isWagonWheelEnabled) : true
+  );
+  const [isPitchMapChecked, setIsPitchMapChecked] = useState(
+    route.params?.isPitchMapEnabled !== undefined ? Boolean(route.params.isPitchMapEnabled) : true
+  );
+  const [showBallTrackerModal, setShowBallTrackerModal] = useState(false);
+  const [pendingBallParams, setPendingBallParams] = useState(null);
+  const [showViewerModal, setShowViewerModal] = useState(false);
+  const [viewerInitialTab, setViewerInitialTab] = useState("wagon");
+  const [sessionDeliveries, setSessionDeliveries] = useState([]);
+
+  // Hydrate Wagon Wheel & Pitch Map checks from AsyncStorage, route params and match config
+  useEffect(() => {
+    if (!matchID) return;
+    (async () => {
+      try {
+        const storedWagon = await AsyncStorage.getItem(`@criconic_ww_${matchID}`);
+        const storedPitch = await AsyncStorage.getItem(`@criconic_pm_${matchID}`);
+        if (storedWagon !== null) {
+          setIsWagonWheelChecked(storedWagon === "true");
+        } else if (route.params?.isWagonWheelEnabled !== undefined) {
+          setIsWagonWheelChecked(Boolean(route.params.isWagonWheelEnabled));
+        } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
+          const ww = matchDetails.config.recordWagonWheel;
+          setIsWagonWheelChecked(typeof ww === "boolean" ? ww : !!ww?.active);
+        }
+        if (storedPitch !== null) {
+          setIsPitchMapChecked(storedPitch === "true");
+        } else if (route.params?.isPitchMapEnabled !== undefined) {
+          setIsPitchMapChecked(Boolean(route.params.isPitchMapEnabled));
+        } else if (matchDetails?.config?.recordPitchMap !== undefined) {
+          const pm = matchDetails.config.recordPitchMap;
+          setIsPitchMapChecked(typeof pm === "boolean" ? pm : !!pm?.active);
+        }
+      } catch (e) {
+        console.warn("[CHECK-BASE] Error hydrating checks:", e);
+      }
+    })();
+  }, [matchID, matchDetails?.config?.recordWagonWheel, matchDetails?.config?.recordPitchMap, route.params?.isWagonWheelEnabled, route.params?.isPitchMapEnabled]);
+
+  const toggleWagonWheelCheck = async () => {
+    const nextVal = !isWagonWheelChecked;
+    setIsWagonWheelChecked(nextVal);
+    try {
+      await AsyncStorage.setItem(`@criconic_ww_${matchID}`, String(nextVal));
+      request(`api/matches/${matchID}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_WAGON_WHEEL, data: nextVal },
+      }).catch(() => {});
+    } catch {}
+  };
+
+  const togglePitchMapCheck = async () => {
+    const nextVal = !isPitchMapChecked;
+    setIsPitchMapChecked(nextVal);
+    try {
+      await AsyncStorage.setItem(`@criconic_pm_${matchID}`, String(nextVal));
+      request(`api/matches/${matchID}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_PITCH_MAP, data: nextVal },
+      }).catch(() => {});
+    } catch {}
+  };
 
   // Strike Selection Modal State (Post-wicket flow)
   const [selectStrikerModalVisible, setSelectStrikerModalVisible] = useState(false);
@@ -1157,6 +1227,8 @@ export default function ScorerScreen() {
     actionBatsmen = null,
     canBatAgain = false,
     isStrikeEnd = undefined,
+    wagonWheel = null,
+    pitchMap = null,
   }) => {
     const latestScore = scoreRef.current || {};
 
@@ -1204,6 +1276,8 @@ export default function ScorerScreen() {
       actionBatsmen: actionBatsmen || (isWicket ? activeStriker : undefined),
       canBatAgain: Boolean(canBatAgain),
       dontCountTheball: dontCountTheball || ballType === "wide" || ballType === "no-ball",
+      ...(wagonWheel ? { wagonWheel } : {}),
+      ...(pitchMap ? { pitchMap } : {}),
     };
 
     if (isStrikeEnd !== undefined) {
@@ -1211,7 +1285,67 @@ export default function ScorerScreen() {
     }
 
     updateScore(MATCH_ACTION.MATCH_BALL, ballData);
+
+    if (wagonWheel || pitchMap) {
+      const activeStrikerName =
+        latestScore?.batsman?.find((b) => (b?.playerId || b?.id || b?._id) === activeStriker)?.name ||
+        "Striker";
+      const activeBowlerName = latestScore?.bowler?.name || "Bowler";
+
+      setSessionDeliveries((prev) => [
+        {
+          ...ballData,
+          runs,
+          runType,
+          isBoundary: ballData.isBoundary,
+          isWicket,
+          wagonWheel,
+          pitchMap,
+          batsman: activeStriker,
+          batsmanName: activeStrikerName,
+          bowler: activeBowler,
+          bowlerName: activeBowlerName,
+          timestamp: Date.now(),
+        },
+        ...prev,
+      ]);
+    }
     // Note: Wicket handling is triggered by OutOptions via onWicket() with proper strike & batsman options
+  };
+
+  // Smart scoring interceptor: prompts BallTrackerModal when either check is ON
+  const scoreBall = (params) => {
+    if (isWagonWheelChecked || isPitchMapChecked) {
+      setPendingBallParams(params);
+      setShowBallTrackerModal(true);
+    } else {
+      handleBall(params);
+    }
+  };
+
+  const handleTrackerConfirm = ({ wagonWheel, pitchMap }) => {
+    setShowBallTrackerModal(false);
+    if (!pendingBallParams) return;
+    const finalParams = {
+      ...pendingBallParams,
+      ...(wagonWheel ? { wagonWheel } : {}),
+      ...(pitchMap ? { pitchMap } : {}),
+    };
+    setPendingBallParams(null);
+    handleBall(finalParams);
+  };
+
+  const handleTrackerSkip = () => {
+    setShowBallTrackerModal(false);
+    if (!pendingBallParams) return;
+    const finalParams = { ...pendingBallParams };
+    setPendingBallParams(null);
+    handleBall(finalParams);
+  };
+
+  const handleTrackerCancel = () => {
+    setShowBallTrackerModal(false);
+    setPendingBallParams(null);
   };
 
   const handleUndo = () => {
@@ -1387,6 +1521,18 @@ export default function ScorerScreen() {
               matchDetails={matchDetails}
               score={score}
               cb={() => emit("score", { matchId: matchID, matchID })}
+              onSettingsChange={(newSettings) => {
+                if (newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL] !== undefined) {
+                  const val = !!newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL];
+                  setIsWagonWheelChecked(val);
+                  AsyncStorage.setItem(`@criconic_ww_${matchID}`, String(val)).catch(() => {});
+                }
+                if (newSettings[MatchSettingEnum.RECORD_PITCH_MAP] !== undefined) {
+                  const val = !!newSettings[MatchSettingEnum.RECORD_PITCH_MAP];
+                  setIsPitchMapChecked(val);
+                  AsyncStorage.setItem(`@criconic_pm_${matchID}`, String(val)).catch(() => {});
+                }
+              }}
             />
           </View>
 
@@ -1597,6 +1743,69 @@ export default function ScorerScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Quick View Actions for Wagon Wheel & Pitch Map */}
+          {/* <View
+            style={[
+              styles.trackingToolbar,
+              {
+                backgroundColor: isDarkMode ? "#111827" : "#F8FAFC",
+                borderColor: isDarkMode ? "#1F2937" : "#E2E8F0",
+              },
+            ]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, width: "100%" }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setViewerInitialTab("wagon");
+                  setShowViewerModal(true);
+                }}
+                style={[
+                  styles.quickViewBtn,
+                  {
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    paddingVertical: 7,
+                    backgroundColor: isDarkMode ? "#1F2937" : "#FFFFFF",
+                    borderColor: isDarkMode ? "#374151" : "#CBD5E1",
+                  },
+                ]}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={[styles.quickViewBtnText, { fontSize: 12, color: isDarkMode ? "#93C5FD" : "#2563EB" }]}>
+                  🏏 View Wagon Wheel
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setViewerInitialTab("pitch");
+                  setShowViewerModal(true);
+                }}
+                style={[
+                  styles.quickViewBtn,
+                  {
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    paddingVertical: 7,
+                    backgroundColor: isDarkMode ? "#1F2937" : "#FFFFFF",
+                    borderColor: isDarkMode ? "#374151" : "#CBD5E1",
+                  },
+                ]}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={[styles.quickViewBtnText, { fontSize: 12, color: isDarkMode ? "#6EE7B7" : "#059669" }]}>
+                  🎯 View Pitch Map
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View> */}
+
           {/* Run Buttons */}
           <View
             style={[
@@ -1651,13 +1860,13 @@ export default function ScorerScreen() {
                           case "1":
                           case "2":
                           case "3":
-                            handleBall({ runs: parseInt(label, 10), runType: "bat", ballType: "ball" });
+                            scoreBall({ runs: parseInt(label, 10), runType: "bat", ballType: "ball" });
                             break;
                           case "4\nFour":
-                            handleBall({ runs: 4, runType: "bat", isBoundary: true, ballType: "ball" });
+                            scoreBall({ runs: 4, runType: "bat", isBoundary: true, ballType: "ball" });
                             break;
                           case "6\nSIX":
-                            handleBall({ runs: 6, runType: "bat", isBoundary: true, ballType: "ball" });
+                            scoreBall({ runs: 6, runType: "bat", isBoundary: true, ballType: "ball" });
                             break;
                           case "WD":
                             handleShowCustomRunsModal("Wide Ball", "wd");
@@ -2522,7 +2731,7 @@ export default function ScorerScreen() {
         onClose={() => setShowCustomRunsModal(false)}
         customModalDiscription={customModalDescription}
         action={(params) => {
-          handleBall(params);
+          scoreBall(params);
           setShowCustomRunsModal(false);
         }}
       />
@@ -2531,7 +2740,7 @@ export default function ScorerScreen() {
       <OutOptions
         visible={showOutModal}
         onClose={() => setShowOutModal(false)}
-        handelBall={handleBall}
+        handelBall={scoreBall}
         onWicket={handleWicket}
         bowler={score?.bowler}
         batsmans={{
@@ -2540,6 +2749,39 @@ export default function ScorerScreen() {
         }}
         bowlingTeam={bowlingTeamData}
         battingTeam={battingTeamData}
+      />
+
+      {/* Ball Tracker Modal (Prompted on scoring when Wagon Wheel or Pitch Map is enabled) */}
+      <BallTrackerModal
+        visible={showBallTrackerModal}
+        onClose={handleTrackerCancel}
+        onConfirm={handleTrackerConfirm}
+        onSkip={handleTrackerSkip}
+        ballContext={{
+          runs: pendingBallParams?.runs ?? 0,
+          runType: pendingBallParams?.runType ?? "bat",
+          ballType: pendingBallParams?.ballType ?? "ball",
+          isBoundary: pendingBallParams?.isBoundary ?? false,
+          isWicket: pendingBallParams?.isWicket ?? false,
+          strikerName:
+            score?.batsman?.find((b) => b?.isStrikeEnd)?.name ||
+            score?.batsman?.[0]?.name ||
+            "Striker",
+          bowlerName: score?.bowler?.name || "Bowler",
+        }}
+        isWagonWheelEnabled={isWagonWheelChecked}
+        isPitchMapEnabled={isPitchMapChecked}
+      />
+
+      {/* Visual Analytics Viewer Modal (Wagon Wheel & Pitch Map full inspection) */}
+      <WagonPitchViewerModal
+        visible={showViewerModal}
+        onClose={() => setShowViewerModal(false)}
+        initialTab={viewerInitialTab}
+        matchDetails={matchDetails}
+        score={score}
+        sessionDeliveries={sessionDeliveries}
+        matchId={matchID}
       />
       </SafeAreaView>
       </View>
@@ -2685,5 +2927,61 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  trackingToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  trackingTogglesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  trackingToggleChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  trackingToggleChipActive: {},
+  checkboxBox: {
+    width: 15,
+    height: 15,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  checkboxBoxActive: {
+    backgroundColor: "#3B82F6",
+    borderColor: "#3B82F6",
+  },
+  trackingToggleText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  trackingViewActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  quickViewBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  quickViewBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

@@ -16,6 +16,7 @@ import PlayerAvatar from "../custom/PlayerAvatar";
 import { useColorScheme } from "react-native";
 import { convertBallToOvers, getBatsmenDescription, calculateCRR } from "@/utils/Common";
 import SCREENS from "@/screens";
+import WagonPitchViewerModal from "../createMatch/WagonPitchViewerModal";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -25,12 +26,28 @@ export default function FullScoreCard({
   inning_I,
   description,
   isFirstInning,
+  matchId,
 }) {
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const [activeTab, setActiveTab] = useState("batting");
   const [activeInning, setActiveInning] = useState(1); // 1 for first inning, 2 for second inning
+  const [trackerModalVisible, setTrackerModalVisible] = useState(false);
+  const [trackerModalTab, setTrackerModalTab] = useState("wagon");
+  const [selectedTrackerPlayer, setSelectedTrackerPlayer] = useState(null);
+
+  const handleBatsmanPress = (player) => {
+    setSelectedTrackerPlayer(player);
+    setTrackerModalTab("wagon");
+    setTrackerModalVisible(true);
+  };
+
+  const handleBowlerPress = (player) => {
+    setSelectedTrackerPlayer(player);
+    setTrackerModalTab("pitch");
+    setTrackerModalVisible(true);
+  };
   
   const isDark = colorScheme === "dark";
 
@@ -286,21 +303,31 @@ export default function FullScoreCard({
             <TableHeaderCell>4s</TableHeaderCell>
             <TableHeaderCell>6s</TableHeaderCell>
             <TableHeaderCell>SR</TableHeaderCell>
+            <View className="w-5" />
           </View>
 
           {/* Batting Table Rows */}
           {(currentInning?.playedBatsman || []).length > 0 ? (
             currentInning.playedBatsman.map((player, index) => (
-              <View 
+              <Pressable 
                 key={player?.id || player?._id || player?.playerId || index} 
-                className={`flex-row p-2 border-b ${
+                onPress={() => handleBatsmanPress(player)}
+                className={`flex-row items-center p-2 border-b ${
                   isDark ? "border-gray-700" : "border-gray-200"
                 } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
               >
                 <TableCell width="w-2/5" center={false}>
-                  <Pressable onPress={() => redirectToPlayerProfile(player)} className="flex-row items-center">
-                    <PlayerAvatar player={player} size={28} className="mr-2" />
-                    <View className="flex-1">
+                  <View className="flex-row items-center">
+                    <Pressable
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        redirectToPlayerProfile(player);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <PlayerAvatar player={player} size={28} className="mr-2" />
+                    </Pressable>
+                    <View className="flex-1 pr-1">
                       <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
                         {player?.name || player?.username || player?.playerName || "Batter"}
                         {player?.notOut && (
@@ -311,14 +338,21 @@ export default function FullScoreCard({
                         {getBatsmenDescription(player)}
                       </ThemedText>
                     </View>
-                  </Pressable>
+                  </View>
                 </TableCell>
                 <TableCell>{player?.runs ?? 0}</TableCell>
                 <TableCell>{player?.ballsFaced ?? player?.balls ?? 0}</TableCell>
                 <TableCell>{player?.fours ?? 0}</TableCell>
                 <TableCell>{player?.sixes ?? 0}</TableCell>
                 <TableCell>{player?.sr ?? "0.00"}</TableCell>
-              </View>
+                <View className="w-5 items-center justify-center">
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={isDark ? "#94A3B8" : "#64748B"}
+                  />
+                </View>
+              </Pressable>
             ))
           ) : (
             <View className="py-4 items-center">
@@ -385,36 +419,50 @@ export default function FullScoreCard({
             <TableHeaderCell>R</TableHeaderCell>
             <TableHeaderCell>W</TableHeaderCell>
             <TableHeaderCell>ECO</TableHeaderCell>
+            <View className="w-5" />
           </View>
 
           {/* Bowling Table Rows */}
           {(currentInning?.bowling?.allBowlers || []).length > 0 ? (
             currentInning.bowling.allBowlers.map((player, index) => (
-              <View 
+              <Pressable 
                 key={player?.id || player?._id || player?.playerId || index} 
-                className={`flex-row p-2 border-b ${
+                onPress={() => handleBowlerPress(player)}
+                className={`flex-row items-center p-2 border-b ${
                   isDark ? "border-gray-700" : "border-gray-200"
                 } ${index % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-900" : "bg-gray-50")}`}
               >
                 <TableCell width="w-2/5" center={false}>
-                  <Pressable 
-                    onPress={() => redirectToPlayerProfile(player)}
-                    className="flex-row items-center"
-                  >
-                    <PlayerAvatar player={player} size={28} className="mr-2" />
-                    <View className="flex-1">
+                  <View className="flex-row items-center">
+                    <Pressable
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        redirectToPlayerProfile(player);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <PlayerAvatar player={player} size={28} className="mr-2" />
+                    </Pressable>
+                    <View className="flex-1 pr-1">
                       <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`} numberOfLines={1}>
                         {player?.name || player?.username || player?.playerName || "Bowler"}
                       </ThemedText>
                     </View>
-                  </Pressable>
+                  </View>
                 </TableCell>
                 <TableCell>{player?.over ?? "0.0"}</TableCell>
                 <TableCell>{player?.maiden ?? 0}</TableCell>
                 <TableCell>{player?.runsGiven ?? player?.runs ?? 0}</TableCell>
                 <TableCell>{player?.wicketsTaken ?? player?.wickets ?? 0}</TableCell>
                 <TableCell>{player?.eco ?? "0.00"}</TableCell>
-              </View>
+                <View className="w-5 items-center justify-center">
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={isDark ? "#94A3B8" : "#64748B"}
+                  />
+                </View>
+              </Pressable>
             ))
           ) : (
             <View className="py-4 items-center">
@@ -468,6 +516,17 @@ export default function FullScoreCard({
           </View>
         </Animated.View>
       )}
+
+      {/* Wagon Wheel & Pitch Map Bottom Sheet Modal for Player */}
+      <WagonPitchViewerModal
+        visible={trackerModalVisible}
+        onClose={() => setTrackerModalVisible(false)}
+        initialTab={trackerModalTab}
+        initialPlayer={selectedTrackerPlayer}
+        matchId={matchId || score?._id || score?.id}
+        score={score}
+        onViewProfile={redirectToPlayerProfile}
+      />
     </ScrollView>
   );
 }
