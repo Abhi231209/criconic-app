@@ -16,8 +16,9 @@ import {
   MaterialCommunityIcons
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
-import { convertBallToOvers } from "@/utils/Common";
+import { convertBallToOvers, calculateCRR } from "@/utils/Common";
 import { useColorScheme } from "react-native";
+import SCREENS from "@/screens";
 
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
@@ -40,97 +41,240 @@ export default function MatchLive({ score }) {
     border: isDark ? "#334155" : "#e2e8f0",
   };
 
-  // HARDCODED SAMPLE DATA - COMMENTED OUT (API ONLY)
-  /*
-  // Sample data
-  const recentOvers = [
-    { over: 18.1, balls: ["1", "1", "1", "4", "2", "W"] },
-    { over: 18.2, balls: ["1", "1lb", "1", "5", "4", "6"] },
-    { over: 18.3, balls: ["W", "2", "1", "4", "1", "1"] },
-    { over: 18.4, balls: ["4", "6", "2", "W", "1", "1"] },
-    { over: 18.5, balls: ["1", "2", "6", "4", "W", "1"] },
-  ];
+  const redirectToPlayerProfile = (player) => {
+    if (!player) return;
+    const playerId = player?.playerId || player?.id || player?._id;
+    navigation.navigate(SCREENS.PlayerProfile, {
+      player: typeof player === "object" ? player : { name: player },
+      playerId: playerId,
+      matchId: score?._id || score?.id,
+      match: score,
+    });
+  };
 
-  const currentBatsmen = [
-    { name: "M Schutt ✓", runs: 3, balls: 4, fours: 0, sixes: 0, sr: 75.00, isBatting: true },
-    { name: "M Taylor", runs: 2, balls: 2, fours: 0, sixes: 0, sr: 100.00, isBatting: false }
-  ];
+  const getRecentOversFromScore = (scoreData) => {
+    // 1. Direct overs from scoreData.overs or scoreData.score[innings].overs
+    const currentInn = scoreData?.currentInnings || scoreData?.currentInning || 1;
+    const innObj = scoreData?.score?.[`innings_${currentInn}`] || scoreData?.[`innings_${currentInn}`];
+    const rawOvers = innObj?.overs || scoreData?.overs;
+    if (Array.isArray(rawOvers) && rawOvers.length > 0) {
+      const parsed = rawOvers
+        .map((o, idx) => {
+          if (Array.isArray(o)) {
+            return { over: idx + 1, balls: o };
+          }
+          if (Array.isArray(o?.balls)) {
+            return { over: o.overNumber || idx + 1, balls: o.balls };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      if (parsed.length > 0) {
+        return parsed.slice(-8).reverse();
+      }
+    }
 
-  const currentBowler = { name: "S Ismail", wickets: 3, runs: 16, balls: 20, economy: 4.00 };
+    // 2. Direct recentOvers from backend
+    if (Array.isArray(scoreData?.recentOvers) && scoreData.recentOvers.length > 0) {
+      return scoreData.recentOvers.map((o, idx) => {
+        if (Array.isArray(o)) {
+          return {
+            over: idx + 1,
+            balls: o,
+          };
+        }
+        return {
+          over: o?.over ?? o?.overNumber ?? o?.overNo ?? idx + 1,
+          balls: Array.isArray(o?.balls)
+            ? o.balls
+            : Array.isArray(o?.deliveries)
+            ? o.deliveries
+            : typeof o?.balls === "string"
+            ? o.balls.split("").filter(Boolean)
+            : [],
+        };
+      });
+    }
 
-  // Sample commentary data
-  const commentaryData = [
-    { over: 18.1, ball: 1, comment: "Good length delivery, pushed to mid-off for a single" },
-    { over: 18.1, ball: 2, comment: "Full toss, driven to deep cover for another run" },
-    { over: 18.1, ball: 3, comment: "Short and wide, cut away to point for a single" },
-    { over: 18.1, ball: 4, comment: "FOUR! Beautiful cover drive to the boundary" },
-    { over: 18.1, ball: 5, comment: "Pushed to deep midwicket, they take two" },
-    { over: 18.1, ball: 6, comment: "OUT! Caught behind! The bowler gets the breakthrough" },
-  ];
-  */
+    // 3. Fallback to commentary
+    const comments = Array.isArray(scoreData?.fullCommentary) && scoreData.fullCommentary.length > 0
+      ? scoreData.fullCommentary
+      : (Array.isArray(scoreData?.commentary) ? scoreData.commentary : []);
 
-  const recentOvers = score?.recentOvers || (score?.currentOver ? [{ over: score?.batting?.score?.over || "Current", balls: score.currentOver }] : []);
+    const overMap = {};
+    if (comments.length > 0) {
+      const chronological = [...comments].reverse();
+      chronological.forEach((c) => {
+        const overStr = c?.ballNumber || c?.over;
+        if (!overStr || typeof overStr !== "string") return;
+        const parts = overStr.split(".");
+        const overIndex = parseInt(parts[0], 10);
+        if (isNaN(overIndex)) return;
+        const overNum = overIndex + 1;
+        if (!overMap[overNum]) {
+          overMap[overNum] = [];
+        }
+        const runVal = (c.runs !== undefined && c.runs !== null && c.runs !== "") ? c.runs : "0";
+        overMap[overNum].push(c.isWicket ? "W" : runVal);
+      });
+    }
 
-  const currentBatsmen = (score?.batsman || []).map((b) => ({
-    name: b.name || "Batter",
-    runs: b.runs ?? 0,
-    balls: b.ballsFaced ?? 0,
-    fours: b.fours ?? 0,
-    sixes: b.sixes ?? 0,
-    sr: b.sr ?? (b.ballsFaced ? ((b.runs / b.ballsFaced) * 100).toFixed(1) : "0.00"),
-    isBatting: !!b.isStrikeEnd
+    // Add / override current over if score.currentOver has deliveries
+    if (Array.isArray(scoreData?.currentOver) && scoreData.currentOver.length > 0) {
+      const currentOverNumber = Math.floor(parseFloat(scoreData?.batting?.score?.over || "0")) + 1;
+      overMap[currentOverNumber] = scoreData.currentOver;
+    }
+
+    const sortedOvers = Object.keys(overMap)
+      .map(Number)
+      .sort((a, b) => b - a)
+      .map((overNum) => ({
+        over: overNum,
+        balls: overMap[overNum],
+      }));
+
+    if (sortedOvers.length > 0) {
+      return sortedOvers.slice(0, 8);
+    }
+
+    return [];
+  };
+
+  const recentOvers = getRecentOversFromScore(score);
+
+  // Projected score & run rate calculation
+  const runs = Number(score?.batting?.score?.runs || 0);
+  const overStr = String(score?.batting?.score?.over || "0.0");
+  const totalOvers = Number(score?.totalOvers || score?.matchTotalOver || 20);
+  const calculatedCrr = calculateCRR(runs, overStr);
+  const effectiveCrr = (calculatedCrr && calculatedCrr !== "0.00") 
+    ? calculatedCrr 
+    : (score?.batting?.score?.CRR || "0.00");
+  const crrNum = parseFloat(effectiveCrr) || 0;
+  const computedProjected = crrNum > 0 && totalOvers > 0 ? Math.round(crrNum * totalOvers) : null;
+  const projectedScoreDisplay = (score?.batting?.score?.projectedScore && score?.batting?.score?.projectedScore !== "-") 
+    ? score.batting.score.projectedScore 
+    : (computedProjected ?? "-");
+
+  const currentBatsmen = (Array.isArray(score?.batsman) ? score.batsman : []).map((b) => ({
+    playerId: b?.playerId || b?.id || b?._id,
+    name: b?.name || b?.username || "Batter",
+    runs: b?.runs ?? 0,
+    balls: b?.ballsFaced ?? b?.balls ?? 0,
+    fours: b?.fours ?? 0,
+    sixes: b?.sixes ?? 0,
+    sr: b?.sr ?? (b?.ballsFaced ? ((b.runs / b.ballsFaced) * 100).toFixed(1) : "0.00"),
+    isBatting: !!b?.isStrikeEnd
   }));
 
   const bObj = score?.bowler || score?.bowling?.lastTwoBowlers?.[0] || {};
   const currentBowler = {
-    name: bObj.name || "Bowler",
+    playerId: bObj.playerId || bObj.id || bObj._id,
+    name: bObj.name || bObj.username || "Bowler",
     wickets: bObj.wicketsTaken ?? 0,
     runs: bObj.runsGiven ?? 0,
     balls: bObj.balls ?? 0,
     economy: bObj.eco ?? "0.00"
   };
 
-  const commentaryData = (score?.commentary || []).map((c, idx) => ({
-    over: c.over || String(idx + 1),
+  const commentaryData = (Array.isArray(score?.commentary) ? score.commentary : []).map((c, idx) => ({
+    over: c?.over || String(idx + 1),
     ball: "",
-    comment: c.message || c.comment || ""
+    comment: c?.message || c?.comment || (typeof c === "string" ? c : "")
   }));
 
-  const BallIndicator = ({ ball, index }) => (
-    <View
-      className={`w-7 h-7 rounded-full items-center justify-center mx-0.5 ${
-        ball === "W" ? "bg-red-500" :
-        ball === "4" ? "bg-blue-500" :
-        ball === "6" ? "bg-green-500" :
-        ball === "1lb" ? "bg-purple-500" :
-        isDark ? "bg-gray-600" : "bg-gray-300"
-      }`}
-    >
-      <ThemedText className="text-white font-bold text-xs">
-        {ball}
-      </ThemedText>
-    </View>
-  );
+  const BallIndicator = ({ ball, index }) => {
+    let displayVal = "0";
+    let bgClass = isDark ? "bg-gray-600" : "bg-gray-300";
 
-  const OverCard = ({ over, balls, index }) => (
-    <Animated.View 
-      entering={SlideInRight.delay(index * 100)}
-      className={`p-3 rounded-lg mx-2 min-w-[100px] border ${
-        isDark ? "bg-gray-800 border-gray-600" : "bg-white border-gray-200"
-      }`}
-    >
-      <ThemedText className={`text-center font-bold text-xs mb-2 ${
-        isDark ? "text-white" : "text-gray-900"
-      }`}>
-        {over}th Over
-      </ThemedText>
-      <View className="flex-row justify-center flex-wrap gap-1">
-        {balls.map((ball, ballIndex) => (
-          <BallIndicator key={ballIndex} ball={ball} />
-        ))}
+    if (typeof ball === "object" && ball !== null) {
+      if (ball.isWicket || ball.wicket) {
+        displayVal = "W";
+        bgClass = "bg-red-500";
+      } else if (ball.ballType === "wide" || ball.type === "wide") {
+        displayVal = ball.runs && Number(ball.runs) > 1 ? `${ball.runs}Wd` : "Wd";
+        bgClass = "bg-orange-500";
+      } else if (ball.ballType === "no-ball" || ball.type === "no-ball") {
+        displayVal = ball.runs && Number(ball.runs) > 1 ? `${ball.runs}Nb` : "Nb";
+        bgClass = "bg-orange-500";
+      } else if (ball.runType === "leg-bye" || ball.runType === "bye") {
+        const r = ball.runs ?? 1;
+        displayVal = `${r}${ball.runType === "leg-bye" ? "Lb" : "B"}`;
+        bgClass = "bg-purple-500";
+      } else {
+        const runs = ball.runs ?? ball.run ?? ball.score ?? 0;
+        const numRuns = Number(runs);
+        displayVal = String(runs);
+        if (numRuns === 4 || (ball.isBoundary && numRuns === 4)) {
+          bgClass = "bg-blue-500";
+        } else if (numRuns === 6) {
+          bgClass = "bg-green-500";
+        } else if (numRuns === 0) {
+          bgClass = isDark ? "bg-gray-700" : "bg-gray-300";
+        } else {
+          bgClass = isDark ? "bg-gray-600" : "bg-gray-400";
+        }
+      }
+    } else {
+      const strVal = String(ball ?? "0").trim();
+      const u = strVal.toUpperCase();
+      displayVal = strVal;
+      if (u === "W" || u === "OUT" || u.endsWith("W")) {
+        displayVal = "W";
+        bgClass = "bg-red-500";
+      } else if (u === "4") {
+        bgClass = "bg-blue-500";
+      } else if (u === "6") {
+        bgClass = "bg-green-500";
+      } else if (u.includes("LB") || u.includes("B")) {
+        bgClass = "bg-purple-500";
+      } else if (u.includes("WD") || u.includes("NB")) {
+        bgClass = "bg-orange-500";
+      } else if (u === "0") {
+        bgClass = isDark ? "bg-gray-700" : "bg-gray-300";
+      } else {
+        bgClass = isDark ? "bg-gray-600" : "bg-gray-400";
+      }
+    }
+
+    return (
+      <View
+        className={`w-7 h-7 rounded-full items-center justify-center mx-0.5 ${bgClass}`}
+      >
+        <ThemedText className="text-white font-bold text-xs">
+          {displayVal}
+        </ThemedText>
       </View>
-    </Animated.View>
-  );
+    );
+  };
+
+  const OverCard = ({ over, balls = [], index = 0 }) => {
+    const ballList = Array.isArray(balls)
+      ? balls
+      : typeof balls === "string"
+      ? balls.split("").filter(Boolean)
+      : [];
+
+    return (
+      <Animated.View 
+        entering={SlideInRight.delay(index * 100)}
+        className={`p-3 rounded-lg mx-1.5 border ${
+          isDark ? "bg-gray-800 border-gray-600" : "bg-white border-gray-200"
+        }`}
+      >
+        <ThemedText className={`text-center font-bold text-xs mb-2 ${
+          isDark ? "text-white" : "text-gray-900"
+        }`}>
+          Over {over}
+        </ThemedText>
+        <View className="flex-row items-center justify-center flex-nowrap gap-1">
+          {ballList.map((ball, ballIndex) => (
+            <BallIndicator key={ballIndex} ball={ball} />
+          ))}
+        </View>
+      </Animated.View>
+    );
+  };
 
   const ProgressBar = ({ percentage, color }) => (
     <View className={`h-2 rounded-full overflow-hidden mt-1 ${
@@ -139,7 +283,7 @@ export default function MatchLive({ score }) {
       <View 
         className="h-full rounded-full"
         style={{ 
-          width: `${percentage}%`,
+          width: `${Math.min(Math.max(percentage || 0, 0), 100)}%`,
           backgroundColor: color
         }}
       />
@@ -148,7 +292,7 @@ export default function MatchLive({ score }) {
 
   const CommentaryItem = ({ item, index }) => (
     <Animated.View 
-      entering={FadeInDown.delay(index * 50)}
+      entering={FadeInDown.delay(Math.min(index, 6) * 40)}
       className={`p-3 border-b ${
         isDark ? "border-gray-700" : "border-gray-200"
       }`}
@@ -205,6 +349,40 @@ export default function MatchLive({ score }) {
         </ThemedText>
       </View> */}
 
+      {/* Live Match Run Rate & Projection Strip */}
+      <View className={`px-4 py-2.5 border-b flex-row justify-between items-center ${
+        isDark ? "bg-gray-800/90 border-gray-700" : "bg-blue-50/80 border-blue-100"
+      }`}>
+        <View className="flex-row items-center">
+          <ThemedText className={`text-xs font-semibold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+            CRR:
+          </ThemedText>
+          <ThemedText className="text-sm font-bold text-green-500 ml-1">
+            {effectiveCrr}*
+          </ThemedText>
+        </View>
+
+        {score?.rrr ? (
+          <View className="flex-row items-center">
+            <ThemedText className={`text-xs font-semibold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              RRR:
+            </ThemedText>
+            <ThemedText className="text-sm font-bold text-red-500 ml-1">
+              {score.rrr}
+            </ThemedText>
+          </View>
+        ) : null}
+
+        <View className="flex-row items-center">
+          <ThemedText className={`text-xs font-semibold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+            Projected:
+          </ThemedText>
+          <ThemedText className="text-sm font-bold text-blue-500 ml-1">
+            {projectedScoreDisplay}
+          </ThemedText>
+        </View>
+      </View>
+
       {/* Recent Overs Scroll */}
       <View className={`p-4 border-b ${
         isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
@@ -220,9 +398,17 @@ export default function MatchLive({ score }) {
           showsHorizontalScrollIndicator={false}
           className="px-2"
         >
-          {recentOvers.map((over, index) => (
-            <OverCard key={index} over={over.over} balls={over.balls} index={index} />
-          ))}
+          {recentOvers.length > 0 ? (
+            recentOvers.map((over, index) => (
+              <OverCard key={index} over={over?.over ?? index + 1} balls={over?.balls || []} index={index} />
+            ))
+          ) : (
+            <View className="py-2 px-4 items-center">
+              <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                No recent overs recorded yet
+              </ThemedText>
+            </View>
+          )}
         </ScrollView>
       </View>
 
@@ -257,37 +443,50 @@ export default function MatchLive({ score }) {
             }`}>SR</ThemedText>
           </View>
 
-          {currentBatsmen.map((batsman, index) => (
-            <View key={index} className={`flex-row justify-between items-center py-2 border-b ${
-              isDark ? "border-gray-600" : "border-gray-300"
-            } last:border-b-0`}>
-              <ThemedText className={`text-sm flex-1 ${
-                isDark ? "text-white" : "text-gray-900"
-              }`}>
-                {batsman.name} {batsman.isBatting && "⚡"}
-              </ThemedText>
-              <ThemedText className={`text-sm w-16 text-center ${
-                isDark ? "text-white" : "text-gray-900"
-              }`}>
-                {batsman.runs}({batsman.balls})
-              </ThemedText>
-              <ThemedText className={`text-sm w-10 text-center ${
-                isDark ? "text-white" : "text-gray-900"
-              }`}>
-                {batsman.fours}
-              </ThemedText>
-              <ThemedText className={`text-sm w-10 text-center ${
-                isDark ? "text-white" : "text-gray-900"
-              }`}>
-                {batsman.sixes}
-              </ThemedText>
-              <ThemedText className={`text-sm w-14 text-center ${
-                isDark ? "text-white" : "text-gray-900"
-              }`}>
-                {batsman.sr}
+          {currentBatsmen.length > 0 ? (
+            currentBatsmen.map((batsman, index) => (
+              <View key={index} className={`flex-row justify-between items-center py-2 border-b ${
+                isDark ? "border-gray-600" : "border-gray-300"
+              } last:border-b-0`}>
+                <Pressable 
+                  className="flex-1"
+                  onPress={() => redirectToPlayerProfile(batsman)}
+                >
+                  <ThemedText className={`text-sm font-semibold ${
+                    isDark ? "text-blue-400" : "text-blue-600"
+                  }`}>
+                    {batsman.name} {batsman.isBatting && "⚡"}
+                  </ThemedText>
+                </Pressable>
+                <ThemedText className={`text-sm w-16 text-center ${
+                  isDark ? "text-white" : "text-gray-900"
+                }`}>
+                  {batsman.runs}({batsman.balls})
+                </ThemedText>
+                <ThemedText className={`text-sm w-10 text-center ${
+                  isDark ? "text-white" : "text-gray-900"
+                }`}>
+                  {batsman.fours}
+                </ThemedText>
+                <ThemedText className={`text-sm w-10 text-center ${
+                  isDark ? "text-white" : "text-gray-900"
+                }`}>
+                  {batsman.sixes}
+                </ThemedText>
+                <ThemedText className={`text-sm w-14 text-center ${
+                  isDark ? "text-white" : "text-gray-900"
+                }`}>
+                  {batsman.sr}
+                </ThemedText>
+              </View>
+            ))
+          ) : (
+            <View className="py-2 items-center">
+              <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                No active batters at the crease
               </ThemedText>
             </View>
-          ))}
+          )}
 
           <View className={`flex-row justify-between items-center mt-3 pt-3 border-t ${
             isDark ? "border-gray-600" : "border-gray-300"
@@ -316,11 +515,13 @@ export default function MatchLive({ score }) {
           isDark ? "bg-gray-700" : "bg-gray-100"
         }`}>
           <View className="flex-row justify-between items-center mb-3">
-            <ThemedText className={`font-semibold text-lg ${
-              isDark ? "text-white" : "text-gray-900"
-            }`}>
-              {currentBowler.name}
-            </ThemedText>
+            <Pressable onPress={() => redirectToPlayerProfile(currentBowler)}>
+              <ThemedText className={`font-semibold text-lg ${
+                isDark ? "text-blue-400" : "text-blue-600"
+              }`}>
+                {currentBowler.name}
+              </ThemedText>
+            </Pressable>
             <View className="bg-red-500 px-2 py-1 rounded">
               <ThemedText className="text-white text-xs font-bold">
                 {currentBowler.wickets}-{currentBowler.runs}
@@ -372,17 +573,26 @@ export default function MatchLive({ score }) {
         }`}>
           <View className="flex-row justify-between items-center mb-2">
             <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
-              Current
+              Current Run Rate (CRR)
             </ThemedText>
-            <ThemedText className="text-green-500 font-semibold">
-              {score?.batting?.score?.CRR || "0.00"}*
+            <ThemedText className="text-green-500 font-bold text-base">
+              {effectiveCrr}*
             </ThemedText>
           </View>
           
+          <View className="flex-row justify-between items-center mb-2">
+            <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
+              Projected Final Score
+            </ThemedText>
+            <ThemedText className="text-blue-500 font-bold text-base">
+              {projectedScoreDisplay}
+            </ThemedText>
+          </View>
+
           <ThemedText className={`text-xs text-center mt-2 ${
             isDark ? "text-gray-400" : "text-gray-600"
           }`}>
-            Projected Score as per current Run Rate: {score?.batting?.score?.projectedScore || "-"}
+            Projected Score as per current Run Rate: {projectedScoreDisplay} (at {effectiveCrr} RPO)
           </ThemedText>
         </View>
       </View>
@@ -401,9 +611,17 @@ export default function MatchLive({ score }) {
           <View className={`rounded-lg ${
             isDark ? "bg-gray-700" : "bg-gray-100"
           }`}>
-            {commentaryData.map((item, index) => (
-              <CommentaryItem key={index} item={item} index={index} />
-            ))}
+            {commentaryData.length > 0 ? (
+              commentaryData.map((item, index) => (
+                <CommentaryItem key={index} item={item} index={index} />
+              ))
+            ) : (
+              <View className="p-4 items-center">
+                <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                  No commentary available for this match yet
+                </ThemedText>
+              </View>
+            )}
           </View>
         </View>
       )}

@@ -9,18 +9,26 @@ import {
   Alert,
   BackHandler,
   ActivityIndicator,
+  ScrollView,
+  TextInput,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
+import RightDrawer from "@/components/ui/custom/RightDrawer";
+import MatchSetting from "./MatchSetting";
 import SCREENS from "@/screens";
-import { matchesApi } from "@/utils/api";
+import { matchesApi, request } from "@/utils/api";
+import { useSocket } from "@/contexts/SocketContext";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import { MatchSettingEnum } from "@/utils/Common";
 
 export default function TossScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { emit, isConnected } = useSocket();
   const {
     teamA: initialTeamA,
     teamB: initialTeamB,
@@ -29,6 +37,12 @@ export default function TossScreen() {
     matchDetails,
     matchId,
   } = route.params || {};
+
+  const resolvedMatchId =
+    matchId ||
+    route.params?.matchID ||
+    matchDetails?._id ||
+    matchDetails?.id;
 
   const [teamA, setTeamA] = useState(initialTeamA);
   const [teamB, setTeamB] = useState(initialTeamB);
@@ -47,6 +61,9 @@ export default function TossScreen() {
   const [isStatusChecked, setIsStatusChecked] = useState(false);
   const isLeavingRef = useRef(false);
   const flipAnimation = useRef(new Animated.Value(0)).current;
+
+  // Live Settings Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Mount status validation
   useEffect(() => {
@@ -296,24 +313,39 @@ export default function TossScreen() {
     >
       {/* Header */}
       <View
-        className={`px-4 py-4 border-b flex-row items-center ${
+        className={`px-4 py-4 border-b flex-row items-center justify-between ${
           isDarkMode
             ? "bg-gray-800 border-gray-700"
             : "bg-white border-gray-200"
         }`}
       >
+        <View className="flex-row items-center flex-1">
+          <TouchableOpacity
+            onPress={handleBack}
+            className="p-2 mr-2"
+          >
+            <Ionicons name="arrow-back" size={24} color="#2563EB" />
+          </TouchableOpacity>
+          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+            Toss Time
+          </ThemedText>
+        </View>
         <TouchableOpacity
-          onPress={handleBack}
-          className="p-2 mr-2"
+          onPress={() => setIsDrawerOpen(true)}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.7}
+          className="p-2 rounded-full"
         >
-          <Ionicons name="arrow-back" size={24} color="#2563EB" />
+          <Ionicons name="settings-outline" size={22} color={isDarkMode ? "#FFFFFF" : "#1F2937"} />
         </TouchableOpacity>
-        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-          Toss Time
-        </ThemedText>
       </View>
 
-      <View className="flex-1 p-6 items-center justify-center">
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Teams Display with Player Preview */}
         <View
           className={`p-4 rounded-xl mb-8 w-full ${
@@ -597,7 +629,7 @@ export default function TossScreen() {
         {/* Instructions */}
         {!tossResult && (
           <View
-            className={`p-4 rounded-xl mt-8 ${
+            className={`p-4 rounded-xl mt-6 ${
               isDarkMode ? "bg-gray-800/50" : "bg-blue-50"
             }`}
           >
@@ -607,7 +639,26 @@ export default function TossScreen() {
             </ThemedText>
           </View>
         )}
-      </View>
+      </ScrollView>
+
+      {/* Right Drawer for Match & Live Settings */}
+      <RightDrawer
+        isVisible={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+      >
+        <MatchSetting
+          matchId={resolvedMatchId}
+          onClose={() => setIsDrawerOpen(false)}
+          matchDetails={matchDetails}
+          isPreScorer={true}
+          score={{
+            batting: winner ? (decision === "Bat" ? winner : (winner?._id === teamA?._id ? teamB : teamA)) : teamA,
+            bowling: winner ? (decision === "Bowl" ? winner : (winner?._id === teamA?._id ? teamB : teamA)) : teamB,
+            teams: [teamA, teamB],
+            tournament: matchDetails?.tournament,
+          }}
+        />
+      </RightDrawer>
     </SafeAreaView>
   );
 }

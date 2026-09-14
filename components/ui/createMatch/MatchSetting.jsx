@@ -27,10 +27,10 @@ import {
   ExternalLink,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ThemedText from "../custom/ThemedText";
 import SCREENS from "@/screens";
-import { useNavigation } from "@react-navigation/native";
-import { request } from "@/utils/api";
+import { request, matchesApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
@@ -126,7 +126,7 @@ const ActionButton = ({ title, icon, onPress, variant = "primary", isDarkMode, d
   );
 };
 
-export default function MatchSetting({ matchId, onInningsComplete, onClose, score }) {
+export default function MatchSetting({ matchId, onInningsComplete, onClose, score, matchDetails, isPreScorer = false, onSettingsChange }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const navigation = useNavigation();
@@ -134,13 +134,14 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const { emit, isConnected } = useSocket();
 
   const [expandedSections, setExpandedSections] = useState({
-    player: true,
+    player: !isPreScorer,
     match: false,
     live: true,
   });
   const [matchConfigs, setMatchConfigs] = useState({});
   const [showBatsmenStats, setShowBatsmenStats] = useState(false);
   const [streamingLink, setStreamingLink] = useState("");
+  const [isStartingLive, setIsStartingLive] = useState(false);
 
   const loadConfigs = useCallback(async () => {
     if (!matchId) return;
@@ -153,11 +154,40 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       if (typeof content.streamUrl === "string") {
         setStreamingLink(content.streamUrl);
       }
-      setMatchConfigs(content);
+
+      let storedWW = null;
+      let storedPM = null;
+      try {
+        storedWW = await AsyncStorage.getItem(`@criconic_ww_${matchId}`);
+        storedPM = await AsyncStorage.getItem(`@criconic_pm_${matchId}`);
+      } catch {}
+
+      setMatchConfigs((prev) => {
+        const merged = { ...prev, ...content };
+        if (storedWW !== null) {
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = storedWW === "true";
+        } else if (content[MatchSettingEnum.RECORD_WAGON_WHEEL] !== undefined) {
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = !!content[MatchSettingEnum.RECORD_WAGON_WHEEL];
+        } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
+          const ww = matchDetails.config.recordWagonWheel;
+          merged[MatchSettingEnum.RECORD_WAGON_WHEEL] = typeof ww === "boolean" ? ww : !!ww?.active;
+        }
+
+        if (storedPM !== null) {
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = storedPM === "true";
+        } else if (content[MatchSettingEnum.RECORD_PITCH_MAP] !== undefined) {
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = !!content[MatchSettingEnum.RECORD_PITCH_MAP];
+        } else if (matchDetails?.config?.recordPitchMap !== undefined) {
+          const pm = matchDetails.config.recordPitchMap;
+          merged[MatchSettingEnum.RECORD_PITCH_MAP] = typeof pm === "boolean" ? pm : !!pm?.active;
+        }
+
+        return merged;
+      });
     } catch (err) {
       console.error("loadConfigs error:", err);
     }
-  }, [matchId]);
+  }, [matchId, matchDetails?.config?.recordWagonWheel, matchDetails?.config?.recordPitchMap]);
 
   useEffect(() => {
     loadConfigs();
@@ -165,26 +195,77 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
 
   const updateMatchSetting = async (action, value) => {
     if (!matchId) return;
+    setMatchConfigs((prev) => ({
+      ...prev,
+      [action]: value,
+    }));
+    onSettingsChange?.({ [action]: value });
+
+    // Sync tracking toggles with AsyncStorage and MongoDB match config
+    if (action === MatchSettingEnum.RECORD_WAGON_WHEEL) {
+      AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(value)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordWagonWheel: value } }).catch(() => {});
+    } else if (action === MatchSettingEnum.RECORD_PITCH_MAP) {
+      AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(value)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordPitchMap: value } }).catch(() => {});
+    }
+
     try {
       await request(`api/matches/${matchId}/settings`, {
         method: "PUT",
         data: { action, data: value },
+      }).catch((err) => {
+        console.warn("Backend settings update notice:", err?.message || err);
       });
-      await loadConfigs();
     } catch (err) {
-      console.error("updateMatchSetting error:", err);
-      Alert.alert("Error", "Failed to update setting. Please try again.");
+      console.warn("updateMatchSetting error:", err);
     }
   };
 
-  const emitDisplaySetting = (settingKey, value) => {
+  const emitDisplaySetting = async (settingKey, value) => {
     if (isConnected && emit) {
       emit(settingKey, { matchId, value });
     }
+    // Also persist via settings API to ensure DB state updates
+    try {
+      await request(`api/matches/${matchId}/settings`, {
+        method: "PUT",
+        data: { action: settingKey, data: value },
+      });
+    } catch (err) {
+      console.warn("emitDisplaySetting API persist error:", err);
+    }
     setMatchConfigs((prev) => ({
       ...prev,
-      [settingKey]: { ...(prev[settingKey] || {}), active: value },
+      [settingKey]: { ...(prev[settingKey] || {}), active: typeof value === "boolean" ? value : !!value?.active },
     }));
+  };
+
+  const handleQuickGoLive = async () => {
+    if (!matchId) return;
+    setIsStartingLive(true);
+    try {
+      const tournamentSlug = score?.tournament?.slug || matchDetails?.tournament?.slug;
+      const res = await request("api/matches/public/go-live", {
+        method: "POST",
+        data: {
+          match: matchId,
+          userStream: !!tournamentSlug,
+          key: tournamentSlug,
+        },
+      });
+      if (res?.data?.success !== false) {
+        Alert.alert("Success", "Live stream overlay link generated successfully!");
+        loadConfigs();
+      } else {
+        Alert.alert("Notice", res?.data?.message || "Failed to start live.");
+      }
+    } catch (e) {
+      console.error("handleQuickGoLive error:", e);
+      Alert.alert("Error", e?.message || "Failed to start live stream.");
+    } finally {
+      setIsStartingLive(false);
+    }
   };
 
   const handleOpenGoLiveStudio = () => {
@@ -216,10 +297,22 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const rawUrlKey = liveMatchData?.url || "";
   const publicLiveUrl = rawUrlKey ? `${WEB_URL}/go-live/${rawUrlKey}` : "";
 
-  const getSetting = (key) => matchConfigs?.[key] || {};
+  const getSetting = (key) => matchConfigs?.[key];
   const getActive = (key) => {
-    const s = getSetting(key);
-    return typeof s === "boolean" ? s : !!s?.active;
+    const s = matchConfigs?.[key];
+    if (typeof s === "boolean") return s;
+    if (typeof s === "object" && s !== null && s.active !== undefined) return !!s.active;
+
+    // Check matchDetails config fallback
+    const fallback = matchDetails?.config?.[key];
+    if (typeof fallback === "boolean") return fallback;
+    if (typeof fallback === "object" && fallback !== null && fallback.active !== undefined) return !!fallback.active;
+
+    // For wagon wheel and pitch map, default to true if not yet explicitly set
+    if (key === MatchSettingEnum.RECORD_WAGON_WHEEL || key === MatchSettingEnum.RECORD_PITCH_MAP) {
+      return true;
+    }
+    return false;
   };
 
   // ---- PLAYER SETTINGS SECTION ----
@@ -228,17 +321,19 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       <ThemedText className="font-normal text-xs" style={[styles.sectionHint, { color: C.textSecondary }]}>
         Manage batting and bowling team configurations
       </ThemedText>
-      <ActionButton
-        title="Change Bowler"
-        icon={RefreshCw}
-        variant="ghost"
-        isDarkMode={isDarkMode}
-        onPress={() => {
-          onClose?.();
-          navigation.navigate(SCREENS.ChangeBowler, { matchId });
-        }}
-        style={styles.playerBtn}
-      />
+      {!isPreScorer && (
+        <ActionButton
+          title="Change Bowler"
+          icon={RefreshCw}
+          variant="ghost"
+          isDarkMode={isDarkMode}
+          onPress={() => {
+            onClose?.();
+            navigation.navigate(SCREENS.ChangeBowler, { matchId });
+          }}
+          style={styles.playerBtn}
+        />
+      )}
       <ActionButton
         title="Change Squad"
         icon={Users}
@@ -277,6 +372,20 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         onToggle={(v) => updateMatchSetting(MatchSettingEnum.SINGLE_BATSMAN_ALLOWED, v)}
         isDarkMode={isDarkMode}
       />
+      <SettingRow
+        title="Record Wagon Wheel"
+        description="Prompt shot direction for scored deliveries"
+        value={getActive(MatchSettingEnum.RECORD_WAGON_WHEEL)}
+        onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_WAGON_WHEEL, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Record Pitch Map"
+        description="Prompt ball pitching line & length for deliveries"
+        value={getActive(MatchSettingEnum.RECORD_PITCH_MAP)}
+        onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_PITCH_MAP, v)}
+        isDarkMode={isDarkMode}
+      />
       <View style={[styles.inputRow, { borderBottomColor: C.divider }]}>
         <ThemedText className="font-semibold text-sm" style={{ color: C.text, marginBottom: 4 }}>
           External Streaming Link
@@ -300,15 +409,22 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           onBlur={() => updateMatchSetting(MatchSettingEnum.LIVE_STREAMING_LINK, streamingLink)}
         />
       </View>
-      <View style={{ marginTop: 8 }}>
-        <ActionButton
-          title="End Inning"
-          icon={Clock}
-          variant="danger"
-          isDarkMode={isDarkMode}
-          onPress={onInningsComplete}
-        />
-      </View>
+      {!isPreScorer && (
+        <View style={{ marginTop: 8 }}>
+          <ActionButton
+            title="End Inning"
+            icon={Clock}
+            variant="danger"
+            isDarkMode={isDarkMode}
+            onPress={() => {
+              onClose?.();
+              setTimeout(() => {
+                onInningsComplete?.();
+              }, 200);
+            }}
+          />
+        </View>
+      )}
     </View>
   );
 
@@ -367,138 +483,152 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </View>
       )}
 
-      {/* Go Live Studio CTA */}
-      <ActionButton
-        title={isLive ? "Go Live Studio (Ads & Themes)" : "🔴 Go Live Setup"}
-        icon={Zap}
-        variant={isLive ? "outline" : "primary"}
-        isDarkMode={isDarkMode}
-        onPress={handleOpenGoLiveStudio}
-        style={{ marginBottom: 10 }}
-      />
-
-      {/* Broadcast Display Options — ONLY VISIBLE IF MATCH IS LIVE */}
-      {isLive ? (
-        <>
-          <ThemedText className="font-bold text-xs uppercase" style={[styles.subsectionLabel, { color: C.textSecondary }]}>
-            Broadcast Display Controls
-          </ThemedText>
-
-          <SettingRow
-            title="Match Preview"
-            description="Pre-match information card overlay"
-            value={getActive(MatchSettingEnum.SHOW_MATCH_PREVIEW)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_MATCH_PREVIEW, v)}
-            isDarkMode={isDarkMode}
-          />
-          <SettingRow
-            title="Toss Info"
-            description="Show toss decision banner overlay"
-            value={getActive(MatchSettingEnum.SHOW_TOSS)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_TOSS, v)}
-            isDarkMode={isDarkMode}
-          />
-          <SettingRow
-            title="Playing XI"
-            description="Display team squad lineups on screen"
-            value={getActive(MatchSettingEnum.SHOW_PLAYING_ELEVEN)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_PLAYING_ELEVEN, v)}
-            isDarkMode={isDarkMode}
-          />
-          <SettingRow
-            title="Match Summary"
-            description="Show live match performance overview"
-            value={getActive(MatchSettingEnum.SHOW_MATCH_SUMMARY)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_MATCH_SUMMARY, v)}
-            isDarkMode={isDarkMode}
-          />
-          <SettingRow
-            title="Partnership"
-            description="Display current batting partnership"
-            value={getActive(MatchSettingEnum.SHOW_PARTNERSHIP)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_PARTNERSHIP, v)}
-            isDarkMode={isDarkMode}
-          />
-
-          <View
-            style={[
-              styles.batsmenStatsContainer,
-              showBatsmenStats && { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10 },
-            ]}
-          >
-            <SettingRow
-              title="Batsmen Stats"
-              description="Highlight a batsman's scorecard live"
-              value={showBatsmenStats}
-              onToggle={(v) => {
-                if (showBatsmenStats) {
-                  emitDisplaySetting(MatchSettingEnum.SHOW_BATSMEN_STATS, { active: v });
-                  setShowBatsmenStats(v);
-                } else {
-                  setShowBatsmenStats(true);
-                }
-              }}
+      {/* Go Live Studio CTAs */}
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+        {!isLive && (
+          <View style={{ flex: 1 }}>
+            <ActionButton
+              title={isStartingLive ? "Starting..." : "🔴 Go Live"}
+              icon={Zap}
+              variant="danger"
               isDarkMode={isDarkMode}
+              disabled={isStartingLive}
+              onPress={handleQuickGoLive}
             />
-            {showBatsmenStats && (
-              <View style={styles.batsmanPicker}>
-                <ThemedText className="font-semibold text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
-                  Select Batsman to Display:
-                </ThemedText>
-                {(score?.playedBatsman || []).length === 0 ? (
-                  <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary }}>
-                    No batsman data recorded yet
-                  </ThemedText>
-                ) : (
-                  (score?.playedBatsman || []).map((player, idx) => {
-                    const selected =
-                      getSetting(MatchSettingEnum.SHOW_BATSMEN_STATS)?.player === player.playerId;
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        style={styles.batsmanOption}
-                        onPress={() =>
-                          emitDisplaySetting(MatchSettingEnum.SHOW_BATSMEN_STATS, {
-                            active: true,
-                            player: player.playerId,
-                          })
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <View
-                          style={[
-                            styles.radioCircle,
-                            { borderColor: selected ? COLORS.primary : C.border },
-                          ]}
-                        >
-                          {selected && <View style={styles.radioFill} />}
-                        </View>
-                        <ThemedText className="font-medium text-sm" style={{ color: C.text, marginLeft: 8 }}>
-                          {player.name}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
-            )}
           </View>
-
-          <SettingRow
-            title="Comparison Graph"
-            description="Run rate comparison chart overlay"
-            value={getActive(MatchSettingEnum.SHOW_COMPARISON_GRAPH)}
-            onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_COMPARISON_GRAPH, v)}
+        )}
+        <View style={{ flex: 1 }}>
+          <ActionButton
+            title={isLive ? "Go Live Studio" : "Studio & Themes"}
+            icon={Zap}
+            variant={isLive ? "outline" : "primary"}
             isDarkMode={isDarkMode}
+            onPress={handleOpenGoLiveStudio}
           />
-        </>
-      ) : (
-        <View style={[styles.offlineNotice, { backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9", borderColor: C.border }]}>
+        </View>
+      </View>
+
+      {/* Offline guidance notice */}
+      {!isLive && (
+        <View style={[styles.offlineNotice, { backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9", borderColor: C.border, marginBottom: 12 }]}>
           <ThemedText className="font-semibold text-xs text-center" style={{ color: C.textSecondary }}>
-            ℹ️ Broadcast display controls (Playing XI, Toss, Batsmen Stats, Comparison Graph) will be unlocked once you go live.
+            💡 Pre-configure overlay graphics below. They will be displayed on your live broadcast stream once you go live.
           </ThemedText>
         </View>
       )}
+
+      {/* Broadcast Display Options — ALWAYS VISIBLE SO SCORER CAN CONFIGURE */}
+      <ThemedText className="font-bold text-xs uppercase" style={[styles.subsectionLabel, { color: C.textSecondary }]}>
+        Broadcast Display Controls
+      </ThemedText>
+
+      <SettingRow
+        title="Match Preview"
+        description="Pre-match information card overlay"
+        value={getActive(MatchSettingEnum.SHOW_MATCH_PREVIEW)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_MATCH_PREVIEW, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Toss Info"
+        description="Show toss decision banner overlay"
+        value={getActive(MatchSettingEnum.SHOW_TOSS)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_TOSS, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Playing XI"
+        description="Display team squad lineups on screen"
+        value={getActive(MatchSettingEnum.SHOW_PLAYING_ELEVEN)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_PLAYING_ELEVEN, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Match Summary"
+        description="Show live match performance overview"
+        value={getActive(MatchSettingEnum.SHOW_MATCH_SUMMARY)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_MATCH_SUMMARY, v)}
+        isDarkMode={isDarkMode}
+      />
+      <SettingRow
+        title="Partnership"
+        description="Display current batting partnership"
+        value={getActive(MatchSettingEnum.SHOW_PARTNERSHIP)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_PARTNERSHIP, v)}
+        isDarkMode={isDarkMode}
+      />
+
+      <View
+        style={[
+          styles.batsmenStatsContainer,
+          showBatsmenStats && { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 10 },
+        ]}
+      >
+        <SettingRow
+          title="Batsmen Stats"
+          description="Highlight a batsman's scorecard live"
+          value={showBatsmenStats}
+          onToggle={(v) => {
+            if (showBatsmenStats) {
+              emitDisplaySetting(MatchSettingEnum.SHOW_BATSMEN_STATS, { active: v });
+              setShowBatsmenStats(v);
+            } else {
+              setShowBatsmenStats(true);
+            }
+          }}
+          isDarkMode={isDarkMode}
+        />
+        {showBatsmenStats && (
+          <View style={styles.batsmanPicker}>
+            <ThemedText className="font-semibold text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
+              Select Batsman to Display:
+            </ThemedText>
+            {(score?.playedBatsman || []).length === 0 ? (
+              <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary }}>
+                No batsman data recorded yet
+              </ThemedText>
+            ) : (
+              (score?.playedBatsman || []).map((player, idx) => {
+                const selected =
+                  getSetting(MatchSettingEnum.SHOW_BATSMEN_STATS)?.player === player.playerId;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.batsmanOption}
+                    onPress={() =>
+                      emitDisplaySetting(MatchSettingEnum.SHOW_BATSMEN_STATS, {
+                        active: true,
+                        player: player.playerId,
+                      })
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.radioCircle,
+                        { borderColor: selected ? COLORS.primary : C.border },
+                      ]}
+                    >
+                      {selected && <View style={styles.radioFill} />}
+                    </View>
+                    <ThemedText className="font-medium text-sm" style={{ color: C.text, marginLeft: 8 }}>
+                      {player.name}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+        )}
+      </View>
+
+      <SettingRow
+        title="Comparison Graph"
+        description="Run rate comparison chart overlay"
+        value={getActive(MatchSettingEnum.SHOW_COMPARISON_GRAPH)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_COMPARISON_GRAPH, v)}
+        isDarkMode={isDarkMode}
+      />
     </View>
   );
 

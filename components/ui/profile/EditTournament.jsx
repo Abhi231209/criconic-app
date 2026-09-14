@@ -21,7 +21,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
-import { tournamentsApi } from '@/utils/api';
+import { tournamentsApi, upload } from '@/utils/api';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -96,49 +96,37 @@ const DatePickerField = ({ label, value, onPress }) => {
   );
 };
 
-const ImageUpload = ({ logo, onPress, onTakePhoto }) => {
+const ImageUpload = ({ label, image, onPress, type, aspect = 'square' }) => {
   const isDarkMode = useColorScheme() === 'dark';
   return (
-    <View className="items-center mb-6">
+    <View className="mb-4">
       <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        Tournament Logo
+        {label}
       </ThemedText>
       <TouchableOpacity
         onPress={onPress}
-        className={`border-2 border-dashed rounded-full items-center justify-center ${
+        className={`border-2 border-dashed rounded-lg items-center justify-center ${
           isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'
-        } h-32 w-32`}
+        } ${aspect === 'square' ? 'h-32 w-32' : 'h-32 w-full'}`}
       >
-        {logo ? (
+        {image ? (
           <Image
-            source={{ uri: logo }}
-            className="w-full h-full rounded-full"
+            source={{ uri: image }}
+            className="w-full h-full rounded-lg"
             resizeMode="cover"
           />
         ) : (
           <View className="items-center p-3">
             <FontAwesome 
-              name="trophy" 
-              size={32} 
+              name={type === 'logo' ? 'picture-o' : 'image'} 
+              size={24} 
               color={isDarkMode ? '#9CA3AF' : '#666'} 
             />
-            <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Upload Logo
+            <ThemedText className={`text-xs mt-1 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              {type === 'logo' ? 'Upload Logo' : 'Upload Cover'}
             </ThemedText>
           </View>
         )}
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        onPress={onTakePhoto}
-        className={`mt-3 flex-row items-center justify-center px-4 py-2 rounded-lg ${
-          isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
-        }`}
-      >
-        <Ionicons name="camera" size={16} color={isDarkMode ? '#9CA3AF' : '#666'} />
-        <ThemedText className={`text-sm ml-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-          Take Photo
-        </ThemedText>
       </TouchableOpacity>
     </View>
   );
@@ -193,7 +181,8 @@ export default function EditTournament() {
     isPublic: paramTournament.config?.visibility !== 'PRIVATE',
     description: paramTournament.highlights || paramTournament.description || '',
     rules: paramTournament.rules || '',
-    logo: paramTournament.logoImage || paramTournament.bannerImage || paramTournament.logo || null,
+    logo: paramTournament.logoImage || paramTournament.logo || null,
+    coverImage: paramTournament.bannerImage || paramTournament.banner || paramTournament.coverImage || null,
   });
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -220,40 +209,26 @@ export default function EditTournament() {
     { label: 'Composite Ball', value: 'composite' },
   ];
 
-  const pickImage = async () => {
+  const pickImage = async (type = 'logo') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photos to upload a logo.');
+      Alert.alert('Permission required', 'Please allow access to your photos to upload images.');
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [1, 1],
+      aspect: type === 'logo' ? [1, 1] : [16, 9],
       quality: 0.8,
     });
 
     if (!result.canceled) {
-      setFormData({ ...formData, logo: result.assets[0].uri });
-    }
-  };
-
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow camera access to take a photo.');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setFormData({ ...formData, logo: result.assets[0].uri });
+      if (type === 'logo') {
+        setFormData((prev) => ({ ...prev, logo: result.assets[0].uri }));
+      } else {
+        setFormData((prev) => ({ ...prev, coverImage: result.assets[0].uri }));
+      }
     }
   };
 
@@ -331,6 +306,32 @@ export default function EditTournament() {
     */
 
     try {
+      let logoUrl = formData.logo;
+      if (formData.logo && !formData.logo.startsWith('http')) {
+        const uploadRes = await upload(formData.logo, 'tournament');
+        const uploadedLogo =
+          uploadRes?.url ||
+          uploadRes?.data?.url ||
+          uploadRes?.data ||
+          (typeof uploadRes === 'string' ? uploadRes : null);
+        if (uploadedLogo) {
+          logoUrl = uploadedLogo;
+        }
+      }
+
+      let bannerUrl = formData.coverImage;
+      if (formData.coverImage && !formData.coverImage.startsWith('http')) {
+        const uploadRes = await upload(formData.coverImage, 'tournament');
+        const uploadedBanner =
+          uploadRes?.url ||
+          uploadRes?.data?.url ||
+          uploadRes?.data ||
+          (typeof uploadRes === 'string' ? uploadRes : null);
+        if (uploadedBanner) {
+          bannerUrl = uploadedBanner;
+        }
+      }
+
       if (tournamentId) {
         await tournamentsApi.updateTournament(tournamentId, {
           title: formData.name,
@@ -342,7 +343,10 @@ export default function EditTournament() {
           status: formData.status,
           ballType: formData.ballType,
           highlights: formData.description,
-          logoImage: formData.logo,
+          logoImage: logoUrl,
+          bannerImage: bannerUrl,
+          logo: logoUrl,
+          banner: bannerUrl,
           config: {
             visibility: formData.isPublic ? 'PUBLIC' : 'PRIVATE',
           },
@@ -380,7 +384,7 @@ export default function EditTournament() {
           Edit Tournament
         </ThemedText>
         
-        <TouchableOpacity onPress={() => setFormData(tournament)} className="p-2">
+        <TouchableOpacity onPress={() => setFormData(paramTournament)} className="p-2">
           <ThemedText className="text-blue-600 text-sm font-medium">
             Reset
           </ThemedText>
@@ -392,12 +396,30 @@ export default function EditTournament() {
         extraHeight={80}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Logo Upload */}
-        <ImageUpload
-          logo={formData.logo}
-          onPress={pickImage}
-          onTakePhoto={takePhoto}
-        />
+        {/* Image Uploads in a row */}
+        <View className="flex-row justify-between mb-4">
+          {/* Logo Upload */}
+          <View className="flex-1 mr-2">
+            <ImageUpload
+              label="Tournament Logo"
+              image={formData.logo}
+              onPress={() => pickImage('logo')}
+              type="logo"
+              aspect="square"
+            />
+          </View>
+
+          {/* Cover Image Upload */}
+          <View className="flex-1 ml-2">
+            <ImageUpload
+              label="Cover Image"
+              image={formData.coverImage}
+              onPress={() => pickImage('cover')}
+              type="cover"
+              aspect="wide"
+            />
+          </View>
+        </View>
 
           {/* Basic Information */}
           <ThemedText className={`text-lg font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>

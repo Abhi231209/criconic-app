@@ -204,12 +204,18 @@ export const upload = async (fileInput, folderName = "general") => {
 
     if (typeof fileInput === "string") {
       const filename = fileInput.split("/").pop() || "upload.jpg";
-      const match = /\\.(\\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : "image/jpeg";
+      const match = /\.([a-zA-Z0-9]+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : "jpg";
+      const mime =
+        ext === "png"
+          ? "image/png"
+          : ext === "webp"
+          ? "image/webp"
+          : "image/jpeg";
       formData.append("image", {
         uri: fileInput,
         name: filename,
-        type,
+        type: mime,
       });
     } else if (fileInput && fileInput.uri) {
       formData.append("image", {
@@ -230,6 +236,7 @@ export const upload = async (fileInput, folderName = "general") => {
     const res = await axios.post(`${apiUrl}upload`, formData, {
       headers,
       withCredentials: true,
+      transformRequest: (data) => data,
     });
 
     return res?.data;
@@ -332,6 +339,8 @@ export const teamsApi = {
     request(`api/teams/${id}`, { method: "PUT", data, ...options }),
   addPlayerToTeam: (teamId, data, options = {}) =>
     request(`api/teams/addPlayer/${teamId}`, { method: "PUT", data, ...options }),
+  joinTeamAsPlayer: (teamId, data, options = {}) =>
+    request(`api/teams/${teamId}/players`, { method: "POST", data, ...options }),
   getTeamPlayers: (teamId, options = {}) =>
     request(`api/teams/${teamId}/players`, { method: "GET", errorAlert: false, ...options }),
 };
@@ -347,6 +356,8 @@ export const tournamentsApi = {
     request("api/tournaments/create", { method: "POST", data, ...options }),
   updateTournament: (id, data, options = {}) =>
     request(`api/tournaments/${id}`, { method: "PUT", data, ...options }),
+  addTeamToTournament: (tournamentId, data, options = {}) =>
+    request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
   getMatchesByTournament: (id, options = {}) =>
@@ -393,6 +404,16 @@ export const matchesApi = {
   getCommentary: (matchId, page = 1, limit = 20) =>
     request(`api/commentary?matchId=${matchId}&page=${page}&limit=${limit}`, {
       method: "GET",
+    }),
+  getHeadToHead: (matchId) =>
+    request(`api/head-to-head/byMatchId/${matchId}`, {
+      method: "GET",
+      errorAlert: false,
+    }),
+  getTeamsRecentForm: (matchId) =>
+    request(`api/teams/recent-form/${matchId}`, {
+      method: "GET",
+      errorAlert: false,
     }),
   getMatchSettings: (matchId) =>
     request(`api/matches/${matchId}/settings`, { method: "GET" }),

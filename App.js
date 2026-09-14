@@ -38,16 +38,16 @@ function AppContent() {
   const { isDark } = useAppTheme();
 
   return (
-    <BottomSheetModalProvider>
-      <BottomSheetProvider>
-        <SocketProvider>
-          <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+      <BottomSheetModalProvider>
+        <BottomSheetProvider>
+          <SocketProvider>
             <AppNavigator />
             <StatusBar style={isDark ? "light" : "dark"} />
-          </NavigationContainer>
-        </SocketProvider>
-      </BottomSheetProvider>
-    </BottomSheetModalProvider>
+          </SocketProvider>
+        </BottomSheetProvider>
+      </BottomSheetModalProvider>
+    </NavigationContainer>
   );
 }
 

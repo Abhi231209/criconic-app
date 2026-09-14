@@ -39,6 +39,13 @@ const SCREENS = {
   ChangeBowler: "ChangeBowler",
   ThemeConfig: "ThemeConfig",
   GoLiveSetup: "GoLiveSetup",
+  AllMatches: "AllMatches",
+  ChangePassword: "ChangePassword",
+  MyQR: "MyQR",
+  HomeConfig: "HomeConfig",
+  SetupAds: "SetupAds",
+  BlogPosts: "BlogPosts",
+  QRScanner: "QRScanner",
 };
 
 export default SCREENS;

@@ -24,6 +24,7 @@ export default function MatchHeader({
   isScorerScreen,
   matchDetails,
   score,
+  onSettingsChange,
 }) {
   const navigation = useNavigation();
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -31,7 +32,7 @@ export default function MatchHeader({
 
   const handleSettingsChange = (newSettings) => {
     console.log("Settings updated:", newSettings);
-    // You can pass these settings up to parent component or store in context
+    onSettingsChange?.(newSettings);
   };
 
   return (

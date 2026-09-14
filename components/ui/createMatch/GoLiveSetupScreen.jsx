@@ -11,6 +11,7 @@ import {
   Share,
   ActivityIndicator,
   Modal,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -33,89 +34,45 @@ import { request } from "@/utils/api";
 import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
+import { THEME_STRIP_PREVIEWS } from "../themeConfig/DesktopOverlayPreview";
 
-// ---- Realistic Scorecard Preview Component ----
+// ---- Authentic Broadcast Scorecard Preview Component ----
 function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
-  const themeKey = theme?.componentKey || "classic";
-  const primaryA = teamAColor?.config?.primaryColor || "#3B82F6";
-  const primaryB = teamBColor?.config?.primaryColor || "#10B981";
-
-  const stylesMap = {
-    fox: {
-      bg: "#1a1a2e",
-      header: primaryA,
-      accent: primaryB,
-      textColor: "#ffffff",
-      secondaryText: "#a0aec0",
-      border: primaryA,
-    },
-    ipl: {
-      bg: "#0d0d0d",
-      header: "#C4A020",
-      accent: primaryA,
-      textColor: "#ffffff",
-      secondaryText: "#b0b0b0",
-      border: "#C4A020",
-    },
-    classic: {
-      bg: isDark ? "#1E293B" : "#F8FAFC",
-      header: primaryA,
-      accent: primaryB,
-      textColor: isDark ? "#F1F5F9" : "#1E293B",
-      secondaryText: isDark ? "#94A3B8" : "#64748B",
-      border: isDark ? "#334155" : "#E2E8F0",
-    },
-  };
-  const s = stylesMap[themeKey] || stylesMap.classic;
+  const themeKey = (theme?.componentKey || theme?.id || '').toLowerCase();
+  const isIpl = themeKey.includes('ipl');
 
   return (
-    <View style={[previewStyles.card, { backgroundColor: s.bg, borderColor: s.border }]}>
-      <View style={[previewStyles.header, { backgroundColor: s.header }]}>
-        <View style={previewStyles.teamRow}>
-          <ThemedText className="font-bold" style={previewStyles.teamName}>
-            Team A
-          </ThemedText>
-          <ThemedText className="font-extrabold" style={previewStyles.score}>
-            142/4
-          </ThemedText>
-        </View>
-        <View style={[previewStyles.teamRow, { marginTop: 2 }]}>
-          <ThemedText className="font-medium" style={[previewStyles.subText, { color: "rgba(255,255,255,0.85)" }]}>
-            15.3 ov
-          </ThemedText>
-          <ThemedText className="font-semibold" style={[previewStyles.subText, { color: "rgba(255,255,255,0.95)" }]}>
-            CRR 9.19
-          </ThemedText>
-        </View>
-      </View>
-      <View style={previewStyles.section}>
-        <ThemedText className="font-bold" style={[previewStyles.sectionTitle, { color: s.accent }]}>
-          BATTING
-        </ThemedText>
-        <View style={previewStyles.statsRow}>
-          <ThemedText className="font-medium" style={[previewStyles.playerText, { color: s.textColor }]}>
-            V. Kohli *
-          </ThemedText>
-          <ThemedText className="font-bold" style={[previewStyles.playerText, { color: s.textColor }]}>
-            72 (48)
-          </ThemedText>
-        </View>
-      </View>
+    <View style={previewStyles.card}>
+      <ScrollView
+        horizontal={true}
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled={true}
+        contentContainerStyle={{ minWidth: '100%' }}
+      >
+        <Image
+          source={isIpl ? THEME_STRIP_PREVIEWS.ipl : THEME_STRIP_PREVIEWS.fox}
+          style={previewStyles.image}
+          resizeMode="cover"
+        />
+      </ScrollView>
     </View>
   );
 }
 
 const previewStyles = StyleSheet.create({
-  card: { borderRadius: 12, borderWidth: 1, overflow: "hidden", marginTop: 8 },
-  header: { padding: 12 },
-  teamRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  teamName: { color: "#ffffff", fontSize: 15 },
-  score: { color: "#ffffff", fontSize: 20 },
-  subText: { fontSize: 12 },
-  section: { padding: 10 },
-  sectionTitle: { fontSize: 10, letterSpacing: 1, marginBottom: 4 },
-  statsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  playerText: { fontSize: 13 },
+  card: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    overflow: 'hidden',
+    marginTop: 8,
+    backgroundColor: '#070A0F',
+  },
+  image: {
+    width: 560,
+    height: 52,
+    borderRadius: 6,
+  },
 });
 
 // ---- Color Swatch Component ----

@@ -32,7 +32,6 @@ import PlayerSelectionScreen from "@/components/ui/createMatch/PlayerSelectionSc
 import ScorerScreen from "@/components/ui/createMatch/ScorerScreen";
 import PlayerProfile from "@/components/ui/profile/PlayerProfile";
 import EditPlayerProfile from "@/components/ui/profile/EditPlayerProfile";
-import MyQR from "@/components/ui/profile/MyQR";
 import BlogList from "@/components/ui/blog/BlogList";
 import BlogPost from "@/components/ui/blog/BlogPost";
 import Settings from "@/components/ui/Setting";
@@ -43,10 +42,17 @@ import ChangeSquad from "@/components/ui/createMatch/ChangeSquad/ChangeSquad";
 import ChangeBowler from "@/components/ui/createMatch/ChangeSquad/ChangeBowler";
 import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
+import AllMatches from "@/components/ui/AllMatches";
 import useAppTheme from "@/hooks/useAppTheme";
 import ForgotPasswordScreen from "@/components/ui/auth/ForgotPasswordScreen";
 import RegisterScreen from "@/components/ui/auth/RegisterScreen";
 import ChangePasswordScreen from "@/components/ui/auth/ChangePasswordScreen";
+import ChangePassword from "@/screens/ChangePassword";
+import MyQR from "@/screens/MyQR";
+import HomeConfig from "@/screens/admin/HomeConfig";
+import SetupAds from "@/screens/admin/SetupAds";
+import BlogPosts from "@/screens/admin/BlogPosts";
+import QRScanner from "@/screens/QRScanner";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -112,7 +118,6 @@ function MainStack() {
         name={SCREENS.EditPlayerProfile}
         component={EditPlayerProfile}
       />
-      <Stack.Screen name={SCREENS.MyQR} component={MyQR} />
       <Stack.Screen name={SCREENS.BlogList} component={BlogList} />
       <Stack.Screen name={SCREENS.BlogPost} component={BlogPost} />
       <Stack.Screen name={SCREENS.Settings} component={Settings} />
@@ -125,6 +130,16 @@ function MainStack() {
       <Stack.Screen name={SCREENS.ForgotPasswordScreen} component={ForgotPasswordScreen} />
       <Stack.Screen name={SCREENS.RegisterScreen} component={RegisterScreen} />
       <Stack.Screen name={SCREENS.ChangePasswordScreen} component={ChangePasswordScreen} />
+      <Stack.Screen name={SCREENS.AllMatches} component={AllMatches} />
+      <Stack.Screen
+        name={SCREENS.ChangePassword}
+        component={ChangePassword}
+      />
+      <Stack.Screen name={SCREENS.MyQR} component={MyQR} />
+      <Stack.Screen name={SCREENS.HomeConfig} component={HomeConfig} />
+      <Stack.Screen name={SCREENS.SetupAds} component={SetupAds} />
+      <Stack.Screen name={SCREENS.BlogPosts} component={BlogPosts} />
+      <Stack.Screen name={SCREENS.QRScanner} component={QRScanner} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );
@@ -136,6 +151,7 @@ export default function AppNavigator() {
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
+        swipeEnabled: false,
         drawerType: "back",
         headerShown: false, // Set true if you want header
         drawerStyle: {

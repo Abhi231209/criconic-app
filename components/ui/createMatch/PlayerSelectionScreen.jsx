@@ -9,22 +9,27 @@ import {
   Alert,
   BackHandler,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ThemedText from "@/components/ui/custom/ThemedText";
+import RightDrawer from "@/components/ui/custom/RightDrawer";
+import MatchSetting from "./MatchSetting";
 import SCREENS from "@/screens";
 import { matchesApi, request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import { MatchSettingEnum } from "@/utils/Common";
 import User from "@/utils/User";
 import { useSelector } from "react-redux";
 
 export default function PlayerSelectionScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { emit } = useSocket();
+  const { emit, isConnected } = useSocket();
   const authUser = useSelector((state) => state?.auth?.user);
   const effectiveUserId = User.id || authUser?._id || authUser?.id;
 
@@ -122,6 +127,20 @@ export default function PlayerSelectionScreen() {
   const [teamASquad, setTeamASquad] = useState(normTeamASquad);
   const [teamBSquad, setTeamBSquad] = useState(normTeamBSquad);
 
+  const isInningsTwoParam = Boolean(
+    route.params?.isInningsTwo ||
+    route.params?.currentInnings === 2 ||
+    route.params?.innings === 2 ||
+    route.params?.action === "END_OF_INNINGS"
+  );
+  const [isInningsTwo, setIsInningsTwo] = useState(isInningsTwoParam);
+
+  const isSuperOverParam = Boolean(
+    route.params?.isSuperOver ||
+    route.params?.status === MATCH_STATUS.SUPER_OVER
+  );
+  const [isSuperOver, setIsSuperOver] = useState(isSuperOverParam);
+
   // Unambiguously determine batting & bowling teams based on toss winner and decision
   const isWinnerTeamA = isSameTeam(tossWinner, initialTeamA);
   const isWinnerBatting =
@@ -136,10 +155,14 @@ export default function PlayerSelectionScreen() {
     ? (isWinnerTeamA ? initialTeamB : initialTeamA)
     : (isWinnerTeamA ? initialTeamA : initialTeamB);
 
-  const isBattingTeamA = isSameTeam(initialBattingTeam, initialTeamA);
+  // In Inning 2, reverse batting and bowling teams
+  const resolvedBattingTeam = isInningsTwoParam ? initialBowlingTeam : initialBattingTeam;
+  const resolvedBowlingTeam = isInningsTwoParam ? initialBattingTeam : initialBowlingTeam;
 
-  const [battingTeam, setBattingTeam] = useState(initialBattingTeam || initialTeamA);
-  const [bowlingTeam, setBowlingTeam] = useState(initialBowlingTeam || initialTeamB);
+  const isBattingTeamA = isSameTeam(resolvedBattingTeam, initialTeamA);
+
+  const [battingTeam, setBattingTeam] = useState(resolvedBattingTeam || initialTeamA);
+  const [bowlingTeam, setBowlingTeam] = useState(resolvedBowlingTeam || initialTeamB);
 
   const [battingSquad, setBattingSquad] = useState(
     isBattingTeamA ? normTeamASquad : normTeamBSquad
@@ -156,10 +179,102 @@ export default function PlayerSelectionScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openersCompleted, setOpenersCompleted] = useState(false);
   const [isStatusChecked, setIsStatusChecked] = useState(false);
+  const [targetScore, setTargetScore] = useState(route.params?.targetScore || null);
   const isLeavingRef = useRef(false);
 
-  // Status check on mount
+  // Settings Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Wagon Wheel & Pitch Map Check-based Tracking States
+  const [isWagonWheelEnabled, setIsWagonWheelEnabled] = useState(true);
+  const [isPitchMapEnabled, setIsPitchMapEnabled] = useState(true);
+
+  // Hydrate tracking preferences from AsyncStorage and match config
   useEffect(() => {
+    if (!matchId) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const storedWW = await AsyncStorage.getItem(`@criconic_ww_${matchId}`);
+        const storedPM = await AsyncStorage.getItem(`@criconic_pm_${matchId}`);
+
+        if (isMounted) {
+          if (storedWW !== null) {
+            setIsWagonWheelEnabled(storedWW === "true");
+          } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
+            const ww = matchDetails.config.recordWagonWheel;
+            setIsWagonWheelEnabled(typeof ww === "boolean" ? ww : !!ww?.active);
+          }
+
+          if (storedPM !== null) {
+            setIsPitchMapEnabled(storedPM === "true");
+          } else if (matchDetails?.config?.recordPitchMap !== undefined) {
+            const pm = matchDetails.config.recordPitchMap;
+            setIsPitchMapEnabled(typeof pm === "boolean" ? pm : !!pm?.active);
+          }
+        }
+      } catch (err) {
+        console.warn("[PlayerSelectionScreen] Error hydrating tracking options:", err);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [matchId]);
+
+  const handleToggleWagonWheel = async (val) => {
+    setIsWagonWheelEnabled(val);
+    if (!matchId) return;
+    try {
+      await AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val));
+      matchesApi.updateMatch(matchId, { config: { recordWagonWheel: val } }).catch(() => {});
+      request(`api/matches/${matchId}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_WAGON_WHEEL, data: val },
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("Failed to persist wagon wheel setting:", e);
+    }
+  };
+
+  const handleTogglePitchMap = async (val) => {
+    setIsPitchMapEnabled(val);
+    if (!matchId) return;
+    try {
+      await AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val));
+      matchesApi.updateMatch(matchId, { config: { recordPitchMap: val } }).catch(() => {});
+      request(`api/matches/${matchId}/settings`, {
+        method: "PUT",
+        data: { action: MatchSettingEnum.RECORD_PITCH_MAP, data: val },
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("Failed to persist pitch map setting:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (isInningsTwoParam) {
+      setIsInningsTwo(true);
+      setStriker(null);
+      setNonStriker(null);
+      setBowler(null);
+      setOpenersCompleted(false);
+      isLeavingRef.current = false;
+      if (route.params?.targetScore) {
+        setTargetScore(route.params.targetScore);
+      }
+    }
+    if (route.params?.isSuperOver || route.params?.status === MATCH_STATUS.SUPER_OVER) {
+      setIsSuperOver(true);
+      setStriker(null);
+      setNonStriker(null);
+      setBowler(null);
+      setOpenersCompleted(false);
+      isLeavingRef.current = false;
+    }
+  }, [isInningsTwoParam, route.params?.currentInnings, route.params?.action, route.params?.targetScore, route.params?.isSuperOver, route.params?.status]);
+
+  const loadMatchData = useCallback(() => {
     if (!matchId) {
       setIsStatusChecked(true);
       return;
@@ -174,59 +289,178 @@ export default function PlayerSelectionScreen() {
           return;
         }
 
-        if (m.status === MATCH_STATUS.MATCH_CREATED) {
-          isLeavingRef.current = true;
-          navigation.replace(SCREENS.MatchDetailsScreen, { matchId, ...route.params });
-          return; // do NOT setIsStatusChecked — redirecting away
+
+        const statusUpper = String(m.status || "").toUpperCase();
+        const isInningBreak =
+          statusUpper === "INNINGS_I_ENDED" ||
+          statusUpper === "INNINGS_BREAK" ||
+          statusUpper === MATCH_STATUS.INNINGS_I_ENDED ||
+          statusUpper === MATCH_STATUS.INNINGS_BREAK;
+
+        const isSuperOverMatch =
+          isSuperOverParam ||
+          Boolean(route.params?.isSuperOver) ||
+          statusUpper === "SUPER_OVER" ||
+          statusUpper === MATCH_STATUS.SUPER_OVER ||
+          Boolean(m.score?.isSuperOver) ||
+          Boolean(m.score?.["innings_" + m.currentInnings]?.isSuperOver);
+
+        if (isSuperOverMatch) {
+          setIsSuperOver(true);
+          setStriker(null);
+          setNonStriker(null);
+          setBowler(null);
+          setOpenersCompleted(false);
         }
 
-        if (m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED) {
-          isLeavingRef.current = true;
-          navigation.replace(SCREENS.TossScreen, { matchId, ...route.params });
-          return; // do NOT setIsStatusChecked — redirecting away
-        }
+        const isSecondInnings =
+          isInningsTwoParam ||
+          Boolean(route.params?.isInningsTwo) ||
+          route.params?.currentInnings === 2 ||
+          route.params?.action === "END_OF_INNINGS" ||
+          isInningBreak ||
+          m.currentInnings === 2 ||
+          m.score?.currentInning === 2;
 
-        if (
-          m.status &&
-          m.status !== MATCH_STATUS.TOSS &&
-          m.status !== MATCH_STATUS.MATCH_CREATED &&
-          m.status !== MATCH_STATUS.MATCH_DETAILS_ENTERED
-        ) {
-          setOpenersCompleted(true);
-          const target = matchRedirectBasedOnStatus(matchId, m.status);
-          isLeavingRef.current = true;
-          navigation.replace(target.screen, target.params);
-          return; // do NOT setIsStatusChecked — redirecting away
+        if (isSuperOverMatch) {
+          // Super Over: stay on selection screen until openers are submitted
+        } else if (isSecondInnings) {
+          setIsInningsTwo(true);
+          // Clear any Inning 1 opener selections so Inning 2 openers can be selected fresh
+          setStriker(null);
+          setNonStriker(null);
+          setBowler(null);
+          setOpenersCompleted(false);
+
+          const lastScore =
+            m.score?.innings_1?.totalRuns ??
+            m.score?.innings_1?.score?.runs ??
+            m.score?.lastInningScore;
+          if (lastScore !== undefined && lastScore !== null) {
+            setTargetScore(Number(lastScore) + 1);
+          }
+
+          // In web flow: Only redirect to ScorerScreen if match has already advanced to INNINGS_II
+          // (which only happens AFTER selectOpener API is submitted for Inning 2)
+          if (statusUpper === MATCH_STATUS.INNINGS_II || statusUpper === "INNINGS_II") {
+            setOpenersCompleted(true);
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.ScorerScreen, {
+              ...route.params,
+              matchId,
+              isInningsTwo: true,
+              currentInnings: 2,
+            });
+            return;
+          }
+          // Otherwise, stay on PlayerSelectionScreen to let user select Inning 2 openers!
+        } else {
+          // Standard Inning 1 checks ONLY
+          if (m.status === MATCH_STATUS.MATCH_CREATED) {
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.MatchDetailsScreen, { matchId, ...route.params });
+            return;
+          }
+
+          if (m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED) {
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.TossScreen, { matchId, ...route.params });
+            return;
+          }
+
+          const currentInn = m.currentInnings || 1;
+          const currentInnObj = m.score?.[`innings_${currentInn}`];
+          const hasSuperOverOpeners = Boolean(
+            (currentInnObj?.batsman?.length >= 2) ||
+            (m.score?.batsman?.length >= 2) ||
+            (currentInnObj?.overs?.length > 0) ||
+            (currentInnObj?.totalRuns > 0)
+          );
+
+          if (isSuperOverMatch && hasSuperOverOpeners && route.params?.action !== "END_OF_INNINGS") {
+            setOpenersCompleted(true);
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.ScorerScreen, {
+              matchId,
+              isSuperOver: true,
+            });
+            return;
+          }
+
+          if (
+            m.status &&
+            m.status !== MATCH_STATUS.TOSS &&
+            m.status !== MATCH_STATUS.MATCH_CREATED &&
+            m.status !== MATCH_STATUS.MATCH_DETAILS_ENTERED &&
+            m.status !== MATCH_STATUS.SUPER_OVER &&
+            statusUpper !== "SUPER_OVER" &&
+            !isInningBreak &&
+            !isInningsTwoParam &&
+            !route.params?.isInningsTwo &&
+            !isSuperOverMatch
+          ) {
+            setOpenersCompleted(true);
+            const target = matchRedirectBasedOnStatus(matchId, m.status);
+            isLeavingRef.current = true;
+            navigation.replace(target.screen, target.params);
+            return;
+          }
         }
 
         if (m.teams && m.teams.length >= 2) {
-          const toss = m.score?.toss;
-          const currentInningsBattingTeam =
-            m.score?.innings_1?.battingTeam ||
-            (toss?.decision === "BAT"
-              ? toss.winningTeam
-              : String(m.teams[0]?.teamId?._id || m.teams[0]?.teamId) === String(toss?.winningTeam)
-              ? m.teams[1]?.teamId
-              : m.teams[0]?.teamId);
+          const t0Id = String(m.teams[0]?.teamId?._id || m.teams[0]?.teamId?.id || m.teams[0]?.teamId || "");
+          const t1Id = String(m.teams[1]?.teamId?._id || m.teams[1]?.teamId?.id || m.teams[1]?.teamId || "");
 
-          const batTeamIdStr = String(
-            currentInningsBattingTeam?._id ||
-            currentInningsBattingTeam?.id ||
-            currentInningsBattingTeam ||
+          const toss = m.score?.toss;
+          const tossWinningTeamId = String(toss?.winningTeam?._id || toss?.winningTeam?.id || toss?.winningTeam || "");
+          const tossDecision = String(toss?.decision || "").toUpperCase();
+
+          let inning1BatTeamId = String(
+            m.score?.innings_1?.battingTeam?._id ||
+            m.score?.innings_1?.battingTeam?.id ||
+            m.score?.innings_1?.battingTeam ||
             ""
           );
+
+          if (!inning1BatTeamId) {
+            if (tossDecision === "BAT") {
+              inning1BatTeamId = tossWinningTeamId;
+            } else if (tossDecision === "BOWL") {
+              inning1BatTeamId = (t0Id === tossWinningTeamId) ? t1Id : t0Id;
+            } else {
+              inning1BatTeamId = t0Id;
+            }
+          }
+
+          let currentBatTeamIdStr = "";
+          const innKeyBat = m.score?.[`innings_${m.currentInnings}`]?.battingTeam;
+          const innKeyBatId = innKeyBat ? String(innKeyBat?._id || innKeyBat?.id || innKeyBat) : "";
+          if (innKeyBatId) {
+            currentBatTeamIdStr = innKeyBatId;
+          } else if (isSecondInnings) {
+            // Inning 2: batting team is the team that was bowling in Inning 1
+            const inn2Bat = m.score?.innings_2?.battingTeam;
+            const inn2BatId = inn2Bat ? String(inn2Bat?._id || inn2Bat?.id || inn2Bat) : "";
+            if (inn2BatId) {
+              currentBatTeamIdStr = inn2BatId;
+            } else {
+              currentBatTeamIdStr = (t0Id === inning1BatTeamId) ? t1Id : t0Id;
+            }
+          } else {
+            currentBatTeamIdStr = inning1BatTeamId;
+          }
 
           const batTeam =
             m.teams.find((t) => {
               const tid = String(t.teamId?._id || t.teamId?.id || t.teamId || "");
-              return tid && tid === batTeamIdStr;
-            }) || m.teams[0];
+              return tid && tid === currentBatTeamIdStr;
+            }) || (isSecondInnings ? m.teams[1] : m.teams[0]);
 
           const bowlTeam =
             m.teams.find((t) => {
               const tid = String(t.teamId?._id || t.teamId?.id || t.teamId || "");
-              return tid && tid !== batTeamIdStr;
-            }) || m.teams[1] || m.teams[0];
+              return tid && tid !== currentBatTeamIdStr;
+            }) || (isSecondInnings ? m.teams[0] : m.teams[1]);
 
           setTeamA({
             name: m.teams[0]?.title || m.teams[0]?.name || "Team A",
@@ -324,12 +558,16 @@ export default function PlayerSelectionScreen() {
             }
           }
 
-          const resolveSquad = (sourceCandidates, apiList, dbList) => {
+          const isBatTeamA_api = isSameTeam(batTeam, initialTeamA);
+          const routeBatSquad = isBatTeamA_api ? normTeamASquad : normTeamBSquad;
+          const routeBowlSquad = isBatTeamA_api ? normTeamBSquad : normTeamASquad;
+
+          const resolveSquad = (routeSquad, apiList, dbList) => {
             const list =
-              sourceCandidates && sourceCandidates.length > 0
-                ? sourceCandidates
-                : apiList && apiList.length > 0
+              apiList && apiList.length > 0
                 ? apiList
+                : routeSquad && routeSquad.length > 0
+                ? routeSquad
                 : dbList && dbList.length > 0
                 ? dbList
                 : [];
@@ -360,8 +598,8 @@ export default function PlayerSelectionScreen() {
             });
           };
 
-          setBattingSquad((prev) => resolveSquad(prev, apiBatPlayers, dbBatPlayers));
-          setBowlingSquad((prev) => resolveSquad(prev, apiBowlPlayers, dbBowlPlayers));
+          setBattingSquad(resolveSquad(routeBatSquad, apiBatPlayers, dbBatPlayers));
+          setBowlingSquad(resolveSquad(routeBowlSquad, apiBowlPlayers, dbBowlPlayers));
         }
 
         // Status check done — safe to render PlayerSelectionScreen UI
@@ -371,8 +609,11 @@ export default function PlayerSelectionScreen() {
         console.warn("[PlayerSelectionScreen] Status check error:", err);
         setIsStatusChecked(true); // ungate even on error
       });
-  }, [matchId]);
+  }, [matchId, isInningsTwoParam, route.params?.currentInnings]);
 
+  useEffect(() => {
+    loadMatchData();
+  }, [loadMatchData]);
 
   const handleBack = () => {
     confirmLeavePreScore({
@@ -387,6 +628,28 @@ export default function PlayerSelectionScreen() {
   useFocusEffect(
     useCallback(() => {
       isLeavingRef.current = false;
+
+      const isSecondInn = Boolean(
+        route.params?.isInningsTwo ||
+        route.params?.currentInnings === 2 ||
+        route.params?.innings === 2 ||
+        route.params?.action === "END_OF_INNINGS"
+      );
+      const isSuper = Boolean(
+        route.params?.isSuperOver ||
+        route.params?.status === MATCH_STATUS.SUPER_OVER
+      );
+
+      if (isSecondInn || isSuper) {
+        if (isSecondInn) setIsInningsTwo(true);
+        if (isSuper) setIsSuperOver(true);
+        setStriker(null);
+        setNonStriker(null);
+        setBowler(null);
+        setOpenersCompleted(false);
+      }
+
+      loadMatchData();
 
       const backAction = () => {
         if (!navigation.isFocused()) return false;
@@ -408,7 +671,7 @@ export default function PlayerSelectionScreen() {
         backHandler.remove();
         unsubscribe();
       };
-    }, [navigation, openersCompleted, matchId, teamA, teamB, teamASquad, teamBSquad, matchDetails, tossWinner, tossDecision])
+    }, [navigation, matchId, route.params?.isInningsTwo, route.params?.currentInnings, route.params?.action, route.params?.isSuperOver, route.params?.status, loadMatchData])
   );
 
   const openPlayerModal = (role) => {
@@ -485,13 +748,35 @@ export default function PlayerSelectionScreen() {
         }
       }
 
-      // Emit socket start event
-      emit && emit("start", { matchId, userId: effectiveUserId });
+      // Emit socket start event only if NOT Innings 2 and NOT Super Over (aligning with web flow)
+      if (!isInningsTwo && !isSuperOver) {
+        emit && emit("start", { matchId, userId: effectiveUserId });
+      }
+
+      // Persist tracking preferences for this match
+      if (matchId) {
+        AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(isWagonWheelEnabled)).catch(() => {});
+        AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(isPitchMapEnabled)).catch(() => {});
+        matchesApi.updateMatch(matchId, {
+          config: {
+            recordWagonWheel: isWagonWheelEnabled,
+            recordPitchMap: isPitchMapEnabled,
+          },
+        }).catch(() => {});
+        request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: { action: MatchSettingEnum.RECORD_WAGON_WHEEL, data: isWagonWheelEnabled },
+        }).catch(() => {});
+        request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: { action: MatchSettingEnum.RECORD_PITCH_MAP, data: isPitchMapEnabled },
+        }).catch(() => {});
+      }
 
       setOpenersCompleted(true);
       isLeavingRef.current = true;
 
-      navigation.navigate(SCREENS.ScorerScreen, {
+      const navParams = {
         matchId,
         matchID: matchId,
         teamA,
@@ -506,7 +791,14 @@ export default function PlayerSelectionScreen() {
         bowler,
         battingTeam,
         bowlingTeam,
-      });
+        isInningsTwo,
+        isSuperOver,
+        currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        isWagonWheelEnabled,
+        isPitchMapEnabled,
+      };
+
+      navigation.navigate(SCREENS.ScorerScreen, navParams);
     } catch (error) {
       console.warn("[PlayerSelection] Error submitting openers:", error);
       Alert.alert("Notice", "Error saving openers. Continuing to Scorer Screen.");
@@ -526,6 +818,11 @@ export default function PlayerSelectionScreen() {
         bowler,
         battingTeam,
         bowlingTeam,
+        isInningsTwo,
+        isSuperOver,
+        currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        isWagonWheelEnabled,
+        isPitchMapEnabled,
       });
     } finally {
       setIsSubmitting(false);
@@ -690,24 +987,43 @@ export default function PlayerSelectionScreen() {
     >
         {/* Header */}
         <View
-          className={`px-4 py-4 border-b flex-row items-center ${
+          className={`px-4 py-4 border-b flex-row items-center justify-between ${
             isDarkMode
               ? "bg-gray-800 border-gray-700"
               : "bg-white border-gray-200"
           }`}
         >
+          <View className="flex-row items-center flex-1">
+            <TouchableOpacity
+              onPress={handleBack}
+              className="p-2 mr-2"
+            >
+              <Ionicons name="arrow-back" size={24} color="#2563EB" />
+            </TouchableOpacity>
+            <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+              {isSuperOver
+                ? "Select Players - Super Over"
+                : isInningsTwo
+                ? "Select Players - Innings 2"
+                : "Select Players"}
+            </ThemedText>
+          </View>
           <TouchableOpacity
-            onPress={handleBack}
-            className="p-2 mr-2"
+            onPress={() => setIsDrawerOpen(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+            className="p-2 rounded-full"
           >
-            <Ionicons name="arrow-back" size={24} color="#2563EB" />
+            <Ionicons name="settings-outline" size={22} color={isDarkMode ? "#FFFFFF" : "#1F2937"} />
           </TouchableOpacity>
-          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-            Select Players
-          </ThemedText>
         </View>
 
-        <View className="flex-1 p-4">
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Match Info */}
           <View className={`p-4 rounded-xl mb-6 ${
             isDarkMode ? "bg-gray-800" : "bg-white"
@@ -721,7 +1037,7 @@ export default function PlayerSelectionScreen() {
             <View className="flex-row justify-between mt-3">
               <View className="items-center flex-1">
                 <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                  Batting First
+                  {isSuperOver ? "Batting (Super Over)" : isInningsTwo ? "Batting" : "Batting First"}
                 </ThemedText>
                 <ThemedText className="text-base font-semibold text-gray-900 dark:text-white text-center">
                   {battingTeam?.name || battingTeam?.title || "Batting Team"}
@@ -730,7 +1046,7 @@ export default function PlayerSelectionScreen() {
               
               <View className="items-center flex-1">
                 <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                  Bowling First
+                  {isSuperOver ? "Bowling (Super Over)" : isInningsTwo ? "Bowling" : "Bowling First"}
                 </ThemedText>
                 <ThemedText className="text-base font-semibold text-gray-900 dark:text-white text-center">
                   {bowlingTeam?.name || bowlingTeam?.title || "Bowling Team"}
@@ -738,15 +1054,25 @@ export default function PlayerSelectionScreen() {
               </View>
             </View>
             
-            <ThemedText className="text-xs text-gray-500 dark:text-gray-400 text-center mt-3">
-              {(tossWinner?.name || tossWinner?.title || "Toss Winner")} won the toss and chose to {(tossDecision || "bat").toLowerCase()} first
-            </ThemedText>
+            {isInningsTwo && targetScore ? (
+              <ThemedText className="text-sm font-semibold text-blue-600 dark:text-blue-400 text-center mt-3">
+                Target: {targetScore} runs
+              </ThemedText>
+            ) : (
+              <ThemedText className="text-xs text-gray-500 dark:text-gray-400 text-center mt-3">
+                {(tossWinner?.name || tossWinner?.title || "Toss Winner")} won the toss and chose to {(tossDecision || "bat").toLowerCase()} first
+              </ThemedText>
+            )}
           </View>
 
           {/* Player Selection Buttons */}
           <View className="mb-6">
             <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Batting Team Selection
+              {isSuperOver
+                ? "Batting Team Selection (Super Over)"
+                : isInningsTwo
+                ? "Batting Team Selection (Innings 2)"
+                : "Batting Team Selection"}
             </ThemedText>
             
             {renderSelectionButton('striker', striker, 'Striker')}
@@ -755,17 +1081,90 @@ export default function PlayerSelectionScreen() {
 
           <View className="mb-6">
             <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Bowling Team Selection
+              {isSuperOver
+                ? "Bowling Team Selection (Super Over)"
+                : isInningsTwo
+                ? "Bowling Team Selection (Innings 2)"
+                : "Bowling Team Selection"}
             </ThemedText>
             
             {renderSelectionButton('bowler', bowler, 'Bowler')}
+          </View>
+
+          {/* Match Scoring Features */}
+          <View className={`p-4 rounded-xl mb-6 ${
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+          } shadow-sm border`}>
+            <View className="flex-row items-center mb-3">
+              <View className="w-8 h-8 rounded-full bg-blue-500/10 items-center justify-center mr-2.5">
+                <Ionicons name="analytics-outline" size={18} color="#3B82F6" />
+              </View>
+              <View className="flex-1">
+                <ThemedText className="text-base font-bold text-gray-900 dark:text-white">
+                  Match Scoring Features
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                  Enable Wagon Wheel & Pitch Map tracking for deliveries
+                </ThemedText>
+              </View>
+            </View>
+
+            {/* Wagon Wheel toggle */}
+            <View className={`flex-row items-center justify-between py-2.5 border-t ${
+              isDarkMode ? "border-gray-700/60" : "border-gray-100"
+            }`}>
+              <View className="flex-row items-center flex-1 mr-3">
+                <View className="w-7 h-7 rounded-lg bg-blue-500/10 items-center justify-center mr-2.5">
+                  <Ionicons name="disc-outline" size={16} color="#3B82F6" />
+                </View>
+                <View className="flex-1">
+                  <ThemedText className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Record Wagon Wheel
+                  </ThemedText>
+                  <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                    Prompt shot direction & zone for scored balls
+                  </ThemedText>
+                </View>
+              </View>
+              <Switch
+                value={isWagonWheelEnabled}
+                onValueChange={handleToggleWagonWheel}
+                thumbColor={isWagonWheelEnabled ? "#3B82F6" : "#CBD5E1"}
+                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
+              />
+            </View>
+
+            {/* Pitch Map toggle */}
+            <View className={`flex-row items-center justify-between py-2.5 border-t ${
+              isDarkMode ? "border-gray-700/60" : "border-gray-100"
+            }`}>
+              <View className="flex-row items-center flex-1 mr-3">
+                <View className="w-7 h-7 rounded-lg bg-amber-500/10 items-center justify-center mr-2.5">
+                  <Ionicons name="locate-outline" size={16} color="#F59E0B" />
+                </View>
+                <View className="flex-1">
+                  <ThemedText className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Record Pitch Map
+                  </ThemedText>
+                  <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                    Prompt line & length pitching spot for deliveries
+                  </ThemedText>
+                </View>
+              </View>
+              <Switch
+                value={isPitchMapEnabled}
+                onValueChange={handleTogglePitchMap}
+                thumbColor={isPitchMapEnabled ? "#F59E0B" : "#CBD5E1"}
+                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#FDE68A" }}
+              />
+            </View>
           </View>
 
           {/* Start Match Button */}
           <TouchableOpacity
             onPress={handleStartMatch}
             disabled={!striker || !nonStriker || !bowler || isSubmitting}
-            className={`p-4 rounded-xl mt-4 flex-row items-center justify-center ${
+            className={`p-4 rounded-xl mt-2 flex-row items-center justify-center ${
               !striker || !nonStriker || !bowler || isSubmitting
                 ? "bg-gray-400"
                 : "bg-blue-500"
@@ -775,7 +1174,17 @@ export default function PlayerSelectionScreen() {
               <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
             )}
             <ThemedText className="text-white text-center text-lg font-semibold">
-              {isSubmitting ? "Starting Match..." : "Start Match"}
+              {isSubmitting
+                ? isSuperOver
+                  ? "Starting Super Over..."
+                  : isInningsTwo
+                  ? "Starting Innings 2..."
+                  : "Starting Match..."
+                : isSuperOver
+                ? "Start Super Over"
+                : isInningsTwo
+                ? "Start Innings 2"
+                : "Start Match"}
             </ThemedText>
           </TouchableOpacity>
 
@@ -793,7 +1202,7 @@ export default function PlayerSelectionScreen() {
               • Select the opening bowler from the bowling team
             </ThemedText>
           </View>
-        </View>
+        </ScrollView>
 
         {/* Player Selection Modal */}
         <Modal
@@ -838,6 +1247,37 @@ export default function PlayerSelectionScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Right Drawer for Match & Live Settings */}
+        <RightDrawer
+          isVisible={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+        >
+          <MatchSetting
+            matchId={matchId}
+            onClose={() => setIsDrawerOpen(false)}
+            matchDetails={matchDetails}
+            isPreScorer={true}
+            onSettingsChange={(newSettings) => {
+              if (newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL] !== undefined) {
+                const val = !!newSettings[MatchSettingEnum.RECORD_WAGON_WHEEL];
+                setIsWagonWheelEnabled(val);
+                AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val)).catch(() => {});
+              }
+              if (newSettings[MatchSettingEnum.RECORD_PITCH_MAP] !== undefined) {
+                const val = !!newSettings[MatchSettingEnum.RECORD_PITCH_MAP];
+                setIsPitchMapEnabled(val);
+                AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val)).catch(() => {});
+              }
+            }}
+            score={{
+              batting: battingTeam,
+              bowling: bowlingTeam,
+              teams: [teamA, teamB],
+              tournament: matchDetails?.tournament,
+            }}
+          />
+        </RightDrawer>
       </SafeAreaView>
   );
 }

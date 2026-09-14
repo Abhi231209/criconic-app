@@ -20,6 +20,8 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
+import LocationSearch from '@/components/ui/custom/LocationSearch';
+import SCREENS from '@/screens';
 import { teamsApi, upload } from '@/utils/api';
 
 const InputField = ({ 
@@ -298,25 +300,32 @@ export default function CreateTeam() {
             </View>
           </View>
 
-          {/* City and Home Ground */}
-          <View className="flex-row justify-between mb-4">
-            <View className="flex-1 mr-2">
-              <InputField
-                label="City *"
-                value={formData.city}
-                onChange={(text) => setFormData({ ...formData, city: text })}
-                placeholder="Enter city"
-              />
-            </View>
-            <View className="flex-1 ml-2">
-              <InputField
-                label="Home Ground"
-                value={formData.homeGround}
-                onChange={(text) => setFormData({ ...formData, homeGround: text })}
-                placeholder="Home ground name"
-              />
-            </View>
+          {/* City (Google Location Search) */}
+          <View style={{ zIndex: 1000 }} className="mb-2">
+            <LocationSearch
+              label="City"
+              required
+              value={formData.city}
+              onChangeText={(text) => setFormData({ ...formData, city: text })}
+              onSelectLocation={(loc) => {
+                const cityText =
+                  loc?.structured_formatting?.main_text ||
+                  loc?.description ||
+                  "";
+                setFormData({ ...formData, city: cityText });
+              }}
+              placeholder="Search or enter city"
+              isDarkMode={isDarkMode}
+            />
           </View>
+
+          {/* Home Ground */}
+          <InputField
+            label="Home Ground"
+            value={formData.homeGround}
+            onChange={(text) => setFormData({ ...formData, homeGround: text })}
+            placeholder="Home ground name"
+          />
 
           {/* Jersey Color */}
           <InputField
@@ -388,7 +397,42 @@ export default function CreateTeam() {
                 className={`p-2 rounded-lg ${
                   isDarkMode ? 'bg-blue-800' : 'bg-blue-100'
                 }`}
-                onPress={() => navigation.navigate('AddPlayers', { teamId: 'new' })}
+                onPress={() =>
+                  navigation.navigate(SCREENS.AddPlayer, {
+                    cb: (selectedPlayer) => {
+                      if (selectedPlayer) {
+                        setFormData((prev) => {
+                          const playerId =
+                            selectedPlayer.id ||
+                            selectedPlayer._id ||
+                            selectedPlayer.playerId;
+                          const exists = prev.players.some(
+                            (p) => (p.id || p._id || p.playerId) === playerId
+                          );
+                          if (exists) return prev;
+                          return {
+                            ...prev,
+                            players: [
+                              ...prev.players,
+                              {
+                                id: playerId,
+                                _id: playerId,
+                                name:
+                                  selectedPlayer.name ||
+                                  selectedPlayer.username ||
+                                  "Player",
+                                mobile: selectedPlayer.mobile || "",
+                                jerseyNumber:
+                                  selectedPlayer.jerseyNumber ||
+                                  prev.players.length + 1,
+                              },
+                            ],
+                          };
+                        });
+                      }
+                    },
+                  })
+                }
               >
                 <ThemedText className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-blue-900'}`}>
                   Add Players

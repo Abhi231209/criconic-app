@@ -54,6 +54,10 @@ export default function AllTournaments() {
         t.shortName ||
         (t.title ? t.title.slice(0, 4).toUpperCase() : "TRN"),
       logo: t.logoImage || t.logo || null,
+      logoImage: t.logoImage || t.logo || null,
+      coverImage: t.bannerImage || t.coverImage || t.banner || null,
+      bannerImage: t.bannerImage || t.coverImage || t.banner || null,
+      banner: t.bannerImage || t.coverImage || t.banner || null,
       startDate: startDateStr,
       endDate: endDateStr,
       location: t.location || "Location not specified",

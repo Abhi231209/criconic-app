@@ -124,7 +124,11 @@ const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   );
 };
 
-const AnimatedFooter = ({ onNavigate, currentTab }) => {
+const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false }) => {
+  if (visible === false || hidden === true) {
+    return null;
+  }
+
   const navigation = useNavigation();
   const { theme, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState(currentTab || "Home");
@@ -215,6 +219,12 @@ const AnimatedFooter = ({ onNavigate, currentTab }) => {
     if (tabName === "Create") {
       toggleCreateMenu();
     } else {
+      if (tabName === currentTab) {
+        if (showCreateMenu) {
+          toggleCreateMenu();
+        }
+        return;
+      }
       setActiveTab(tabName);
       if (showCreateMenu) {
         toggleCreateMenu();

@@ -207,6 +207,10 @@ const FormIndicator = ({ result }) => {
 
 // Teams and Head to Head Section
 const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
+  const teams = Array.isArray(score?.teams) ? score.teams : [];
+  const team1 = teams[0] || {};
+  const team2 = teams[1] || {};
+
   const matchWin = (teamId) => {
     if (!teamId) {
       return headToHeadStats?.draws || 0;
@@ -225,25 +229,25 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
     >
       {/* Teams List */}
       <View className="mb-6">
-        {score.teams.map((team, index) => (
+        {teams.map((team, index) => (
           <Animated.View
-            key={team.teamId}
+            key={team?.teamId || team?.id || index}
             entering={SlideInRight.delay(index * 100)}
             className="flex-row items-center gap-4 p-3 mb-3 rounded-xl bg-gray-100 dark:bg-gray-700"
           >
             <ImagePlaceHolder
-              image={team.teamLogo}
-              name={team.title}
+              image={team?.teamLogo}
+              name={team?.title}
             />
             <ThemedText className={`text-lg font-medium ${textColor}`}>
-              {team.title}
+              {team?.title}
             </ThemedText>
           </Animated.View>
         ))}
       </View>
 
       {/* Head to Head Stats */}
-      {headToHeadStats?.matchesPlayed && (
+      {headToHeadStats?.matchesPlayed ? (
         <Animated.View 
           entering={SlideInRight.delay(200)}
           className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20"
@@ -265,16 +269,16 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
             
             <View className="items-center flex-1 border-l border-r border-gray-200 dark:border-gray-700">
               <ThemedText className="text-2xl font-bold text-green-600 dark:text-green-400">
-                {matchWin(score.teams[0].teamId)}
+                {matchWin(team1?.teamId)}
               </ThemedText>
-              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{score.teams[0].shortName}</ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{team1?.shortName || team1?.title || "T1"}</ThemedText>
             </View>
             
             <View className="items-center flex-1">
               <ThemedText className="text-2xl font-bold text-red-600 dark:text-red-400">
-                {matchWin(score.teams[1].teamId)}
+                {matchWin(team2?.teamId)}
               </ThemedText>
-              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{score.teams[1].shortName}</ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{team2?.shortName || team2?.title || "T2"}</ThemedText>
             </View>
           </View>
           
@@ -286,19 +290,20 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
             </View>
           )}
         </Animated.View>
-      )}
+      ) : null}
     </Animated.View>
   );
 };
 
 // Match Details Section
-const MatchDetailsSection = ({ infoItems, cardBg }) => {
+const MatchDetailsSection = ({ infoItems = [], cardBg }) => {
+  const items = Array.isArray(infoItems) ? infoItems : [];
   return (
     <Animated.View 
       entering={FadeIn}
       className={`${cardBg} rounded-2xl p-1 shadow-sm`}
     >
-      {infoItems.map((item, index) => (
+      {items.map((item, index) => (
         <InfoItem
           key={index}
           icon={item.icon}
@@ -313,23 +318,24 @@ const MatchDetailsSection = ({ infoItems, cardBg }) => {
 
 // Recent Form Section
 const RecentFormSection = ({ teamsRecentForm, cardBg, textColor }) => {
+  const recentForms = Array.isArray(teamsRecentForm?.recentForms) ? teamsRecentForm.recentForms : [];
   return (
     <Animated.View 
       entering={FadeIn}
       className={`${cardBg} rounded-2xl p-5 shadow-sm`}
     >
       <View className="flex-row justify-between">
-        {teamsRecentForm.recentForms.map((team, index) => (
+        {recentForms.map((team, index) => (
           <Animated.View 
-            key={team.teamId}
+            key={team?.teamId || index}
             entering={LightSpeedInRight.delay(index * 150)}
             className="items-center flex-1 mx-2"
           >
             <ThemedText className={`text-sm font-medium mb-3 ${textColor}`}>
-              {team.title}
+              {team?.title}
             </ThemedText>
             <View className="flex-row justify-center">
-              {team.recentForm.map((result, i) => (
+              {(Array.isArray(team?.recentForm) ? team.recentForm : []).map((result, i) => (
                 <FormIndicator key={i} result={result} />
               ))}
             </View>
@@ -355,9 +361,20 @@ const RecentFormSection = ({ teamsRecentForm, cardBg, textColor }) => {
   );
 };
 
-export default function MatchInfo() {
-  const { score, headToHeadStats, teamsRecentForm, weather, pitchReport } = dummyData;
+export default function MatchInfo({ 
+  score: propScore, 
+  headToHeadStats: propHeadToHeadStats, 
+  teamsRecentForm: propTeamsRecentForm, 
+  weather: propWeather, 
+  pitchReport: propPitchReport 
+}) {
+  const score = propScore || dummyData.score;
+  const headToHeadStats = propHeadToHeadStats || score?.headToHeadStats || dummyData.headToHeadStats;
+  const teamsRecentForm = propTeamsRecentForm || score?.teamsRecentForm || dummyData.teamsRecentForm;
+  const weather = propWeather || score?.weather || dummyData.weather;
+  const pitchReport = propPitchReport || score?.pitchReport || dummyData.pitchReport;
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { width, height } = useWindowDimensions();
   
   const [expandedSections, setExpandedSections] = useState({
@@ -427,7 +444,9 @@ export default function MatchInfo() {
     score?.matchOfficials?.umpires && {
       icon: <MaterialCommunityIcons name="account-tie" size={20} color="#8b5cf6" />,
       label: 'Umpires',
-      value: score.matchOfficials.umpires.join(', '),
+      value: Array.isArray(score.matchOfficials.umpires) 
+        ? score.matchOfficials.umpires.join(', ') 
+        : String(score.matchOfficials.umpires),
     },
     score?.matchOfficials?.referee && {
       icon: <MaterialCommunityIcons name="whistle" size={20} color="#f43f5e" />,
@@ -447,29 +466,36 @@ export default function MatchInfo() {
   ].filter(Boolean);
 
   return (
-      <View className="p-4">
+      <ScrollView 
+        className="flex-1"
+        style={{ backgroundColor: isDark ? '#0f172a' : '#f8f9fa' }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Match Header */}
         <Animated.View 
           entering={ZoomIn.duration(600)}
           className={`${cardBg} rounded-2xl p-5 mb-5 shadow-lg`}
         >
           <ThemedText className={`text-xl font-bold text-center ${textColor} mb-1`}>
-            {score.title}
+            {score?.title || "Match Details"}
           </ThemedText>
-          <ThemedText className={`text-sm text-center ${secondaryText}`}>
-            {formatDate(score.date)}
-          </ThemedText>
+          {score?.date && (
+            <ThemedText className={`text-sm text-center ${secondaryText}`}>
+              {formatDate(score.date)}
+            </ThemedText>
+          )}
           
           {/* Teams vs Badge */}
           <View className="flex-row justify-center items-center my-6">
             <View className="items-center flex-1">
               <ImagePlaceHolder 
-                image={score.teams[0].teamLogo} 
-                name={score.teams[0].title}
+                image={score?.teams?.[0]?.teamLogo} 
+                name={score?.teams?.[0]?.title}
                 size="16"
               />
               <ThemedText className={`font-bold mt-2 ${textColor}`}>
-                {score.teams[0].shortName}
+                {score?.teams?.[0]?.shortName || score?.teams?.[0]?.title || "Team 1"}
               </ThemedText>
             </View>
             
@@ -481,12 +507,12 @@ export default function MatchInfo() {
             
             <View className="items-center flex-1">
               <ImagePlaceHolder 
-                image={score.teams[1].teamLogo} 
-                name={score.teams[1].title}
+                image={score?.teams?.[1]?.teamLogo} 
+                name={score?.teams?.[1]?.title}
                 size="16"
               />
               <ThemedText className={`font-bold mt-2 ${textColor}`}>
-                {score.teams[1].shortName}
+                {score?.teams?.[1]?.shortName || score?.teams?.[1]?.title || "Team 2"}
               </ThemedText>
             </View>
           </View>
@@ -550,6 +576,6 @@ export default function MatchInfo() {
 
         {/* Add some extra space at the bottom for better scrolling */}
         <View className="h-10" />
-      </View>
+      </ScrollView>
   );
 }

@@ -26,20 +26,31 @@ export default function EditTeam() {
   const isDarkMode = colorScheme === 'dark';
   
   const routeTeam = route?.params?.team;
-  const teamId = routeTeam?._id || routeTeam?.id;
+  const rawTeamId =
+    route?.params?.teamId ||
+    route?.params?.id ||
+    routeTeam?._id ||
+    routeTeam?.id ||
+    (typeof routeTeam?.teamId === 'object' ? routeTeam?.teamId?._id : routeTeam?.teamId);
+  const teamId = rawTeamId ? String(rawTeamId) : '';
+
+  const unnestedRouteTeam =
+    routeTeam?.teamId && typeof routeTeam.teamId === 'object'
+      ? { ...routeTeam.teamId, ...routeTeam }
+      : (routeTeam || {});
 
   // Real team data from route params with safe empty fallbacks
   const team = {
     id: teamId || '',
-    name: routeTeam?.title || routeTeam?.name || '',
-    shortName: routeTeam?.shortName || '',
-    location: routeTeam?.location || '',
-    logo: routeTeam?.logoImage || routeTeam?.logo || null,
-    founded: routeTeam?.founded || '',
-    homeGround: routeTeam?.homeGround || '',
-    captain: routeTeam?.captain?.username || routeTeam?.captain || '',
-    coach: routeTeam?.coach || '',
-    jerseyColor: routeTeam?.jerseyColor || '',
+    name: unnestedRouteTeam?.title || unnestedRouteTeam?.name || '',
+    shortName: unnestedRouteTeam?.shortName || '',
+    location: unnestedRouteTeam?.location || '',
+    logo: unnestedRouteTeam?.teamLogo || unnestedRouteTeam?.logoImage || unnestedRouteTeam?.logo || null,
+    founded: unnestedRouteTeam?.founded || unnestedRouteTeam?.establishedYear || '',
+    homeGround: unnestedRouteTeam?.homeGround || '',
+    captain: unnestedRouteTeam?.captain?.username || unnestedRouteTeam?.captainName || unnestedRouteTeam?.captain || '',
+    coach: unnestedRouteTeam?.coach || unnestedRouteTeam?.coachName || '',
+    jerseyColor: unnestedRouteTeam?.jerseyColor || '',
   };
 
   // HARDCODED SAMPLE TEAM DATA - COMMENTED OUT (API ONLY)
@@ -132,7 +143,10 @@ export default function EditTeam() {
           title: formData.name,
           shortName: formData.shortName,
           location: formData.location,
+          teamLogo: formData.logo,
           logoImage: formData.logo,
+          homeGround: formData.homeGround,
+          jerseyColor: formData.jerseyColor,
         });
       }
 
