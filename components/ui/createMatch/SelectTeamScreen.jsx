@@ -391,7 +391,7 @@ const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, o
             }`}
           >
             <Image
-              source={{ uri: item.image || "https://via.placeholder.com/50" }}
+              source={item.image ? { uri: item.image } : null}
               className="w-12 h-12 rounded-full mr-3"
               defaultSource={require("../../../assets/stadium-background-image.jpg")}
             />
@@ -502,7 +502,7 @@ const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, 
             }`}
           >
             <Image
-              source={{ uri: item.image || "https://via.placeholder.com/50" }}
+              source={item.image ? { uri: item.image } : null}
               className="w-12 h-12 rounded-full mr-3"
               defaultSource={require("../../../assets/stadium-background-image.jpg")}
             />

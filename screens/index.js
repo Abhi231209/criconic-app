@@ -1,8 +1,11 @@
 
 
 const SCREENS = {
-
   LoginScreen: "LoginScreen",
+  RegisterScreen: "RegisterScreen",
+  ForgotPasswordScreen: "ForgotPasswordScreen",
+  ChangePasswordScreen: "ChangePasswordScreen",
+  ChangePassword: "ChangePasswordScreen",
   Home: "Home",
   MainDrawer:"MainDrawer",
   NavBar:"NavBar",
@@ -26,6 +29,9 @@ const SCREENS = {
   ScorerScreen: "ScorerScreen",
   PlayerProfile: "PlayerProfile",
   EditPlayerProfile: "EditPlayerProfile",
+  MyQR: "MyQR",
+  BlogList: "BlogList",
+  BlogPost: "BlogPost",
   Settings: "Settings",
   AllTournaments: "AllTournaments",
   SearchScreen: "SearchScreen",

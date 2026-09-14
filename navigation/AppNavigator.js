@@ -32,6 +32,9 @@ import PlayerSelectionScreen from "@/components/ui/createMatch/PlayerSelectionSc
 import ScorerScreen from "@/components/ui/createMatch/ScorerScreen";
 import PlayerProfile from "@/components/ui/profile/PlayerProfile";
 import EditPlayerProfile from "@/components/ui/profile/EditPlayerProfile";
+import MyQR from "@/components/ui/profile/MyQR";
+import BlogList from "@/components/ui/blog/BlogList";
+import BlogPost from "@/components/ui/blog/BlogPost";
 import Settings from "@/components/ui/Setting";
 import AllTournaments from "@/components/ui/AllTournaments";
 import Layout from "@/Layout";
@@ -41,6 +44,9 @@ import ChangeBowler from "@/components/ui/createMatch/ChangeSquad/ChangeBowler";
 import ThemeConfig from "@/components/ui/themeConfig/ThemeConfig";
 import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
 import useAppTheme from "@/hooks/useAppTheme";
+import ForgotPasswordScreen from "@/components/ui/auth/ForgotPasswordScreen";
+import RegisterScreen from "@/components/ui/auth/RegisterScreen";
+import ChangePasswordScreen from "@/components/ui/auth/ChangePasswordScreen";
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -106,6 +112,9 @@ function MainStack() {
         name={SCREENS.EditPlayerProfile}
         component={EditPlayerProfile}
       />
+      <Stack.Screen name={SCREENS.MyQR} component={MyQR} />
+      <Stack.Screen name={SCREENS.BlogList} component={BlogList} />
+      <Stack.Screen name={SCREENS.BlogPost} component={BlogPost} />
       <Stack.Screen name={SCREENS.Settings} component={Settings} />
       <Stack.Screen name={SCREENS.AllTournaments} component={AllTournaments} />
       <Stack.Screen name={SCREENS.SearchScreen} component={SearchScreen} />
@@ -113,6 +122,9 @@ function MainStack() {
       <Stack.Screen name={SCREENS.ChangeBowler} component={ChangeBowler} />
       <Stack.Screen name={SCREENS.ThemeConfig} component={ThemeConfig} />
       <Stack.Screen name={SCREENS.GoLiveSetup} component={GoLiveSetupScreen} />
+      <Stack.Screen name={SCREENS.ForgotPasswordScreen} component={ForgotPasswordScreen} />
+      <Stack.Screen name={SCREENS.RegisterScreen} component={RegisterScreen} />
+      <Stack.Screen name={SCREENS.ChangePasswordScreen} component={ChangePasswordScreen} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );

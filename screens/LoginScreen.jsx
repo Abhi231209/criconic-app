@@ -84,7 +84,6 @@ const LoginScreen = () => {
     }
   };
 
-
   return (
     <SafeAreaView
       className={`flex-1 ${isDarkMode ? "bg-gray-950" : "bg-slate-50"}`}
@@ -243,7 +242,10 @@ const LoginScreen = () => {
 
             {/* Forgot Password Link */}
             <View className="items-end mb-6">
-              <TouchableOpacity activeOpacity={0.7}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate(SCREENS.ForgotPasswordScreen)}
+              >
                 <ThemedText className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                   Forgot Password?
                 </ThemedText>
@@ -308,7 +310,10 @@ const LoginScreen = () => {
               >
                 Don't have an account?{" "}
               </ThemedText>
-              <TouchableOpacity activeOpacity={0.7}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate(SCREENS.RegisterScreen)}
+              >
                 <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400">
                   Create Account
                 </ThemedText>

@@ -28,6 +28,7 @@ export default function Settings() {
   const isDarkMode = colorScheme === "dark";
 
   const authUser = useSelector((state) => state.auth?.user);
+  const isAdmin = [1, 2].includes(authUser?.role); // SUPER_ADMIN | ADMIN
 
   // User data from Redux auth
   const user = {
@@ -233,7 +234,11 @@ export default function Settings() {
             <SettingsItem
               icon="person-outline"
               title="Profile"
-              onPress={() => navigation.navigate(SCREENS.Profile)}
+              onPress={() =>
+                navigation.navigate(SCREENS.PlayerProfile, {
+                  playerId: authUser?._id,
+                })
+              }
               color="#3B82F6"
             />
             <SettingsItem
@@ -242,12 +247,14 @@ export default function Settings() {
               onPress={handleMyQR}
               color="#10B981"
             />
-            <SettingsItem
-              icon="megaphone-outline"
-              title="Setup Ads"
-              onPress={handleSetupAds}
-              color="#F59E0B"
-            />
+            {isAdmin && (
+              <SettingsItem
+                icon="megaphone-outline"
+                title="Setup Ads"
+                onPress={handleSetupAds}
+                color="#F59E0B"
+              />
+            )}
             <SettingsItem
               icon="create-outline"
               title="Edit Profile"
@@ -258,12 +265,14 @@ export default function Settings() {
 
           {/* App Settings */}
           <SettingsSection title="APP SETTINGS">
-            <SettingsItem
-              icon="home-outline"
-              title="Home Config"
-              onPress={handleHomeConfig}
-              color="#EC4899"
-            />
+            {isAdmin && (
+              <SettingsItem
+                icon="home-outline"
+                title="Home Config"
+                onPress={handleHomeConfig}
+                color="#EC4899"
+              />
+            )}
             <SettingsItem
               icon="newspaper-outline"
               title="Blog Posts"
