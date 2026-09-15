@@ -46,6 +46,8 @@ const WagonWheel = ({
   showZoneStats = false,
   isDarkMode = false,
   title = "",
+  leftSideLabel = "",
+  rightSideLabel = "",
   runs = 0,
   isBoundary = false,
   isWicket = false,
@@ -70,6 +72,7 @@ const WagonWheel = ({
   const centerY = size / 2;
   const radius = size / 2 - 10;
   const innerCircleRadius = radius * 0.52; // 30 yard circle
+  const wicketPitchHeight = size * 0.18;
 
   const handleTouchCoord = (x, y) => {
     if (readOnly) return;
@@ -296,6 +299,29 @@ const WagonWheel = ({
         {...(readOnly ? {} : panResponder.panHandlers)}
       >
         <Svg height={size} width={size}>
+          {leftSideLabel ? (
+            <SvgText
+              x={10}
+              y={centerY}
+              fill={isDarkMode ? "#CBD5E1" : "#475569"}
+              fontSize="9"
+              textAnchor="start"
+            >
+              {leftSideLabel}
+            </SvgText>
+          ) : null}
+          {rightSideLabel ? (
+            <SvgText
+              x={size - 10}
+              y={centerY}
+              fill={isDarkMode ? "#CBD5E1" : "#475569"}
+              fontSize="9"
+              textAnchor="end"
+            >
+              {rightSideLabel}
+            </SvgText>
+          ) : null}
+
           {/* Ground Outfield */}
           <Circle
             cx={centerX}
@@ -322,10 +348,10 @@ const WagonWheel = ({
 
           {/* Pitch Rect in Center */}
           <Rect
-            x={centerX - size * 0.02}
-            y={centerY - size * 0.12}
-            width={size * 0.04}
-            height={size * 0.24}
+            x={centerX - size * 0.024}
+            y={centerY - wicketPitchHeight / 2}
+            width={size * 0.048}
+            height={wicketPitchHeight}
             fill="#B45309"
             rx={2}
           />
