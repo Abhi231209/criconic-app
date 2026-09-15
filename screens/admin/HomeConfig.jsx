@@ -6,6 +6,8 @@ import {
   ActivityIndicator,
   StyleSheet,
   useColorScheme,
+  Switch,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -18,6 +20,8 @@ export default function HomeConfig({ navigation }) {
 
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState(null);
+  const [tierSystemEnabled, setTierSystemEnabled] = useState(false);
+  const [savingTierFlag, setSavingTierFlag] = useState(false);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -25,6 +29,7 @@ export default function HomeConfig({ navigation }) {
       const res = await request("api/configs", { method: "GET" });
       if (res?.data?.success) {
         setConfig(res.data?.content?.homePage || res.data?.content || null);
+        setTierSystemEnabled(Boolean(res.data?.content?.isTournamentTierSystemEnabled));
       }
     } catch (err) {
       console.warn("[HomeConfig] Error fetching config:", err);
@@ -36,6 +41,24 @@ export default function HomeConfig({ navigation }) {
   useEffect(() => {
     fetchConfig();
   }, []);
+
+  const handleToggleTierSystem = async (value) => {
+    const previous = tierSystemEnabled;
+    setTierSystemEnabled(value); // optimistic
+    setSavingTierFlag(true);
+    try {
+      const res = await request("api/configs", {
+        method: "PUT",
+        data: { type: "tournamentTierSystem", data: value },
+      });
+      if (!res?.data?.success) throw new Error(res?.data?.message);
+    } catch (err) {
+      setTierSystemEnabled(previous); // revert
+      Alert.alert("Couldn't update", "Please try again.");
+    } finally {
+      setSavingTierFlag(false);
+    }
+  };
 
   const holdings = config?.holding || [];
   const boards = config?.boards || config?.board || [];
@@ -88,6 +111,44 @@ export default function HomeConfig({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Tournament Tier System toggle */}
+          <View
+            style={[
+              styles.itemCard,
+              isDarkMode ? styles.cardDark : styles.cardLight,
+              { marginBottom: 20 },
+            ]}
+          >
+            <View style={styles.itemRow}>
+              <Ionicons
+                name="trophy-outline"
+                size={22}
+                color="#F59E0B"
+                style={styles.itemIcon}
+              />
+              <View style={styles.itemInfo}>
+                <ThemedText
+                  style={[styles.itemTitle, isDarkMode ? styles.textWhite : styles.textBlack]}
+                >
+                  Paid Tournament Tiers
+                </ThemedText>
+                <ThemedText
+                  style={[styles.itemSub, isDarkMode ? styles.subtitleDark : styles.subtitleLight]}
+                >
+                  {tierSystemEnabled
+                    ? "Enabled — new tournaments are capped on the Free tier and can request a paid upgrade."
+                    : "Disabled — all tournaments run unrestricted, exactly as before this feature."}
+                </ThemedText>
+              </View>
+              <Switch
+                value={tierSystemEnabled}
+                onValueChange={handleToggleTierSystem}
+                disabled={savingTierFlag}
+                trackColor={{ false: "#D1D5DB", true: "#F59E0B" }}
+              />
+            </View>
+          </View>
+
           {/* Holdings Section */}
           <View style={styles.sectionHeader}>
             <ThemedText

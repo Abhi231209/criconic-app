@@ -1994,6 +1994,20 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               >
                 <Ionicons name="create-outline" size={18} color="#FFFFFF" />
               </TouchableOpacity>
+              {(isOrganizer || isAdmin) && (
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate(SCREENS.TournamentUpgrade, {
+                      tournament: tournamentData || tournament,
+                    })
+                  }
+                  className="w-9 h-9 rounded-full items-center justify-center bg-black/40 border border-white/20"
+                  activeOpacity={0.7}
+                  accessibilityLabel="Tournament Tier"
+                >
+                  <Ionicons name="trophy-outline" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 

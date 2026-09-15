@@ -22,6 +22,7 @@ import TeamProfile from "@/components/ui/profile/TeamProfile";
 import EditTeam from "@/components/ui/profile/EditTeam";
 import TournamentProfile from "@/components/ui/profile/TournamentProfile";
 import EditTournament from "@/components/ui/profile/EditTournament";
+import TournamentUpgrade from "@/components/ui/profile/TournamentUpgrade";
 import AddPlayer from "@/components/ui/create/AddPlayer";
 import CreateMatch from "@/components/ui/createMatch/CreateMatch";
 import SelectSquadScreen from "@/components/ui/createMatch/SelectSquadScreen";
@@ -93,6 +94,7 @@ function MainStack() {
         component={TournamentProfile}
       />
       <Stack.Screen name={SCREENS.EditTournament} component={EditTournament} />
+      <Stack.Screen name={SCREENS.TournamentUpgrade} component={TournamentUpgrade} />
       <Stack.Screen name={SCREENS.AddPlayer} component={AddPlayer} />
       <Stack.Screen name={SCREENS.CreateMatch} component={CreateMatch} />
       <Stack.Screen

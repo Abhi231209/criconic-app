@@ -362,6 +362,12 @@ export const tournamentsApi = {
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
   getMatchesByTournament: (id, options = {}) =>
     request(`api/matches/tournament/${id}`, { method: "GET", errorAlert: false, ...options }),
+  getTiers: (options = {}) =>
+    request("api/tournaments/tiers", { method: "GET", errorAlert: false, ...options }),
+  requestUpgrade: (tournamentId, note, options = {}) =>
+    request(`api/tournaments/${tournamentId}/upgrade`, { method: "POST", data: { note }, ...options }),
+  approveUpgrade: (tournamentId, options = {}) =>
+    request(`api/tournaments/${tournamentId}/upgrade/approve`, { method: "POST", ...options }),
 };
 
 export const matchesApi = {
