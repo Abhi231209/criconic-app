@@ -25,7 +25,6 @@ export default function FullScoreCard({
   isChasing,
   inning_I,
   description,
-  isFirstInning,
   matchId,
 }) {
   const navigation = useNavigation();

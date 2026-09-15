@@ -134,21 +134,35 @@ const PitchMap = ({
     onSelectPitch?.(null);
   };
 
-  // Convert yards from stumps & feet from center back to SVG coordinates for historical points
+  // Convert yards from stumps & feet from center back to SVG coordinates for historical points.
+  // Prefer the resolution-independent real-world units (yards/feet) over raw pixel
+  // coordinates: a delivery may have been captured on a differently-sized canvas
+  // (e.g. the live scorer's tracker modal vs. this readOnly scorecard view), and raw
+  // pixels from one canvas size land in the wrong spot on another.
   const getCoordinatesFromData = (item) => {
+    const impact = item.impactPoint || item.pitchMap?.impactPoint;
+    if (impact && impact.fromStumps !== undefined) {
+      const fromStumps = Number(impact.fromStumps ?? 6);
+      const fromCenter = Number(impact.fromCenter ?? 0);
+
+      const normY = fromStumps / 22;
+      const normX = fromCenter / 10 + 0.5;
+
+      return {
+        x: pitchLeft + normX * pitchWidth,
+        y: pitchBottom - normY * pitchHeight,
+      };
+    }
+
     const coords = item.coordinates || item.rawCoordinates || item.pitchMap?.coordinates;
     if (coords && coords.x && coords.y) {
       return coords;
     }
-    const fromStumps = Number(item.impactPoint?.fromStumps ?? item.pitchMap?.impactPoint?.fromStumps ?? 6);
-    const fromCenter = Number(item.impactPoint?.fromCenter ?? item.pitchMap?.impactPoint?.fromCenter ?? 0);
 
-    const normY = fromStumps / 22;
-    const normX = fromCenter / 10 + 0.5;
-
+    // Last resort: good length, middle stump.
     return {
-      x: pitchLeft + normX * pitchWidth,
-      y: pitchBottom - normY * pitchHeight,
+      x: pitchLeft + 0.5 * pitchWidth,
+      y: pitchBottom - (6 / 22) * pitchHeight,
     };
   };
 

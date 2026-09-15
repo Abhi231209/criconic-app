@@ -1934,9 +1934,8 @@ export default function MatchScoreCard({
                 <FullScoreCard 
                     score={score} 
                     inning_I={score?.inning?.[0]} 
-                    isChasing={isChasing} 
-                    description={score?.description || (score?.prompt && score.prompt[0]) || ""} 
-                    isFirstInning={!isChasing}
+                    isChasing={isChasing}
+                    description={score?.description || (score?.prompt && score.prompt[0]) || ""}
                     matchId={matchID}
                 />
             ),
