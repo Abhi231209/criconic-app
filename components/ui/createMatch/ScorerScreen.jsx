@@ -36,6 +36,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MatchSettingEnum } from "@/utils/Common";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
+import {
+  generateActionId,
+  loadQueue as loadPendingActionQueue,
+  enqueueAction as enqueuePendingAction,
+  removeAction as removePendingAction,
+} from "@/utils/offlineActionQueue";
 
 export const ScorerScreenContext = createContext(null);
 
@@ -57,6 +63,31 @@ export default function ScorerScreen() {
 
   const off = useCallback((event, callback) => {
     socketRef.current?.off(event, callback);
+  }, []);
+
+  // Same as `emit`, but resolves once the server acks the specific action
+  // (or times out) instead of firing and forgetting. Used by the offline
+  // action queue to know definitively when a queued action has been applied,
+  // so it can be safely removed from disk.
+  const emitWithAck = useCallback((event, data, timeoutMs = 10000) => {
+    return new Promise((resolve) => {
+      if (!socketRef.current) {
+        resolve({ success: false, timedOut: false });
+        return;
+      }
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve({ success: false, timedOut: true });
+      }, timeoutMs);
+      socketRef.current.emit(event, data, (response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(response || { success: true });
+      });
+    });
   }, []);
 
   const authUser = useSelector((state) => state.auth?.user);
@@ -81,6 +112,52 @@ export default function ScorerScreen() {
     route.params?.match?.id;
 
   console.log("[ScorerScreen] Resolved matchID:", matchID, "| route.params keys:", Object.keys(route.params || {}));
+
+  // Pending offline-queued actions not yet confirmed by the server.
+  const [pendingActionCount, setPendingActionCount] = useState(0);
+  const isFlushingQueueRef = useRef(false);
+
+  // Sends every locally-queued, unconfirmed action for this match to the
+  // server, in order, one at a time — waiting for each ack before sending
+  // the next so a backlog built up while offline can't be applied out of
+  // order. Re-reads the queue fresh on every pass (rather than a fixed
+  // snapshot) so it naturally coalesces with a live tap's own send attempt —
+  // `isFlushingQueueRef` ensures only one of them is ever actively emitting
+  // for this match at a time, avoiding a double-send race between the two.
+  // Stops at the first failure/timeout and leaves the rest queued for the
+  // next reconnect (or app relaunch) to retry.
+  const flushPendingActionQueue = useCallback(async () => {
+    if (!matchID || isFlushingQueueRef.current) return;
+    isFlushingQueueRef.current = true;
+    try {
+      for (;;) {
+        const queue = await loadPendingActionQueue(matchID);
+        setPendingActionCount(queue.length);
+        const item = queue[0];
+        if (!item || !socketRef.current?.connected) break;
+        const response = await emitWithAck("update-score", {
+          userId: item.userId,
+          matchId: matchID,
+          action: item.action,
+          data: item.data,
+          actionId: item.actionId,
+        });
+        if (!response?.success) break; // stop; preserve order for the retry
+        await removePendingAction(matchID, item.actionId);
+      }
+    } finally {
+      isFlushingQueueRef.current = false;
+    }
+  }, [matchID, emitWithAck]);
+
+  // Seed the pending count from disk immediately on mount, independent of
+  // connection state — so a leftover queue from a previous session (e.g. the
+  // app was killed while offline) shows accurately even before the socket
+  // manages to connect for the first time.
+  useEffect(() => {
+    if (!matchID) return;
+    loadPendingActionQueue(matchID).then((queue) => setPendingActionCount(queue.length));
+  }, [matchID]);
 
   const [score, setScore] = useState({});
   const [matchDetails, setMatchDetails] = useState(null);
@@ -1105,8 +1182,11 @@ export default function ScorerScreen() {
     const socketConn = io(socketUrl, {
       transports: ["websocket", "polling"],
       reconnection: true,
-      reconnectionAttempts: 10,
+      // Keep retrying indefinitely — a scorer at a ground with a longer
+      // outage shouldn't have their socket give up and go silent after ~15s.
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       timeout: 15000,
     });
     socketRef.current = socketConn;
@@ -1115,6 +1195,7 @@ export default function ScorerScreen() {
       console.log("🔌 [ScorerScreen Dedicated Socket] Joining room:", matchID);
       socketConn.emit("score", { matchId: matchID, matchID });
       setIsConnected(true);
+      flushPendingActionQueue();
     };
 
     const handleInningsStartSocket = () => {
@@ -1184,7 +1265,7 @@ export default function ScorerScreen() {
       socketConn.disconnect();
       socketRef.current = null;
     };
-  }, [matchID, scoreHandler, navigation]);
+  }, [matchID, scoreHandler, navigation, flushPendingActionQueue]);
 
 
 
@@ -1200,18 +1281,45 @@ export default function ScorerScreen() {
       return;
     }
 
+    const actionId = generateActionId();
     const payload = {
       userId: effectiveUserId,
       matchId: matchID,
       action,
       data,
+      actionId,
     };
     console.log("[UPDATE-SCORE] 🟢 Emitting 'update-score' event:");
     console.log("[UPDATE-SCORE] action:", action);
     console.log("[UPDATE-SCORE] matchId:", matchID);
     console.log("[UPDATE-SCORE] userId:", effectiveUserId);
     console.log("[UPDATE-SCORE] data:", JSON.stringify(data));
-    emit("update-score", payload);
+
+    // Persist to disk before attempting to send, so this action survives the
+    // app being killed while offline — removed once the server confirms it.
+    enqueuePendingAction(matchID, {
+      actionId,
+      userId: effectiveUserId,
+      action,
+      data,
+    }).then((queue) => setPendingActionCount(queue.length));
+
+    // If a queue flush is already in flight, let it pick this action up on
+    // its next pass (it re-reads the queue fresh each iteration) rather than
+    // also sending it here — avoids two in-flight sends for the same match.
+    if (!isFlushingQueueRef.current && socketRef.current?.connected) {
+      emitWithAck("update-score", payload).then((response) => {
+        if (response?.success) {
+          removePendingAction(matchID, actionId).then((queue) =>
+            setPendingActionCount(queue.length)
+          );
+        } else {
+          // Ack failed/timed out while nominally connected — hand off to the
+          // queue flush to retry rather than leaving it silently stuck.
+          flushPendingActionQueue();
+        }
+      });
+    }
   };
 
 
@@ -1496,7 +1604,16 @@ export default function ScorerScreen() {
           {!isConnected && (
             <View className="bg-amber-500 py-1.5 px-4 flex-row items-center justify-center">
               <ThemedText className="text-xs text-black font-semibold">
-                Connecting to live scoring server...
+                {pendingActionCount > 0
+                  ? `Offline — ${pendingActionCount} action${pendingActionCount === 1 ? "" : "s"} will sync automatically`
+                  : "Connecting to live scoring server..."}
+              </ThemedText>
+            </View>
+          )}
+          {isConnected && pendingActionCount > 0 && (
+            <View className="bg-blue-500 py-1.5 px-4 flex-row items-center justify-center">
+              <ThemedText className="text-xs text-white font-semibold">
+                Syncing {pendingActionCount} pending action{pendingActionCount === 1 ? "" : "s"}...
               </ThemedText>
             </View>
           )}
