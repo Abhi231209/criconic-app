@@ -53,6 +53,38 @@ export default function MatchLive({ score }) {
   };
 
   const getRecentOversFromScore = (scoreData) => {
+    const oldestFirst = (balls) => {
+      if (!Array.isArray(balls)) {
+        return typeof balls === "string" ? balls.split("").filter(Boolean).reverse() : [];
+      }
+
+      const hasSequence = balls.some((ball) => {
+        if (!ball || typeof ball !== "object") return false;
+        return (
+          ball.ballNumber !== undefined ||
+          ball.deliveryNumber !== undefined ||
+          ball.sequence !== undefined ||
+          ball.ballIndex !== undefined
+        );
+      });
+
+      if (hasSequence) {
+        return [...balls].sort((a, b) => {
+          const getSequence = (ball) =>
+            Number(
+              ball?.ballNumber ??
+              ball?.deliveryNumber ??
+              ball?.sequence ??
+              ball?.ballIndex ??
+              0
+            );
+          return getSequence(a) - getSequence(b);
+        });
+      }
+
+      return [...balls].reverse();
+    };
+
     // 1. Direct overs from scoreData.overs or scoreData.score[innings].overs
     const currentInn = scoreData?.currentInnings || scoreData?.currentInning || 1;
     const innObj = scoreData?.score?.[`innings_${currentInn}`] || scoreData?.[`innings_${currentInn}`];
@@ -61,16 +93,16 @@ export default function MatchLive({ score }) {
       const parsed = rawOvers
         .map((o, idx) => {
           if (Array.isArray(o)) {
-            return { over: idx + 1, balls: o };
+            return { over: idx + 1, balls: oldestFirst(o) };
           }
           if (Array.isArray(o?.balls)) {
-            return { over: o.overNumber || idx + 1, balls: o.balls };
+            return { over: o.overNumber || idx + 1, balls: oldestFirst(o.balls) };
           }
           return null;
         })
         .filter(Boolean);
       if (parsed.length > 0) {
-        return parsed.slice(-8).reverse();
+        return parsed.sort((a, b) => Number(a.over) - Number(b.over)).slice(-8);
       }
     }
 
@@ -80,20 +112,20 @@ export default function MatchLive({ score }) {
         if (Array.isArray(o)) {
           return {
             over: idx + 1,
-            balls: o,
+            balls: oldestFirst(o),
           };
         }
         return {
           over: o?.over ?? o?.overNumber ?? o?.overNo ?? idx + 1,
-          balls: Array.isArray(o?.balls)
-            ? o.balls
-            : Array.isArray(o?.deliveries)
-            ? o.deliveries
-            : typeof o?.balls === "string"
-            ? o.balls.split("").filter(Boolean)
-            : [],
+          balls: oldestFirst(
+            Array.isArray(o?.balls)
+              ? o.balls
+              : Array.isArray(o?.deliveries)
+              ? o.deliveries
+              : o?.balls
+          ),
         };
-      });
+      }).sort((a, b) => Number(a.over) - Number(b.over)).slice(-8);
     }
 
     // 3. Fallback to commentary
@@ -122,19 +154,19 @@ export default function MatchLive({ score }) {
     // Add / override current over if score.currentOver has deliveries
     if (Array.isArray(scoreData?.currentOver) && scoreData.currentOver.length > 0) {
       const currentOverNumber = Math.floor(parseFloat(scoreData?.batting?.score?.over || "0")) + 1;
-      overMap[currentOverNumber] = scoreData.currentOver;
+      overMap[currentOverNumber] = oldestFirst(scoreData.currentOver);
     }
 
     const sortedOvers = Object.keys(overMap)
       .map(Number)
-      .sort((a, b) => b - a)
+      .sort((a, b) => a - b)
       .map((overNum) => ({
         over: overNum,
         balls: overMap[overNum],
       }));
 
     if (sortedOvers.length > 0) {
-      return sortedOvers.slice(0, 8);
+      return sortedOvers.slice(-8);
     }
 
     return [];

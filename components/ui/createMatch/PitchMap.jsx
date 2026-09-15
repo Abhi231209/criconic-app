@@ -61,8 +61,8 @@ const PitchMap = ({
   // Pitch coordinate boundaries in SVG
   const pitchLeft = width * 0.22;
   const pitchRight = width * 0.78;
-  const pitchTop = height * 0.12; // Bowler's end
-  const pitchBottom = height * 0.86; // Batsman's end
+  const pitchTop = height * 0.14; // Bowler's end
+  const pitchBottom = height * 0.88; // Batsman's end
   const pitchWidth = pitchRight - pitchLeft;
   const pitchHeight = pitchBottom - pitchTop;
 
@@ -210,6 +210,12 @@ const PitchMap = ({
             strokeWidth="1.5"
             rx={4}
           />
+
+          {/* Length bands for easier touch targets without crowding the pitch */}
+          <Rect x={pitchLeft} y={pitchBottom - (2 / 22) * pitchHeight} width={pitchWidth} height={(2 / 22) * pitchHeight} fill="#60A5FA22" />
+          <Rect x={pitchLeft} y={pitchBottom - (4.5 / 22) * pitchHeight} width={pitchWidth} height={((4.5 - 2) / 22) * pitchHeight} fill="#34D39922" />
+          <Rect x={pitchLeft} y={pitchBottom - (7.5 / 22) * pitchHeight} width={pitchWidth} height={((7.5 - 4.5) / 22) * pitchHeight} fill="#FBBF2422" />
+          <Rect x={pitchLeft} y={pitchBottom - (11 / 22) * pitchHeight} width={pitchWidth} height={((11 - 7.5) / 22) * pitchHeight} fill="#A78BFA22" />
 
           {/* Length Section Lines & Indicators (from Batsman end upwards) */}
           {/* Yorker Line (2y) */}
