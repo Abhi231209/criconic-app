@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
+import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { teamsApi } from '@/utils/api';
 
 export default function EditTeam() {
@@ -73,6 +74,7 @@ export default function EditTeam() {
     name: team.name,
     shortName: team.shortName,
     location: team.location,
+    locationId: '',
     founded: team.founded,
     homeGround: team.homeGround,
     captain: team.captain,
@@ -143,6 +145,7 @@ export default function EditTeam() {
           title: formData.name,
           shortName: formData.shortName,
           location: formData.location,
+          ...(formData.locationId ? { locationId: formData.locationId } : {}),
           teamLogo: formData.logo,
           logoImage: formData.logo,
           homeGround: formData.homeGround,
@@ -310,12 +313,20 @@ export default function EditTeam() {
           </View>
 
           {/* Location */}
-          <InputField
-            label="Location *"
-            value={formData.location}
-            onChange={(text) => setFormData({ ...formData, location: text })}
-            placeholder="City, State"
-          />
+          <View style={{ zIndex: 1000 }} className="mb-2">
+            <LocationSearch
+              label="Location *"
+              value={formData.location}
+              onChangeText={(text) => setFormData({ ...formData, location: text, locationId: '' })}
+              onSelectLocation={(loc) => {
+                const locationText =
+                  loc?.structured_formatting?.main_text || loc?.description || '';
+                setFormData({ ...formData, location: locationText, locationId: loc?.place_id || '' });
+              }}
+              placeholder="Search or enter city"
+              isDarkMode={isDarkMode}
+            />
+          </View>
 
           {/* Founded Year and Home Ground */}
           <View className="flex-row justify-between mb-4">

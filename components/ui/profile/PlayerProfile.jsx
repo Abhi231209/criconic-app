@@ -610,6 +610,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       id: t?._id || t?.id || t?.teamId?._id || String(idx),
       name: t?.title || t?.name || t?.teamId?.title || "Team",
       shortName: t?.shortName || t?.teamId?.shortName || "",
+      location: t?.location || t?.teamId?.location || "",
       seasons: t?.seasons || "Current",
       matches: t?.matches || 0,
       runs: t?.runs || 0,
@@ -915,6 +916,34 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           </View>
         </View>
       </View>
+
+      {/* Local Rankings CTA */}
+      <TouchableOpacity
+        onPress={() =>
+          navigation.navigate(SCREENS.PlayerRankings, {
+            initialRegion: teams?.[0]?.location || undefined,
+          })
+        }
+        activeOpacity={0.8}
+        className={`flex-row items-center p-4 rounded-xl mb-4 ${
+          isDarkMode ? "bg-blue-900/30" : "bg-blue-50"
+        }`}
+      >
+        <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3">
+          <Ionicons name="podium-outline" size={20} color="#3B82F6" />
+        </View>
+        <View className="flex-1">
+          <ThemedText className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            See your local ranking
+          </ThemedText>
+          <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            {teams?.[0]?.location
+              ? `How you rank among players in ${teams[0].location}`
+              : "How you rank among players in your area"}
+          </ThemedText>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+      </TouchableOpacity>
 
       {/* Career Summary */}
       <View

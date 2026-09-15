@@ -112,6 +112,7 @@ export default function CreateTeam() {
     coachPhone: '',
     homeGround: '',
     city: '',
+    cityLocationId: '',
     establishedYear: '',
     jerseyColor: '',
     logo: null,
@@ -178,6 +179,7 @@ export default function CreateTeam() {
         title: formData.teamName.trim(),
         shortName: formData.shortName.trim(),
         location: formData.city.trim() || "Local",
+        ...(formData.cityLocationId ? { locationId: formData.cityLocationId } : {}),
         teamType: formData.teamType,
         captainName: formData.captainName.trim(),
         captainPhone: formData.captainPhone.trim(),
@@ -306,13 +308,13 @@ export default function CreateTeam() {
               label="City"
               required
               value={formData.city}
-              onChangeText={(text) => setFormData({ ...formData, city: text })}
+              onChangeText={(text) => setFormData({ ...formData, city: text, cityLocationId: "" })}
               onSelectLocation={(loc) => {
                 const cityText =
                   loc?.structured_formatting?.main_text ||
                   loc?.description ||
                   "";
-                setFormData({ ...formData, city: cityText });
+                setFormData({ ...formData, city: cityText, cityLocationId: loc?.place_id || "" });
               }}
               placeholder="Search or enter city"
               isDarkMode={isDarkMode}

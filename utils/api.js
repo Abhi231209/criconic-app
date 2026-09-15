@@ -455,4 +455,14 @@ export const userApi = {
     }),
 };
 
+export const rankingsApi = {
+  getRegions: () =>
+    request("api/rankings/regions", { method: "GET", errorAlert: false }),
+  getRankings: (region, type = "overall", options = {}) =>
+    request(
+      `api/rankings?region=${encodeURIComponent(region)}&type=${type}&page=${options.page || 1}&limit=${options.limit || 20}`,
+      { method: "GET", errorAlert: false }
+    ),
+};
+
 export default request;

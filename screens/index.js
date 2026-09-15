@@ -47,6 +47,7 @@ const SCREENS = {
   BlogPosts: "BlogPosts",
   QRScanner: "QRScanner",
   TournamentUpgrade: "TournamentUpgrade",
+  PlayerRankings: "PlayerRankings",
 };
 
 export default SCREENS;

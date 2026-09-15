@@ -325,6 +325,11 @@ export default function CustomDrawer(props) {
           title="Player Profile"
           onPress={() => navigation.navigate(SCREENS.PlayerProfile)}
         />
+        <MenuItem
+          icon="podium-outline"
+          title="Local Rankings"
+          onPress={() => navigation.navigate(SCREENS.PlayerRankings)}
+        />
 
         <SectionHeading title="Preferences" />
         <MenuItem
