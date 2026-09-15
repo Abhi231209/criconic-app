@@ -200,7 +200,9 @@ function ScoreCard({
 
   // Check scoring access
   const currentUserId = User.id || User.user?._id || User.user?.id;
+  const isUserLoggedIn = Boolean(User.isLogin() || currentUserId);
   const isUserOwnerOrScorer = Boolean(
+    isUserLoggedIn &&
     currentUserId && (
       getEntityId(combinedMatch?.userId) === currentUserId ||
       getEntityId(combinedMatch?.createdBy) === currentUserId ||
@@ -213,7 +215,7 @@ function ScoreCard({
       (typeof User.isAdmin === "function" && User.isAdmin())
     )
   );
-  const canScore = Boolean(isAccessToUpdate || isUserOwnerOrScorer || match?.accessToUpdate);
+  const canScore = Boolean(isUserLoggedIn && (isAccessToUpdate || isUserOwnerOrScorer || match?.accessToUpdate));
 
   // Resolve team names
   const team1Name =
@@ -406,7 +408,8 @@ function ScoreCard({
     ? new Date(combinedMatch.startDate).toLocaleDateString()
     : startDate || "Scheduled";
 
-  const handleOpenActionSheet = useCallback(() => {
+  const handleOpenActionSheet = () =>{
+    console.log("[ScoreCard] Opening action sheet for matchId:", effectiveMatchId, "with scoring access:", canScore);
     openSheet(
       <MatchActionSheet
         closeSheet={closeSheet}
@@ -419,11 +422,12 @@ function ScoreCard({
       />,
       ACTION_SHEET_SNAP_POINTS
     );
-  }, [openSheet, closeSheet, navigation, effectiveMatchId, matchStatus, canScore, liveScore, combinedMatch]);
+  }
 
-  // Requirement 4: If user has scoring access (or while resolving permissions), open action sheet; otherwise redirect to full scorecard page
-  const handlePress = useCallback(() => {
-    if (canScore || (loading && currentUserId)) {
+  // Requirement 8: If user is logged in and has scoring access, open action sheet; otherwise redirect directly to full scorecard page
+  const handlePress = () => {
+    console.log("[ScoreCard] Card pressed for matchId:", effectiveMatchId, "isUserLoggedIn:", isUserLoggedIn, "canScore:", canScore, "loading:", loading, "currentUserId:", currentUserId);
+    if (isUserLoggedIn && (canScore || (loading && currentUserId))) {
       handleOpenActionSheet();
     } else if (navigation?.navigate) {
       navigation.navigate(SCREENS.MatchScoreCard, {
@@ -432,7 +436,7 @@ function ScoreCard({
         initialMatch: combinedMatch,
       });
     }
-  }, [canScore, loading, currentUserId, handleOpenActionSheet, navigation, effectiveMatchId, liveScore, combinedMatch]);
+  }
 
   // Helper for team initials avatar
   const getInitials = (name) => {
@@ -470,7 +474,7 @@ function ScoreCard({
       ]}
     >
       <TouchableOpacity
-        onPress={handlePress}
+          onPress={handlePress}
         activeOpacity={0.88}
         className="p-4"
       >
@@ -544,10 +548,10 @@ function ScoreCard({
             </View>
 
             {/* Match Actions Trigger - Always accessible with 0ms delay */}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               onPress={(e) => {
                 e?.stopPropagation?.();
-                handleOpenActionSheet();
+                handlePress();
               }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={{ marginLeft: 6, padding: 4 }}
@@ -558,7 +562,7 @@ function ScoreCard({
                 size={16}
                 color={isDarkMode ? "#94A3B8" : "#64748B"}
               />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         </View>
 

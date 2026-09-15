@@ -24,6 +24,7 @@ import { matchesApi, request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
 import { MatchSettingEnum } from "@/utils/Common";
+import analytics from "@/utils/analytics";
 
 export default function TossScreen() {
   const navigation = useNavigation();
@@ -232,6 +233,11 @@ export default function TossScreen() {
         };
 
         const res = await matchesApi.toss(matchId, tossPayload);
+        analytics.logAction("toss_decision", "match", {
+          match_id: matchId,
+          winner: winner?.title || winner?.name || "",
+          decision: decision === "Bat" ? "BAT" : "FIELD",
+        });
         if (res?.data?.success || res?.status === 200 || res?.status === 202) {
           setTossCompleted(true);
           isLeavingRef.current = true;

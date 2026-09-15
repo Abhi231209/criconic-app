@@ -22,6 +22,7 @@ import Header from "./Header";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
 import TabSwitch from "../custom/TabSwitch";
+import GoogleRecentOversStrip from "./GoogleRecentOversStrip";
 import MatchInfo from "./MatchInfo";
 import MatchSummary from "./MatchSummary";
 import FullScoreCard from "./FullScorecard";
@@ -2057,7 +2058,11 @@ export default function MatchScoreCard({
                         inning2={inning2Overview}
                         superOverSummary={superOverSummary}
                         superOverList={superOverList}
+                        isChasing={isChasing}
                     />
+
+                    {/* Google Chrome Style Unboxed Recent Overs Strip (Above Tabs) */}
+                    <GoogleRecentOversStrip score={score} isDark={isDarkMode} />
 
                     <TabSwitch 
                         tabs={tabs} 

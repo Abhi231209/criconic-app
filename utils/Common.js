@@ -80,7 +80,31 @@ export const getMatchStatusDisplay = (status) => {
   }
 };
 
-export const getBatsmenDescription = (player) => {
+export const isMongoObjectId = (val) =>
+  typeof val === "string" && /^[a-fA-F0-9]{24}$/.test(val.trim());
+
+export const resolvePlayerDisplayName = (playerOrId, playerMap = null) => {
+  if (!playerOrId) return "";
+  if (typeof playerOrId === "object") {
+    const rawName = playerOrId.name || playerOrId.username || playerOrId.playerName;
+    if (rawName && !isMongoObjectId(rawName)) return String(rawName).trim();
+    const pid = String(playerOrId.playerId || playerOrId._id || playerOrId.id || "");
+    if (pid && playerMap) {
+      const match = typeof playerMap.get === "function" ? playerMap.get(pid) : playerMap[pid];
+      if (match) return match;
+    }
+    return "";
+  }
+  const str = String(playerOrId).trim();
+  if (!isMongoObjectId(str)) return str;
+  if (playerMap) {
+    const match = typeof playerMap.get === "function" ? playerMap.get(str) : playerMap[str];
+    if (match) return match;
+  }
+  return "";
+};
+
+export const getBatsmenDescription = (player, playerMap = null) => {
   if (player?.notOut) {
     return "not out";
   }
@@ -92,9 +116,7 @@ export const getBatsmenDescription = (player) => {
   const type = String(info.dismissalType || "").toLowerCase().trim().replace(/_/g, "-");
 
   const getPlayerName = (p) => {
-    if (!p) return "";
-    if (typeof p === "string") return p;
-    return p.username || p.name || p.playerName || "";
+    return resolvePlayerDisplayName(p, playerMap);
   };
 
   const caughtBy = getPlayerName(info.caughtBy || info.catcher || info.fielder);

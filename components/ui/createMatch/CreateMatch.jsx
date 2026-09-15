@@ -25,6 +25,7 @@ import { confirmLeavePreScore, getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import squadSelectionStore from "./squadSelectionStore";
 import { matchesApi, tournamentsApi } from "@/utils/api";
+import analytics from "@/utils/analytics";
 
 export default function CreateMatch() {
   const navigation = useNavigation();
@@ -305,6 +306,11 @@ export default function CreateMatch() {
         throw new Error(String(errMsg));
       }
 
+      analytics.logAction("create_match_success", "match", {
+        match_id: matchId,
+        tournament_id: tournamentId || "",
+      });
+
       isLeavingRef.current = true;
       navigation.navigate(SCREENS.MatchDetailsScreen, {
         matchId,
@@ -323,6 +329,7 @@ export default function CreateMatch() {
         error?.response?.data?.error?.[0] ||
         error?.message ||
         "Could not create match on server. Please check your network.";
+      analytics.logAction("create_match_failed", "match", { reason: String(errorMsg) });
       Alert.alert("Match Creation Error", String(errorMsg));
     } finally {
       setIsCreating(false);

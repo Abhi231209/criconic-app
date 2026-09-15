@@ -16,7 +16,12 @@ import {
   MaterialCommunityIcons
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
-import { convertBallToOvers, calculateCRR } from "@/utils/Common";
+import {
+  convertBallToOvers,
+  calculateCRR,
+  resolvePlayerDisplayName,
+  isMongoObjectId,
+} from "@/utils/Common";
 import { useColorScheme } from "react-native";
 import SCREENS from "@/screens";
 
@@ -188,9 +193,49 @@ export default function MatchLive({ score }) {
     ? score.batting.score.projectedScore 
     : (computedProjected ?? "-");
 
+  // Inning 2 detection (chasing / second innings)
+  const isInning2 = Boolean(
+    score?.isChasing ||
+    score?.matchCurrentStatus === "INNINGS_II" ||
+    score?.currentInnings === 2 ||
+    score?.currentInning === 2 ||
+    score?.innings === 2 ||
+    score?.rrr ||
+    score?.target ||
+    score?.requiredRuns ||
+    (score?.lastInningScore !== undefined && score?.lastInningScore !== null && Number(score?.lastInningScore) > 0) ||
+    (Array.isArray(score?.inning) && score.inning.length >= 2) ||
+    score?.score?.innings_2 ||
+    score?.innings_2
+  );
+
+  const playerMap = React.useMemo(() => {
+    const map = new Map();
+    const add = (p) => {
+      if (!p) return;
+      const id = String(p?.playerId || p?._id || p?.id || (typeof p === "string" && isMongoObjectId(p) ? p : ""));
+      const name = typeof p === "string" ? (!isMongoObjectId(p) ? p : "") : (p?.name || p?.username || p?.playerName);
+      if (id && name && !isMongoObjectId(name)) {
+        map.set(id, String(name).trim());
+      }
+    };
+    (score?.teams || []).forEach((t) => (t?.players || []).forEach(add));
+    (score?.squads || []).forEach((s) => (s?.players || []).forEach(add));
+    (score?.inning || []).forEach((inn) => {
+      (inn?.playedBatsman || []).forEach(add);
+      (inn?.batsman || []).forEach(add);
+      (inn?.bowling?.allBowlers || []).forEach(add);
+      (inn?.bowling?.bowlers || []).forEach(add);
+      (inn?.bowlers || []).forEach(add);
+    });
+    add(score?.bowler);
+    (score?.bowling?.lastTwoBowlers || []).forEach(add);
+    return map;
+  }, [score]);
+
   const currentBatsmen = (Array.isArray(score?.batsman) ? score.batsman : []).map((b) => ({
     playerId: b?.playerId || b?.id || b?._id,
-    name: b?.name || b?.username || "Batter",
+    name: resolvePlayerDisplayName(b, playerMap) || "Batter",
     runs: b?.runs ?? 0,
     balls: b?.ballsFaced ?? b?.balls ?? 0,
     fours: b?.fours ?? 0,
@@ -202,7 +247,7 @@ export default function MatchLive({ score }) {
   const bObj = score?.bowler || score?.bowling?.lastTwoBowlers?.[0] || {};
   const currentBowler = {
     playerId: bObj.playerId || bObj.id || bObj._id,
-    name: bObj.name || bObj.username || "Bowler",
+    name: resolvePlayerDisplayName(bObj, playerMap) || "Bowler",
     wickets: bObj.wicketsTaken ?? 0,
     runs: bObj.runsGiven ?? 0,
     balls: bObj.balls ?? 0,
@@ -287,18 +332,58 @@ export default function MatchLive({ score }) {
       ? balls.split("").filter(Boolean)
       : [];
 
+    // Calculate total runs and wickets in this over (Crex style)
+    let overRuns = 0;
+    let overWickets = 0;
+    ballList.forEach((b) => {
+      if (typeof b === "object" && b !== null) {
+        overRuns += Number(b.runs ?? b.run ?? b.score ?? 0);
+        if (b.isWicket || b.wicket || b.dismissalInfo) overWickets++;
+      } else {
+        const s = String(b || "").toUpperCase().trim();
+        if (s === "W" || s.endsWith("W")) {
+          overWickets++;
+          const num = parseInt(s.replace("W", ""), 10);
+          if (!isNaN(num)) overRuns += num;
+        } else {
+          const num = parseInt(s.replace(/[^0-9]/g, ""), 10);
+          if (!isNaN(num)) overRuns += num;
+        }
+      }
+    });
+
     return (
       <Animated.View 
         entering={SlideInRight.delay(index * 100)}
-        className={`p-3 rounded-lg mx-1.5 border ${
-          isDark ? "bg-gray-800 border-gray-600" : "bg-white border-gray-200"
+        className={`px-3 py-2.5 rounded-xl mx-1.5 border min-w-[140px] shadow-sm ${
+          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
         }`}
       >
-        <ThemedText className={`text-center font-bold text-xs mb-2 ${
-          isDark ? "text-white" : "text-gray-900"
-        }`}>
-          Over {over}
-        </ThemedText>
+        <View className="flex-row justify-between items-center mb-2 px-0.5">
+          <ThemedText className={`font-bold text-xs ${
+            isDark ? "text-gray-300" : "text-gray-700"
+          }`}>
+            Over {over}
+          </ThemedText>
+          <View className={`px-2 py-0.5 rounded-md ${
+            overWickets > 0 
+              ? (isDark ? "bg-red-500/20" : "bg-red-100") 
+              : overRuns >= 10 
+              ? (isDark ? "bg-emerald-500/20" : "bg-emerald-100") 
+              : (isDark ? "bg-gray-700" : "bg-gray-100")
+          }`}>
+            <ThemedText className={`text-xs font-bold ${
+              overWickets > 0 
+                ? (isDark ? "text-red-400" : "text-red-600") 
+                : overRuns >= 10 
+                ? (isDark ? "text-emerald-400" : "text-emerald-700") 
+                : (isDark ? "text-gray-300" : "text-gray-700")
+            }`}>
+              = {overRuns} Run{overRuns === 1 ? "" : "s"}{overWickets > 0 ? `, ${overWickets}W` : ""}
+            </ThemedText>
+          </View>
+        </View>
+
         <View className="flex-row items-center justify-center flex-nowrap gap-1">
           {ballList.map((ball, ballIndex) => (
             <BallIndicator key={ballIndex} ball={ball} />
@@ -405,43 +490,16 @@ export default function MatchLive({ score }) {
           </View>
         ) : null}
 
-        <View className="flex-row items-center">
-          <ThemedText className={`text-xs font-semibold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-            Projected:
-          </ThemedText>
-          <ThemedText className="text-sm font-bold text-blue-500 ml-1">
-            {projectedScoreDisplay}
-          </ThemedText>
-        </View>
-      </View>
-
-      {/* Recent Overs Scroll */}
-      <View className={`p-4 border-b ${
-        isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-      }`}>
-        <ThemedText className={`font-semibold text-center mb-3 ${
-          isDark ? "text-white" : "text-gray-900"
-        }`}>
-          Recent Overs
-        </ThemedText>
-        
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="px-2"
-        >
-          {recentOvers.length > 0 ? (
-            recentOvers.map((over, index) => (
-              <OverCard key={index} over={over?.over ?? index + 1} balls={over?.balls || []} index={index} />
-            ))
-          ) : (
-            <View className="py-2 px-4 items-center">
-              <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                No recent overs recorded yet
-              </ThemedText>
-            </View>
-          )}
-        </ScrollView>
+        {!isInning2 && (
+          <View className="flex-row items-center">
+            <ThemedText className={`text-xs font-semibold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+              Projected:
+            </ThemedText>
+            <ThemedText className="text-sm font-bold text-blue-500 ml-1">
+              {projectedScoreDisplay}
+            </ThemedText>
+          </View>
+        )}
       </View>
 
       {/* Current Batsmen */}
@@ -590,44 +648,46 @@ export default function MatchLive({ score }) {
         </View>
       </View>
 
-      {/* Run Rate Projection */}
-      <View className={`p-4 border-b ${
-        isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-      }`}>
-        <ThemedText className={`font-semibold text-center mb-3 ${
-          isDark ? "text-white" : "text-gray-900"
+      {/* Run Rate Projection (Inning 1 only) */}
+      {!isInning2 && (
+        <View className={`p-4 border-b ${
+          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
         }`}>
-          Run Rate Projection
-        </ThemedText>
-
-        <View className={`rounded-lg p-4 ${
-          isDark ? "bg-gray-700" : "bg-gray-100"
-        }`}>
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
-              Current Run Rate (CRR)
-            </ThemedText>
-            <ThemedText className="text-green-500 font-bold text-base">
-              {effectiveCrr}*
-            </ThemedText>
-          </View>
-          
-          <View className="flex-row justify-between items-center mb-2">
-            <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
-              Projected Final Score
-            </ThemedText>
-            <ThemedText className="text-blue-500 font-bold text-base">
-              {projectedScoreDisplay}
-            </ThemedText>
-          </View>
-
-          <ThemedText className={`text-xs text-center mt-2 ${
-            isDark ? "text-gray-400" : "text-gray-600"
+          <ThemedText className={`font-semibold text-center mb-3 ${
+            isDark ? "text-white" : "text-gray-900"
           }`}>
-            Projected Score as per current Run Rate: {projectedScoreDisplay} (at {effectiveCrr} RPO)
+            Run Rate Projection
           </ThemedText>
+
+          <View className={`rounded-lg p-4 ${
+            isDark ? "bg-gray-700" : "bg-gray-100"
+          }`}>
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
+                Current Run Rate (CRR)
+              </ThemedText>
+              <ThemedText className="text-green-500 font-bold text-base">
+                {effectiveCrr}*
+              </ThemedText>
+            </View>
+            
+            <View className="flex-row justify-between items-center mb-2">
+              <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
+                Projected Final Score
+              </ThemedText>
+              <ThemedText className="text-blue-500 font-bold text-base">
+                {projectedScoreDisplay}
+              </ThemedText>
+            </View>
+
+            <ThemedText className={`text-xs text-center mt-2 ${
+              isDark ? "text-gray-400" : "text-gray-600"
+            }`}>
+              Projected Score as per current Run Rate: {projectedScoreDisplay} (at {effectiveCrr} RPO)
+            </ThemedText>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Commentary Section */}
       {showCommentary && (

@@ -25,6 +25,7 @@ import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { tournamentsApi, upload } from '@/utils/api';
+import analytics from '@/utils/analytics';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -322,6 +323,9 @@ export default function CreateTournament() {
 
       const res = await tournamentsApi.createTournament(payload);
       if (res?.data?.success || res?.status === 201 || res?.data?.tournament) {
+        analytics.logAction("create_tournament_success", "tournament", {
+          tournament_name: formData.tournamentName || "",
+        });
         Alert.alert('Success', 'Tournament created successfully!', [
           {
             text: 'OK',
@@ -330,9 +334,11 @@ export default function CreateTournament() {
         ]);
       } else {
         const msg = res?.data?.message || 'Failed to create tournament';
+        analytics.logAction("create_tournament_failed", "tournament", { reason: msg });
         Alert.alert('Notice', msg);
       }
     } catch (error) {
+      analytics.logAction("create_tournament_failed", "tournament", { reason: error?.message || 'Unknown error' });
       Alert.alert('Error', error?.message || 'Something went wrong');
     } finally {
       setIsLoading(false);

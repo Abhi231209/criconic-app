@@ -22,12 +22,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import NavBar from "@/components/ui/NavBar";
 import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
+import useRequireAuth from "@/hooks/useRequireAuth";
 
 const MATCHES_CONDITION = { items: 10 };
 
 export default function Home({}) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const { requireAuth } = useRequireAuth();
 
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
@@ -156,7 +158,7 @@ export default function Home({}) {
             >
               {/* Create Match Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateMatch))}
                 activeOpacity={0.8}
                 className="overflow-hidden rounded-xl"
               >
@@ -175,7 +177,7 @@ export default function Home({}) {
 
               {/* Add Team Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateTeam)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateTeam))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -206,7 +208,7 @@ export default function Home({}) {
 
               {/* Add Tournament Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateTournament)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateTournament))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -237,7 +239,7 @@ export default function Home({}) {
 
               {/* My Matches Shortcut */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.MyCricket)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.MyCricket))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -378,7 +380,7 @@ export default function Home({}) {
           <SectionHeader title="Live Cricket Arena" />
           <TouchableOpacity
             activeOpacity={0.88}
-            onPress={() => navigation.navigate(SCREENS.MyCricket)}
+            onPress={() => requireAuth(() => navigation.navigate(SCREENS.MyCricket))}
             className="rounded-2xl overflow-hidden border border-slate-700/30 mb-5"
             style={{
               shadowColor: "#000",

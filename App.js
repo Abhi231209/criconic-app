@@ -22,8 +22,8 @@ import { GluestackUIProvider } from "@gluestack-ui/themed";
 import { Provider } from "react-redux";
 import { persistor, store } from "./redux/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { useEffect, useRef } from "react";
+import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SocketProvider } from "./contexts/SocketContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -33,12 +33,39 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { initSessionCookie, authApi } from "./utils/api";
 import { login as loginAction } from "./redux/authSlice";
 import User from "./utils/User";
+import analytics from "./utils/analytics";
 
 function AppContent() {
   const { isDark } = useAppTheme();
+  const navigationRef = useNavigationContainerRef();
+  const routeNameRef = useRef();
 
   return (
-    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={isDark ? DarkTheme : DefaultTheme}
+      onReady={() => {
+        const currentRoute = navigationRef.getCurrentRoute();
+        const currentRouteName = currentRoute?.name;
+        routeNameRef.current = currentRouteName;
+        if (currentRouteName) {
+          analytics.logScreenView(currentRouteName, currentRouteName, currentRoute?.params || {});
+        }
+      }}
+      onStateChange={async () => {
+        const previousRouteName = routeNameRef.current;
+        const currentRoute = navigationRef.getCurrentRoute();
+        const currentRouteName = currentRoute?.name;
+
+        if (currentRouteName && previousRouteName !== currentRouteName) {
+          analytics.logScreenView(currentRouteName, currentRouteName, {
+            previous_screen: previousRouteName || "none",
+            ...(currentRoute?.params || {}),
+          });
+        }
+        routeNameRef.current = currentRouteName;
+      }}
+    >
       <BottomSheetModalProvider>
         <BottomSheetProvider>
           <SocketProvider>
@@ -88,6 +115,8 @@ export default function App() {
           console.log("🔐 [App] Session active on backend:", res.data.user.username);
           store.dispatch(loginAction(res.data.user));
           User.login(res.data.user);
+          const uid = res.data.user._id || res.data.user.id || res.data.user.userId;
+          if (uid) analytics.setUserId(uid);
         }
       } catch (err) {
         console.warn("🔐 [App] Auth status check error:", err);

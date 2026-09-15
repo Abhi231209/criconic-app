@@ -23,6 +23,7 @@ import { tournamentsApi, teamsApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import { useSelector } from "react-redux";
+import analytics from "@/utils/analytics";
 
 export default function QRScanner({ navigation }) {
   const colorScheme = useColorScheme();
@@ -163,6 +164,11 @@ export default function QRScanner({ navigation }) {
       );
       return;
     }
+
+    analytics.logAction("qr_code_scanned", "scanner", {
+      type: parsed.type || "unknown",
+      code_id: parsed.value || "",
+    });
 
     if (parsed.type === "TOURNAMENT") {
       openTournamentJoinSheet(parsed.value);

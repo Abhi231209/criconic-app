@@ -13,7 +13,7 @@ import {
 import ThemedText from "@/components/ui/custom/ThemedText";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, DrawerActions } from "@react-navigation/native";
 import SCREENS from "@/screens";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,13 +22,15 @@ import { logout as logoutAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import { getImageFullUrl } from "@/utils";
-
 import useAppTheme from "@/hooks/useAppTheme";
+import useRequireAuth from "@/hooks/useRequireAuth";
+import analytics from "@/utils/analytics";
 
 export default function CustomDrawer(props) {
   const navigation = useNavigation();
   const dispatch = useDispatch();
   const authUser = useSelector((state) => state.auth?.user);
+  const { isLoggedIn, requireAuth } = useRequireAuth();
   const { isDark, toggleTheme } = useAppTheme();
   const isDarkMode = isDark;
 
@@ -55,12 +57,20 @@ export default function CustomDrawer(props) {
         text: "Sign Out",
         style: "destructive",
         onPress: async () => {
+          // Immediately close drawer
+          props.navigation?.closeDrawer?.();
+          try {
+            navigation.dispatch(DrawerActions.closeDrawer());
+          } catch (_) {}
+
           try {
             await authApi.logout();
           } catch (e) {
             console.warn("Logout error:", e);
           } finally {
+            analytics.logLogout();
             dispatch(logoutAction());
+            User.logout();
             navigation.reset({
               index: 0,
               routes: [{ name: SCREENS.LoginScreen }],
@@ -73,7 +83,10 @@ export default function CustomDrawer(props) {
 
   const MenuItem = ({ icon, title, onPress, iconComponent: IconComponent = Ionicons, badge }) => (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => {
+        analytics.logDrawerNavigation(title);
+        onPress?.();
+      }}
       activeOpacity={0.7}
       className={`flex-row items-center justify-between py-3 px-3.5 rounded-xl mb-1 ${
         isDarkMode ? "active:bg-gray-800" : "active:bg-gray-100"
@@ -219,44 +232,63 @@ export default function CustomDrawer(props) {
         */}
 
         {/* Real Dynamic User Profile Card */}
-        <LinearGradient
-          colors={
-            isDarkMode
-              ? ["#1E3A8A", "#1E1B4B"]
-              : ["#2563EB", "#1D4ED8"]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="p-4 rounded-2xl relative overflow-hidden"
+        <TouchableOpacity
+          activeOpacity={isLoggedIn ? 1 : 0.8}
+          onPress={() => {
+            if (!isLoggedIn) {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.LoginScreen);
+            }
+          }}
         >
-          <View className="flex-row items-center">
-            <View className="w-12 h-12 rounded-full border-2 border-white/40 overflow-hidden mr-3 bg-white/20 items-center justify-center">
-              {profileImageUrl && !imageError ? (
-                <Image
-                  source={{ uri: profileImageUrl }}
-                  className="w-full h-full"
-                  resizeMode="cover"
-                  onError={() => setImageError(true)}
-                />
-              ) : (
-                <Ionicons name="person" size={24} color="#FFFFFF" />
+          <LinearGradient
+            colors={
+              isDarkMode
+                ? ["#1E3A8A", "#1E1B4B"]
+                : ["#2563EB", "#1D4ED8"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            className="p-4 rounded-2xl relative overflow-hidden"
+          >
+            <View className="flex-row items-center">
+              <View className="w-12 h-12 rounded-full border-2 border-white/40 overflow-hidden mr-3 bg-white/20 items-center justify-center">
+                {profileImageUrl && !imageError && isLoggedIn ? (
+                  <Image
+                    source={{ uri: profileImageUrl }}
+                    className="w-full h-full"
+                    resizeMode="cover"
+                    onError={() => setImageError(true)}
+                  />
+                ) : (
+                  <Ionicons name="person" size={24} color="#FFFFFF" />
+                )}
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center">
+                  <ThemedText className="text-white text-base font-bold mr-1.5">
+                    {isLoggedIn
+                      ? authUser?.username || authUser?.name || "Player Profile"
+                      : "Guest User"}
+                  </ThemedText>
+                  {isLoggedIn ? (
+                    <Ionicons name="checkmark-circle" size={14} color="#60A5FA" />
+                  ) : null}
+                </View>
+                <ThemedText className="text-blue-200 text-xs mt-0.5">
+                  {isLoggedIn
+                    ? authUser?.mobile
+                      ? `+91 ${authUser.mobile}`
+                      : authUser?.email || "Criconic Member"
+                    : "Tap to sign in / create account"}
+                </ThemedText>
+              </View>
+              {!isLoggedIn && (
+                <Ionicons name="log-in-outline" size={20} color="#93C5FD" />
               )}
             </View>
-            <View className="flex-1">
-              <View className="flex-row items-center">
-                <ThemedText className="text-white text-base font-bold mr-1.5">
-                  {authUser?.username || authUser?.name || "Player Profile"}
-                </ThemedText>
-                {authUser ? (
-                  <Ionicons name="checkmark-circle" size={14} color="#60A5FA" />
-                ) : null}
-              </View>
-              <ThemedText className="text-blue-200 text-xs mt-0.5">
-                {authUser?.mobile ? `+91 ${authUser.mobile}` : authUser?.email || "Criconic User"}
-              </ThemedText>
-            </View>
-          </View>
-        </LinearGradient>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* Theme Toggle Pill */}
         <View
@@ -282,7 +314,10 @@ export default function CustomDrawer(props) {
           </View>
           <Switch
             value={isDarkMode}
-            onValueChange={toggleTheme}
+            onValueChange={() => {
+              analytics.logAction("theme_toggled", "settings", { new_theme: !isDarkMode ? "dark" : "light" });
+              toggleTheme();
+            }}
             thumbColor={isDarkMode ? "#3B82F6" : "#FFFFFF"}
             trackColor={{ false: "#CBD5E1", true: "#1D4ED8" }}
           />
@@ -295,17 +330,32 @@ export default function CustomDrawer(props) {
         <MenuItem
           icon="add-circle-outline"
           title="Create Match"
-          onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.CreateMatch);
+            })
+          }
         />
         <MenuItem
           icon="people-outline"
           title="Create Team"
-          onPress={() => navigation.navigate(SCREENS.CreateTeam)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.CreateTeam);
+            })
+          }
         />
         <MenuItem
           icon="trophy-outline"
           title="Create Tournament"
-          onPress={() => navigation.navigate(SCREENS.CreateTournament)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.CreateTournament);
+            })
+          }
         />
 
         <SectionHeading title="My Cricket" />
@@ -313,17 +363,32 @@ export default function CustomDrawer(props) {
           icon="cricket"
           title="My Matches"
           iconComponent={MaterialCommunityIcons}
-          onPress={() => navigation.navigate(SCREENS.MyCricket)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.MyCricket);
+            })
+          }
         />
         <MenuItem
           icon="trophy-outline"
           title="My Tournaments"
-          onPress={() => navigation.navigate(SCREENS.AllTournaments)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.AllTournaments);
+            })
+          }
         />
         <MenuItem
           icon="person-outline"
           title="Player Profile"
-          onPress={() => navigation.navigate(SCREENS.PlayerProfile)}
+          onPress={() =>
+            requireAuth(() => {
+              props.navigation?.closeDrawer?.();
+              navigation.navigate(SCREENS.PlayerProfile);
+            })
+          }
         />
         <MenuItem
           icon="podium-outline"
@@ -335,30 +400,56 @@ export default function CustomDrawer(props) {
         <MenuItem
           icon="settings-outline"
           title="Settings"
-          onPress={() => navigation.navigate(SCREENS.Settings)}
+          onPress={() => {
+            props.navigation?.closeDrawer?.();
+            navigation.navigate(SCREENS.Settings);
+          }}
         />
       </View>
 
-        {/* Sign Out Action at Bottom */}
+        {/* Sign Out or Sign In Action at Bottom */}
         <View className="mt-auto px-4 py-6">
-          <TouchableOpacity
-            onPress={handleLogout}
-            activeOpacity={0.7}
-            className={`flex-row items-center justify-center py-3 rounded-xl border ${
-              isDarkMode
-                ? "bg-red-950/20 border-red-900/50"
-                : "bg-red-50 border-red-200"
-            }`}
-          >
-            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-            <ThemedText
-              className={`text-xs font-bold ml-2 ${
-                isDarkMode ? "text-red-400" : "text-red-600"
+          {isLoggedIn ? (
+            <TouchableOpacity
+              onPress={handleLogout}
+              activeOpacity={0.7}
+              className={`flex-row items-center justify-center py-3 rounded-xl border ${
+                isDarkMode
+                  ? "bg-red-950/20 border-red-900/50"
+                  : "bg-red-50 border-red-200"
               }`}
             >
-              Sign Out
-            </ThemedText>
-          </TouchableOpacity>
+              <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+              <ThemedText
+                className={`text-xs font-bold ml-2 ${
+                  isDarkMode ? "text-red-400" : "text-red-600"
+                }`}
+              >
+                Sign Out
+              </ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                props.navigation?.closeDrawer?.();
+                navigation.navigate(SCREENS.LoginScreen);
+              }}
+              activeOpacity={0.85}
+              className="rounded-xl overflow-hidden shadow-sm"
+            >
+              <LinearGradient
+                colors={["#2563EB", "#1D4ED8"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                className="py-3 flex-row items-center justify-center"
+              >
+                <Ionicons name="log-in-outline" size={18} color="#FFFFFF" />
+                <ThemedText className="text-xs font-bold text-white ml-2">
+                  Sign In / Register
+                </ThemedText>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </DrawerContentScrollView>

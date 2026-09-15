@@ -19,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import QRCode from "react-native-qrcode-svg";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import { searchApi, teamsApi } from "@/utils/api";
+import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 
 export default function AddPlayer({showHeader = true}) {
   const navigation = useNavigation();
@@ -425,15 +426,20 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
   const [addedPlayers, setAddedPlayers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const navigation = useNavigation();
   const handleAddMore = () => {
     if (!mobile.trim() || !username.trim()) {
       Alert.alert("Error", "Please fill all required fields");
       return;
     }
 
+    const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const newPlayer = {
-      mobile: mobile.trim(),
+      id: pId,
+      _id: pId,
+      name: username.trim(),
       username: username.trim(),
+      mobile: mobile.trim(),
       email: email.trim(),
       location: location.trim(),
     };
@@ -452,17 +458,25 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
   };
 
   const handleSave = async () => {
-    if (!mobile.trim() || !username.trim()) {
-      Alert.alert("Error", "Please fill all required fields");
+    if (!mobile.trim() && !username.trim() && addedPlayers.length === 0) {
+      Alert.alert("Error", "Please enter at least one player's name and mobile number");
       return;
     }
 
     // Add current form data if filled
     let playersToAdd = [...addedPlayers];
-    if (mobile && username) {
+    if (mobile.trim() || username.trim()) {
+      if (!mobile.trim() || !username.trim()) {
+        Alert.alert("Error", "Please fill both player name and mobile number");
+        return;
+      }
+      const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       playersToAdd.push({
-        mobile: mobile.trim(),
+        id: pId,
+        _id: pId,
+        name: username.trim(),
         username: username.trim(),
+        mobile: mobile.trim(),
         email: email.trim(),
         location: location.trim(),
       });
@@ -479,13 +493,15 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
           Alert.alert("Success", "Players added successfully");
           setShowAddMobile(false);
           cb?.();
+          navigation.goBack();
         } else {
           Alert.alert("Notice", res?.data?.message || "Failed to add players");
         }
       } else {
-        Alert.alert("Success", "Players saved successfully");
+        Alert.alert("Success", "Players added successfully");
         setShowAddMobile(false);
         cb?.(playersToAdd);
+        navigation.goBack();
       }
     } catch (error) {
       Alert.alert("Error", error?.message || "Failed to add players");
@@ -495,7 +511,11 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
   };
 
   return (
-    <View className="flex-1 p-4">
+    <AppKeyboardAwareScrollView
+      extraHeight={80}
+      contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+      showsVerticalScrollIndicator={false}
+    >
       <View
         className={`rounded-xl p-4 mb-4 ${
           isDarkMode ? "bg-gray-800" : "bg-white"
@@ -642,6 +662,6 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
           </ThemedText>
         </TouchableOpacity>
       </View>
-    </View>
+    </AppKeyboardAwareScrollView>
   );
 }

@@ -27,7 +27,7 @@ const MatchActionSheet = ({
   navigation,
   matchId,
   matchStatus = "Upcoming",
-  isAccessToUpdate = true,
+  isAccessToUpdate = false,
   score,
   matchDetails,
   onDeleteSuccess,

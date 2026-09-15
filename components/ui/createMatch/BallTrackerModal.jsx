@@ -52,7 +52,20 @@ export default function BallTrackerModal({
     bowlerName = "Bowler",
     ballType = "ball",
     runType = "bat",
+    strikerStance = "RHB",
+    battingStyle = "",
+    isBoxCricket = false,
+    matchType = "",
   } = ballContext;
+
+  const isBox = Boolean(isBoxCricket || matchType === "box" || ballContext?.matchType === "box");
+  const resolvedStance = (strikerStance || battingStyle || "RHB")
+    .toUpperCase()
+    .includes("LEFT")
+    ? "LHB"
+    : strikerStance === "LHB"
+    ? "LHB"
+    : "RHB";
 
   const getBallBadgeText = () => {
     if (isWicket) return "WICKET";
@@ -242,17 +255,18 @@ export default function BallTrackerModal({
           >
             {activeTab === "pitch" && isPitchMapEnabled && (
               <PitchMap
-                width={300}
-                height={340}
+                width={310}
+                height={360}
                 selectedPitch={selectedPitch}
                 onSelectPitch={(data) => setSelectedPitch(data)}
                 isDarkMode={isDarkMode}
+                batterStance={resolvedStance}
               />
             )}
 
             {activeTab === "wagon" && isWagonWheelEnabled && (
               <WagonWheel
-                size={270}
+                size={280}
                 selectedShot={selectedShot}
                 onSelectShot={(data) => setSelectedShot(data)}
                 isDarkMode={isDarkMode}
@@ -260,6 +274,7 @@ export default function BallTrackerModal({
                 runs={runs}
                 isBoundary={isBoundary}
                 isWicket={isWicket}
+                isBoxCricket={isBox}
               />
             )}
           </ScrollView>

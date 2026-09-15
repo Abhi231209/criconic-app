@@ -36,12 +36,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MatchSettingEnum } from "@/utils/Common";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
-import {
-  generateActionId,
-  loadQueue as loadPendingActionQueue,
-  enqueueAction as enqueuePendingAction,
-  removeAction as removePendingAction,
-} from "@/utils/offlineActionQueue";
+import analytics from "@/utils/analytics";
 
 export const ScorerScreenContext = createContext(null);
 
@@ -1302,7 +1297,13 @@ export default function ScorerScreen() {
       return;
     }
 
-    const actionId = generateActionId();
+    analytics.logScorerAction(action, matchID, {
+      runs: data?.runs,
+      run_type: data?.runType,
+      is_wicket: !!data?.isWicket,
+      ball_type: data?.ballType,
+    });
+
     const payload = {
       userId: effectiveUserId,
       matchId: matchID,
@@ -2923,6 +2924,16 @@ export default function ScorerScreen() {
             score?.batsman?.[0]?.name ||
             "Striker",
           bowlerName: score?.bowler?.name || "Bowler",
+          strikerStance:
+            (score?.batsman?.find((b) => b?.isStrikeEnd)?.battingStyle ||
+             score?.batsman?.[0]?.battingStyle ||
+             "")?.toLowerCase()?.includes("left") ? "LHB" : "RHB",
+          isBoxCricket:
+            matchDetails?.matchType === "box" ||
+            matchDetails?.type === "box" ||
+            score?.matchType === "box" ||
+            score?.type === "box",
+          matchType: matchDetails?.matchType || score?.matchType || "",
         }}
         isWagonWheelEnabled={isWagonWheelChecked}
         isPitchMapEnabled={isPitchMapChecked}

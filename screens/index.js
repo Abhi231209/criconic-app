@@ -6,6 +6,7 @@ const SCREENS = {
   ForgotPasswordScreen: "ForgotPasswordScreen",
   ChangePasswordScreen: "ChangePasswordScreen",
   ChangePassword: "ChangePasswordScreen",
+  SignUpScreen: "SignUpScreen",
   Home: "Home",
   MainDrawer:"MainDrawer",
   NavBar:"NavBar",

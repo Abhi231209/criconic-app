@@ -293,8 +293,10 @@ export const authApi = {
     }
     return res;
   },
+  signup: (data) =>
+    request("api/users/signup", { method: "POST", data }),
   register: (data) =>
-    request("api/users/register", { method: "POST", data }),
+    request("api/users/signup", { method: "POST", data }),
   logout: async () => {
     try {
       await request("api/logout", { method: "POST", errorAlert: false });
