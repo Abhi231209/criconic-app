@@ -13,8 +13,9 @@ export default function MatchOverview({
   crr, 
   projjectedScore,
   matchTotalOver = 20,
-  matchStatus = "Live", 
-  result, 
+  matchStatus = "Live",
+  powerplayOvers = 0,
+  result,
   motm,
   isSuperOverEnded = false,
   inning1 = null,
@@ -90,6 +91,11 @@ export default function MatchOverview({
 
   const hasSuperOver = Boolean(isSuperOverEnded || superOverList?.length > 0 || superOverSummary);
 
+  const isPowerplayActive =
+    matchStatus === "Live" &&
+    Number(powerplayOvers) > 0 &&
+    parseFloat(oversClean || "0") < Number(powerplayOvers);
+
   return (
     <View className={`p-4 ${bgColor}`}>
       {/* Team name and match status */}
@@ -99,9 +105,18 @@ export default function MatchOverview({
             ? `${inning1.teamName} vs ${inning2.teamName}`
             : teamName}
         </ThemedText>
-        {matchStatus ? (
-          <ThemedText className={`${statusColor} font-bold`}>{matchStatus}</ThemedText>
-        ) : null}
+        <View className="flex-row items-center">
+          {isPowerplayActive ? (
+            <View className="mr-2 px-2 py-0.5 rounded-full bg-green-100">
+              <ThemedText className="text-[10px] font-bold text-green-800">
+                🏏 Powerplay
+              </ThemedText>
+            </View>
+          ) : null}
+          {matchStatus ? (
+            <ThemedText className={`${statusColor} font-bold`}>{matchStatus}</ThemedText>
+          ) : null}
+        </View>
       </View>
 
       {/* When match went to Super Over (live or ended): show Inning 1 & Inning 2 scores */}

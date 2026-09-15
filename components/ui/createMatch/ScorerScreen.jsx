@@ -117,6 +117,17 @@ export default function ScorerScreen() {
   const [pendingActionCount, setPendingActionCount] = useState(0);
   const isFlushingQueueRef = useRef(false);
 
+  // Transient "Powerplay started/ended" banner, shown briefly on the
+  // powerplay-start/powerplay-end socket events the server emits from
+  // Match.ball().
+  const [powerplayBanner, setPowerplayBanner] = useState(null);
+  const powerplayBannerTimeoutRef = useRef(null);
+  const showPowerplayBanner = useCallback((message) => {
+    setPowerplayBanner(message);
+    if (powerplayBannerTimeoutRef.current) clearTimeout(powerplayBannerTimeoutRef.current);
+    powerplayBannerTimeoutRef.current = setTimeout(() => setPowerplayBanner(null), 4000);
+  }, []);
+
   // Sends every locally-queued, unconfirmed action for this match to the
   // server, in order, one at a time — waiting for each ack before sending
   // the next so a backlog built up while offline can't be applied out of
@@ -1241,6 +1252,12 @@ export default function ScorerScreen() {
     const stableInningsComplete = () => {
       matchStatusHandler("isInningCompleted", true);
     };
+    const handlePowerplayStart = (data) => {
+      showPowerplayBanner(`🏏 Powerplay is ON — first ${data?.oversCount ?? ""} overs`);
+    };
+    const handlePowerplayEnd = () => {
+      showPowerplayBanner("🏁 Powerplay overs complete");
+    };
 
     socketConn.on("connect", joinRoom);
     socketConn.on("reconnect", joinRoom);
@@ -1249,6 +1266,8 @@ export default function ScorerScreen() {
     socketConn.on("over-complete", stableOverComplete);
     socketConn.on("innings-complete", stableInningsComplete);
     socketConn.on("INNINGS_START", handleInningsStartSocket);
+    socketConn.on("powerplay-start", handlePowerplayStart);
+    socketConn.on("powerplay-end", handlePowerplayEnd);
 
     if (socketConn.connected) {
       joinRoom();
@@ -1262,10 +1281,12 @@ export default function ScorerScreen() {
       socketConn.off("over-complete", stableOverComplete);
       socketConn.off("innings-complete", stableInningsComplete);
       socketConn.off("INNINGS_START", handleInningsStartSocket);
+      socketConn.off("powerplay-start", handlePowerplayStart);
+      socketConn.off("powerplay-end", handlePowerplayEnd);
       socketConn.disconnect();
       socketRef.current = null;
     };
-  }, [matchID, scoreHandler, navigation, flushPendingActionQueue]);
+  }, [matchID, scoreHandler, navigation, flushPendingActionQueue, showPowerplayBanner]);
 
 
 
@@ -1616,6 +1637,25 @@ export default function ScorerScreen() {
                 Syncing {pendingActionCount} pending action{pendingActionCount === 1 ? "" : "s"}...
               </ThemedText>
             </View>
+          )}
+
+          {/* Transient powerplay start/end banner */}
+          {powerplayBanner && (
+            <View className="bg-green-600 py-1.5 px-4 flex-row items-center justify-center">
+              <ThemedText className="text-xs text-white font-semibold">
+                {powerplayBanner}
+              </ThemedText>
+            </View>
+          )}
+
+          {/* Persistent "in powerplay" badge while the current over is within it */}
+          {Number(score?.powerplayOvers) > 0 &&
+            parseFloat(score?.batting?.score?.over || "0") < Number(score.powerplayOvers) && (
+              <View className="bg-green-100 py-1 px-4 flex-row items-center justify-center">
+                <ThemedText className="text-xs text-green-800 font-bold">
+                  🏏 Powerplay • Overs 1–{score.powerplayOvers}
+                </ThemedText>
+              </View>
           )}
 
           {/* Header — no flex-1 here, it must size to its own content */}

@@ -2048,6 +2048,7 @@ export default function MatchScoreCard({
                         crr={score?.batting?.score?.CRR}
                         projjectedScore={score?.batting?.score?.projectedScore}
                         matchTotalOver={score?.totalOvers || score?.matchTotalOver || 20}
+                        powerplayOvers={score?.powerplayOvers}
                         matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : "Live")}
                         result={isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || "")}
                         motm={isMatchEnded ? score?.mom : null}
