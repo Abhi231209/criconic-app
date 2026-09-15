@@ -29,7 +29,6 @@ import ThemedText from "../custom/ThemedText";
 import CustomPopup from "../custom/CustomPopup";
 import QuickActions from "./QuickActions";
 import { useBottomSheet } from "../custom/CustomBottomSheet";
-import PitchMap from "./PitchMap";
 import OutOptions from "./OutOptions";
 import BallTrackerModal from "./BallTrackerModal";
 import WagonPitchViewerModal from "./WagonPitchViewerModal";
@@ -1982,7 +1981,6 @@ export default function ScorerScreen() {
           />
         </ScrollView>
 
-
       {/* Next Batter Selection Sheet */}
       {nextBatterModalVisible && isFocused && (
         <View style={styles.sheetOverlay} pointerEvents="box-none">
@@ -2790,6 +2788,34 @@ export default function ScorerScreen() {
 }
 
 const styles = StyleSheet.create({
+  vizTagRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 8,
+  },
+  vizTagButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+  },
+  vizTagButtonActive: {
+    borderColor: "#16a34a",
+    backgroundColor: "rgba(22, 163, 74, 0.1)",
+  },
+  vizTagText: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  vizTagTextActive: {
+    color: "#16a34a",
+    fontWeight: "600",
+  },
   scoreContainer: {
     // Generous breathing room above and below the score display hero section
     paddingVertical: 36,

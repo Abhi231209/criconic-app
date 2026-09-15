@@ -24,49 +24,12 @@ import {
   Feather 
 } from '@expo/vector-icons';
 import ThemedText from '../custom/ThemedText';
+import { request } from '@/utils/api';
 
-// Dummy data for the component
+// Dummy data for placeholder sections that have no backing API yet
+// (recent form / weather / pitch report). Team info and head-to-head
+// stats now come from the real `score` prop and the head-to-head API.
 const dummyData = {
-  score: {
-    title: "ICC World Cup 2023 - Match 24",
-    tournament: {
-      title: "ICC World Cup 2023",
-      _id: "tournament123"
-    },
-    roundType: "Group Stage",
-    matchTotalOver: 50,
-    date: "2023-10-24T14:30:00Z",
-    venue: "Melbourne Cricket Ground",
-    ballType: "white",
-    matchType: "one day",
-    toss: "India won the toss and elected to bat",
-    matchOfficials: {
-      umpires: ["Aleem Dar", "Kumar Dharmasena"],
-      referee: "Ranjan Madugalle"
-    },
-    teams: [
-      {
-        teamId: "team1",
-        title: "India",
-        teamLogo: "https://upload.wikimedia.org/wikipedia/en/thumb/4/41/Flag_of_India.svg/1200px-Flag_of_India.svg.png",
-        shortName: "IND"
-      },
-      {
-        teamId: "team2",
-        title: "Australia",
-        teamLogo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Flag_of_Australia_%28converted%29.svg/1200px-Flag_of_Australia_%28converted%29.svg.png",
-        shortName: "AUS"
-      }
-    ]
-  },
-  headToHeadStats: {
-    matchesPlayed: 142,
-    teamA: "team1",
-    teamAWins: 50,
-    teamB: "team2",
-    teamBWins: 80,
-    draws: 12
-  },
   teamsRecentForm: {
     recentForms: [
       {
@@ -273,7 +236,7 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
               </ThemedText>
               <ThemedText className="text-sm text-gray-500 dark:text-gray-400">{team1?.shortName || team1?.title || "T1"}</ThemedText>
             </View>
-            
+
             <View className="items-center flex-1">
               <ThemedText className="text-2xl font-bold text-red-600 dark:text-red-400">
                 {matchWin(team2?.teamId)}
@@ -361,22 +324,45 @@ const RecentFormSection = ({ teamsRecentForm, cardBg, textColor }) => {
   );
 };
 
-export default function MatchInfo({ 
-  score: propScore, 
-  headToHeadStats: propHeadToHeadStats, 
-  teamsRecentForm: propTeamsRecentForm, 
-  weather: propWeather, 
-  pitchReport: propPitchReport 
+export default function MatchInfo({
+  score: propScore,
+  headToHeadStats: propHeadToHeadStats,
+  teamsRecentForm: propTeamsRecentForm,
+  weather: propWeather,
+  pitchReport: propPitchReport,
 }) {
   const score = propScore || dummyData.score;
-  const headToHeadStats = propHeadToHeadStats || score?.headToHeadStats || dummyData.headToHeadStats;
   const teamsRecentForm = propTeamsRecentForm || score?.teamsRecentForm || dummyData.teamsRecentForm;
   const weather = propWeather || score?.weather || dummyData.weather;
   const pitchReport = propPitchReport || score?.pitchReport || dummyData.pitchReport;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { width, height } = useWindowDimensions();
-  
+
+  const [headToHeadStats, setHeadToHeadStats] = useState(propHeadToHeadStats || null);
+
+  const matchId = score?._id || score?.id;
+  const team1Id = score?.teams?.[0]?.teamId;
+  const team2Id = score?.teams?.[1]?.teamId;
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!matchId || !team1Id || !team2Id) {
+      setHeadToHeadStats(null);
+      return;
+    }
+    request(`head-to-head/byMatchId/${matchId}`, { method: 'GET', errorAlert: false })
+      .then((res) => {
+        if (isMounted) setHeadToHeadStats(res?.data || null);
+      })
+      .catch(() => {
+        if (isMounted) setHeadToHeadStats(null);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [matchId, team1Id, team2Id]);
+
   const [expandedSections, setExpandedSections] = useState({
     teams: true,
     details: true,
@@ -398,6 +384,12 @@ export default function MatchInfo({
   const textColor = colorScheme === 'dark' ? 'text-white' : 'text-gray-900';
   const secondaryText = colorScheme === 'dark' ? 'text-gray-400' : 'text-gray-500';
 
+  const tossWinnerId = score?.score?.toss?.winningTeam;
+  const tossWinnerTeam = score?.teams?.find((t) => t.teamId?.toString?.() === tossWinnerId?.toString?.());
+  const tossSummary = tossWinnerTeam
+    ? `${tossWinnerTeam.title} won the toss and elected to ${score.score.toss.decision === 'BOWL' ? 'bowl' : 'bat'}`
+    : null;
+
   // Enhanced info items with more cricket-specific data
   const infoItems = [
     score?.tournament?.title && {
@@ -416,15 +408,15 @@ export default function MatchInfo({
       label: 'Overs',
       value: `${score?.matchTotalOver} overs match`,
     },
-    score?.date && {
+    score?.startDate && {
       icon: <FontAwesome5 name="calendar" size={18} color="#a78bfa" />,
       label: 'Date & Time',
-      value: formatDate(score?.date),
+      value: formatDate(score?.startDate),
     },
-    score?.venue && {
+    score?.address && {
       icon: <FontAwesome5 name="map-marker-alt" size={18} color="#ef4444" />,
       label: 'Venue',
-      value: score?.venue,
+      value: score?.address,
     },
     score?.ballType && {
       icon: <Ionicons name="baseball" size={20} color="#f97316" />,
@@ -436,16 +428,16 @@ export default function MatchInfo({
       label: 'Match Format',
       value: capitalizeFirstWord(score.matchType),
     },
-    score?.toss && {
+    tossSummary && {
       icon: <MaterialIcons name="casino" size={20} color="#14b8a6" />,
       label: 'Toss Result',
-      value: score.toss,
+      value: tossSummary,
     },
     score?.matchOfficials?.umpires && {
       icon: <MaterialCommunityIcons name="account-tie" size={20} color="#8b5cf6" />,
       label: 'Umpires',
-      value: Array.isArray(score.matchOfficials.umpires) 
-        ? score.matchOfficials.umpires.join(', ') 
+      value: Array.isArray(score.matchOfficials.umpires)
+        ? score.matchOfficials.umpires.join(', ')
         : String(score.matchOfficials.umpires),
     },
     score?.matchOfficials?.referee && {
@@ -465,6 +457,10 @@ export default function MatchInfo({
     },
   ].filter(Boolean);
 
+  if (!score?.teams || score.teams.length < 2) {
+    return null;
+  }
+
   return (
       <ScrollView 
         className="flex-1"
@@ -473,24 +469,24 @@ export default function MatchInfo({
         showsVerticalScrollIndicator={false}
       >
         {/* Match Header */}
-        <Animated.View 
+        <Animated.View
           entering={ZoomIn.duration(600)}
           className={`${cardBg} rounded-2xl p-5 mb-5 shadow-lg`}
         >
           <ThemedText className={`text-xl font-bold text-center ${textColor} mb-1`}>
-            {score?.title || "Match Details"}
+            {score?.title || `${score?.teams?.[0]?.title || "Team 1"} vs ${score?.teams?.[1]?.title || "Team 2"}`}
           </ThemedText>
-          {score?.date && (
+          {score?.startDate && (
             <ThemedText className={`text-sm text-center ${secondaryText}`}>
-              {formatDate(score.date)}
+              {formatDate(score.startDate)}
             </ThemedText>
           )}
-          
+
           {/* Teams vs Badge */}
           <View className="flex-row justify-center items-center my-6">
             <View className="items-center flex-1">
-              <ImagePlaceHolder 
-                image={score?.teams?.[0]?.teamLogo} 
+              <ImagePlaceHolder
+                image={score?.teams?.[0]?.teamLogo}
                 name={score?.teams?.[0]?.title}
                 size="16"
               />
@@ -498,16 +494,16 @@ export default function MatchInfo({
                 {score?.teams?.[0]?.shortName || score?.teams?.[0]?.title || "Team 1"}
               </ThemedText>
             </View>
-            
+
             <View className="mx-4 items-center">
               <View className="bg-red-500 px-3 py-1 rounded-full">
                 <ThemedText className="text-white font-bold">VS</ThemedText>
               </View>
             </View>
-            
+
             <View className="items-center flex-1">
-              <ImagePlaceHolder 
-                image={score?.teams?.[1]?.teamLogo} 
+              <ImagePlaceHolder
+                image={score?.teams?.[1]?.teamLogo}
                 name={score?.teams?.[1]?.title}
                 size="16"
               />

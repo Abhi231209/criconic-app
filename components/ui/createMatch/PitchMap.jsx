@@ -467,6 +467,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "500",
   },
+  cancelButton: {
+    position: 'absolute',
+    top: 150,
+    right: 20,
+    backgroundColor: 'rgba(107, 114, 128, 0.9)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    elevation: 5,
+  },
+  saveButton: {
+    position: 'absolute',
+    top: 210,
+    right: 20,
+    backgroundColor: 'rgba(22, 163, 74, 0.9)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    elevation: 5,
+  },
 });
 
 export default PitchMap;

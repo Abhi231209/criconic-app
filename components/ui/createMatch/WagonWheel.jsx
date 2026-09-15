@@ -542,6 +542,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
+  cancelButton: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  saveButton: {
+    backgroundColor: '#16a34a',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+  },
 });
 
 export default WagonWheel;
