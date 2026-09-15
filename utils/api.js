@@ -427,6 +427,8 @@ export const matchesApi = {
     request(`api/matches/${matchId}/settings`, { method: "POST", data }),
   goLive: (data) =>
     request("api/matches/public/go-live", { method: "POST", data }),
+  addOrganizer: (matchId, userId) =>
+    request(`api/matches/${matchId}/organizers`, { method: "POST", data: { userId } }),
 };
 
 

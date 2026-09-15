@@ -28,9 +28,10 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
 import ThemedText from "../custom/ThemedText";
 import SCREENS from "@/screens";
-import { request, matchesApi } from "@/utils/api";
+import { request, matchesApi, searchApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
@@ -137,11 +138,57 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     player: !isPreScorer,
     match: false,
     live: true,
+    organizers: false,
   });
   const [matchConfigs, setMatchConfigs] = useState({});
   const [showBatsmenStats, setShowBatsmenStats] = useState(false);
   const [streamingLink, setStreamingLink] = useState("");
   const [isStartingLive, setIsStartingLive] = useState(false);
+
+  // ---- ORGANIZERS (co-scorers) ----
+  const [organizerQuery, setOrganizerQuery] = useState("");
+  const [organizerResults, setOrganizerResults] = useState([]);
+  const [isSearchingOrganizer, setIsSearchingOrganizer] = useState(false);
+  const [addingOrganizerId, setAddingOrganizerId] = useState(null);
+
+  const searchOrganizerCandidates = useCallback(async (text) => {
+    if (!text || text.trim().length < 2) {
+      setOrganizerResults([]);
+      return;
+    }
+    setIsSearchingOrganizer(true);
+    try {
+      const res = await searchApi.search(text.trim(), "player");
+      const list = Array.isArray(res?.data) ? res.data : [];
+      const players = list.find((g) => g.key?.toLowerCase() === "player")?.data || [];
+      setOrganizerResults(players);
+    } catch (err) {
+      console.warn("[MatchSetting] organizer search failed:", err);
+      setOrganizerResults([]);
+    } finally {
+      setIsSearchingOrganizer(false);
+    }
+  }, []);
+
+  const handleAddOrganizer = async (user) => {
+    const userId = user?._id || user?.id;
+    if (!userId || !matchId) return;
+    setAddingOrganizerId(userId);
+    try {
+      const res = await matchesApi.addOrganizer(matchId, userId);
+      if (res?.data?.success) {
+        Alert.alert("Added", res.data.message || `${user?.username || "Player"} can now score this match`);
+        setOrganizerQuery("");
+        setOrganizerResults([]);
+      } else {
+        Alert.alert("Couldn't add organizer", res?.data?.message || "Please try again.");
+      }
+    } catch (err) {
+      Alert.alert("Couldn't add organizer", err?.response?.data?.message || "Please try again.");
+    } finally {
+      setAddingOrganizerId(null);
+    }
+  };
 
   const loadConfigs = useCallback(async () => {
     if (!matchId) return;
@@ -428,6 +475,73 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     </View>
   );
 
+  // ---- ORGANIZERS SECTION ----
+  // Anyone who can already score this match (creator, existing organizer,
+  // tournament organizer, or an admin/super admin — see
+  // isUserMatchOrganizer server-side) can grant scoring access to someone
+  // else by adding them here.
+  const renderOrganizerSettings = () => (
+    <View style={styles.sectionGroup}>
+      <ThemedText className="font-normal text-xs" style={[styles.sectionHint, { color: C.textSecondary }]}>
+        Add another person who can score this match — search by name.
+      </ThemedText>
+      <TextInput
+        value={organizerQuery}
+        onChangeText={(text) => {
+          setOrganizerQuery(text);
+          searchOrganizerCandidates(text);
+        }}
+        placeholder="Search player by name..."
+        placeholderTextColor={C.textSecondary}
+        style={{
+          borderWidth: 1,
+          borderColor: C.border,
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          color: C.text,
+          marginTop: 8,
+          marginBottom: 8,
+        }}
+      />
+      {isSearchingOrganizer && (
+        <ThemedText className="text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
+          Searching...
+        </ThemedText>
+      )}
+      {organizerResults.map((user) => {
+        const userId = user?._id || user?.id;
+        return (
+          <View
+            key={userId}
+            style={[
+              styles.settingRow,
+              { borderBottomColor: C.divider, alignItems: "center" },
+            ]}
+          >
+            <View style={styles.settingText}>
+              <ThemedText className="font-semibold text-sm" style={{ color: C.text }}>
+                {user?.username || "Player"}
+              </ThemedText>
+            </View>
+            <ActionButton
+              title={addingOrganizerId === userId ? "Adding..." : "Add"}
+              variant="outline"
+              isDarkMode={isDarkMode}
+              disabled={addingOrganizerId === userId}
+              onPress={() => handleAddOrganizer(user)}
+            />
+          </View>
+        );
+      })}
+      {!isSearchingOrganizer && organizerQuery.trim().length >= 2 && organizerResults.length === 0 && (
+        <ThemedText className="text-xs" style={{ color: C.textSecondary }}>
+          No matching players found
+        </ThemedText>
+      )}
+    </View>
+  );
+
   // ---- LIVE SETTINGS SECTION ----
   const renderLiveSettings = () => (
     <View style={styles.sectionGroup}>
@@ -680,6 +794,17 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           isDarkMode={isDarkMode}
         >
           {renderMatchSettings()}
+        </AccordionSection>
+
+        {/* Organizers */}
+        <AccordionSection
+          title="Organizers"
+          icon={Users}
+          isExpanded={expandedSections.organizers}
+          onToggle={() => toggleSection("organizers")}
+          isDarkMode={isDarkMode}
+        >
+          {renderOrganizerSettings()}
         </AccordionSection>
 
         <View style={{ height: 40 }} />
