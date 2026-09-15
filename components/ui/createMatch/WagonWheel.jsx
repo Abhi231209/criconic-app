@@ -176,9 +176,19 @@ const WagonWheel = ({
     return historicalShots.map((shot, idx) => {
       const shotAngle = Number(shot.angle ?? shot.wagonWheel?.angle ?? 0);
       const rawDist = Number(shot.distance ?? shot.wagonWheel?.distance ?? radius * 0.8);
-      // scale distance if needed
-      const scaleFactor = radius / 140; // original wheel was 140 radius
-      const shotDistance = Math.min(rawDist > 20 ? rawDist * (scaleFactor < 1 ? scaleFactor : 1) : rawDist, radius);
+      // distance may be stored as: a normalized fraction (0-1), a legacy pixel
+      // value (captured on an older wheel with a fixed 140 radius), or a
+      // pixel value already matching the current radius.
+      let shotDistance;
+      if (rawDist > 0 && rawDist <= 1) {
+        shotDistance = rawDist * radius;
+      } else if (rawDist > 20) {
+        const scaleFactor = radius / 140; // original wheel was 140 radius
+        shotDistance = rawDist * (scaleFactor < 1 ? scaleFactor : 1);
+      } else {
+        shotDistance = rawDist;
+      }
+      shotDistance = Math.min(shotDistance, radius);
 
       const rad = (shotAngle * Math.PI) / 180;
       const shotX = centerX + shotDistance * Math.cos(rad);

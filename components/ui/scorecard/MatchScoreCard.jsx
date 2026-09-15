@@ -1181,12 +1181,34 @@ export default function MatchScoreCard({
     );
 
     const [loading, setLoading] = useState(!hasInitialData);
+    const prevMatchIDRef = useRef(matchID);
 
     useEffect(() => {
         if (!matchID) {
             setLoading(false);
             return;
         }
+
+        // Switching to a different match (not the initial mount): clear the
+        // previous match's score first so stale fields — streamUrl in
+        // particular — can't leak into the new match while the fresh fetch
+        // is in flight (or if it fails and the merge below has nothing to
+        // overwrite them with).
+        if (prevMatchIDRef.current !== matchID) {
+            setScore({
+                success: true,
+                teams: [],
+                inning: [],
+                commentary: [],
+                fullCommentary: [],
+                matchConfig: {
+                    showMatchSummary: false,
+                    showMatchPreview: false,
+                    showPlayingEleven: false,
+                },
+            });
+        }
+        prevMatchIDRef.current = matchID;
 
         // Fetch primary match and score data immediately
         Promise.all([

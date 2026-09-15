@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, ScrollView, Pressable, useWindowDimensions } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Animated, { 
@@ -14,7 +14,7 @@ import {
 import ThemedText from "../custom/ThemedText";
 import PlayerAvatar from "../custom/PlayerAvatar";
 import { useColorScheme } from "react-native";
-import { convertBallToOvers, getBatsmenDescription, calculateCRR } from "@/utils/Common";
+import { convertBallToOvers, getBatsmenDescription, calculateCRR, MATCH_STATUS } from "@/utils/Common";
 import SCREENS from "@/screens";
 import WagonPitchViewerModal from "../createMatch/WagonPitchViewerModal";
 
@@ -32,7 +32,13 @@ export default function FullScoreCard({
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const [activeTab, setActiveTab] = useState("batting");
-  const [activeInning, setActiveInning] = useState(1); // 1 for first inning, 2 for second inning
+  const [activeInning, setActiveInning] = useState(isChasing ? 2 : 1); // defaults to whichever innings is currently live
+
+  // Keep the displayed innings in sync with the match's live innings (e.g. when
+  // the match transitions from 1st to 2nd innings while this screen is open).
+  useEffect(() => {
+    setActiveInning(isChasing ? 2 : 1);
+  }, [isChasing]);
   const [trackerModalVisible, setTrackerModalVisible] = useState(false);
   const [trackerModalTab, setTrackerModalTab] = useState("wagon");
   const [selectedTrackerPlayer, setSelectedTrackerPlayer] = useState(null);
@@ -134,9 +140,6 @@ export default function FullScoreCard({
 
   const selectedInningObj = inningsList.find(i => i.number === activeInning) || inningsList[0];
   const currentInning = selectedInningObj?.data || emptyInning;
-
-  const isSecondInningComplete = (inningsList[1]?.data?.batting?.score?.wicket >= 10) || 
-                                 (inningsList[1]?.data?.batting?.score?.over === "20.0");
 
   const redirectToPlayerProfile = (player) => {
     if (!player) return;
@@ -260,7 +263,7 @@ export default function FullScoreCard({
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               CRR: {currentInning.batting.score.CRR}
             </ThemedText>
-            {activeInning === 2 && !isSecondInningComplete && currentInning.batting.score.projectedScore && (
+            {activeInning === 1 && currentInning.batting.score.projectedScore && (
               <ThemedText className={`text-sm ${isDark ? "text-green-400" : "text-green-600"} mt-1`}>
                 Proj: {currentInning.batting.score.projectedScore}
               </ThemedText>
@@ -269,17 +272,17 @@ export default function FullScoreCard({
         </View>
       </Animated.View>
 
-      {/* Match Result Banner for Completed 2nd Inning */}
-      {activeInning === 2 && isSecondInningComplete && (
-        <Animated.View 
+      {/* Match Result Banner */}
+      {score?.matchCurrentStatus === MATCH_STATUS.MATCH_ENDED && description ? (
+        <Animated.View
           entering={FadeInDown.duration(500)}
           className={`mx-4 p-3 rounded-lg ${isDark ? "bg-green-800" : "bg-green-100"} mb-4`}
         >
           <ThemedText className={`text-center font-bold ${isDark ? "text-green-100" : "text-green-800"}`}>
-            {inning1Data.batting.battingTeam} won by {inning1Data.batting.score.runs - inning2Data.batting.score.runs} runs
+            {description}
           </ThemedText>
         </Animated.View>
-      )}
+      ) : null}
 
       {/* Tabs */}
       <View className={`mx-4 mb-4 p-1 rounded-lg ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
