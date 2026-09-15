@@ -2,7 +2,12 @@ import gluestackPlugin from "@gluestack-ui/nativewind-utils/tailwind-plugin";
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: process.env.DARK_MODE ? process.env.DARK_MODE : "media",
+  // "class" is required for the manual light/dark/system toggle in
+  // contexts/ThemeContext.js (nativewind's colorScheme.set()) to work —
+  // "media" only follows the OS setting and NativeWind refuses to let
+  // JS override it, which crashed on web with "Cannot manually set color
+  // scheme, as dark mode is type 'media'".
+  darkMode: process.env.DARK_MODE ? process.env.DARK_MODE : "class",
   content: [
     "./App.js",
     "./Layout.jsx",

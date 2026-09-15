@@ -4,9 +4,9 @@ import {
   TouchableOpacity,
   Text,
   Animated,
-  Dimensions,
   StyleSheet,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import {
   Box,
@@ -35,8 +35,6 @@ import { useNavigation } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
 import ThemedText from "./custom/ThemedText";
 import useAppTheme from "@/hooks/useAppTheme";
-
-const { width } = Dimensions.get("window");
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;
@@ -130,6 +128,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   }
 
   const navigation = useNavigation();
+  const { width } = useWindowDimensions();
   const { theme, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState(currentTab || "Home");
   const [showCreateMenu, setShowCreateMenu] = useState(false);

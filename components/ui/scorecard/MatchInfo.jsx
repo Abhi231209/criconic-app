@@ -339,29 +339,29 @@ export default function MatchInfo({
   const isDark = colorScheme === 'dark';
   const { width, height } = useWindowDimensions();
 
-  const [headToHeadStats, setHeadToHeadStats] = useState(propHeadToHeadStats || null);
+  const [fetchedHeadToHeadStats, setFetchedHeadToHeadStats] = useState(null);
+  const headToHeadStats = propHeadToHeadStats || fetchedHeadToHeadStats;
 
   const matchId = score?._id || score?.id;
   const team1Id = score?.teams?.[0]?.teamId;
   const team2Id = score?.teams?.[1]?.teamId;
 
   useEffect(() => {
+    // Parent (MatchScoreCard) already fetches this — only fetch here as a fallback
+    // for callers that render MatchInfo without that prop.
+    if (propHeadToHeadStats || !matchId || !team1Id || !team2Id) return;
     let isMounted = true;
-    if (!matchId || !team1Id || !team2Id) {
-      setHeadToHeadStats(null);
-      return;
-    }
-    request(`head-to-head/byMatchId/${matchId}`, { method: 'GET', errorAlert: false })
+    request(`api/head-to-head/byMatchId/${matchId}`, { method: 'GET', errorAlert: false })
       .then((res) => {
-        if (isMounted) setHeadToHeadStats(res?.data || null);
+        if (isMounted) setFetchedHeadToHeadStats(res?.data || null);
       })
       .catch(() => {
-        if (isMounted) setHeadToHeadStats(null);
+        if (isMounted) setFetchedHeadToHeadStats(null);
       });
     return () => {
       isMounted = false;
     };
-  }, [matchId, team1Id, team2Id]);
+  }, [propHeadToHeadStats, matchId, team1Id, team2Id]);
 
   const [expandedSections, setExpandedSections] = useState({
     teams: true,

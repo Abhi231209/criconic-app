@@ -10,8 +10,8 @@ import {
   ScrollView,
   TextInput,
   Image,
-  Dimensions,
   useColorScheme,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions, Camera } from "expo-camera";
@@ -24,11 +24,10 @@ import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import { useSelector } from "react-redux";
 
-const { width, height } = Dimensions.get("window");
-const SCAN_AREA_SIZE = Math.min(width * 0.72, 280);
-
 export default function QRScanner({ navigation }) {
   const colorScheme = useColorScheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const scanAreaSize = Math.min(windowWidth * 0.72, 280);
   const isDarkMode = colorScheme === "dark";
 
   const authUser = useSelector((state) => state.auth?.user);
@@ -543,9 +542,9 @@ export default function QRScanner({ navigation }) {
         <View style={styles.maskTop} />
 
         {/* Middle row containing left mask, scan area, right mask */}
-        <View style={styles.maskRow}>
+        <View style={[styles.maskRow, { height: scanAreaSize }]}>
           <View style={styles.maskSide} />
-          <View style={styles.scanBox}>
+          <View style={[styles.scanBox, { width: scanAreaSize, height: scanAreaSize }]}>
             {/* 4 Corner brackets */}
             <View style={[styles.corner, styles.cornerTopLeft]} />
             <View style={[styles.corner, styles.cornerTopRight]} />
@@ -1066,15 +1065,12 @@ const styles = StyleSheet.create({
   },
   maskRow: {
     flexDirection: "row",
-    height: SCAN_AREA_SIZE,
   },
   maskSide: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.65)",
   },
   scanBox: {
-    width: SCAN_AREA_SIZE,
-    height: SCAN_AREA_SIZE,
     position: "relative",
     backgroundColor: "transparent",
   },

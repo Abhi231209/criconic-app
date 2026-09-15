@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Animated, Dimensions } from "react-native";
+import { View, Animated } from "react-native";
 import ThemedText from "./custom/ThemedText";
 
 export default function Marquee({ description, children, className, textClassName, textStyle }) {
-  const windowWidth = Dimensions.get("window").width;
   const translateX = useRef(new Animated.Value(0)).current;
   const textRef = useRef(null);
   const [textWidth, setTextWidth] = useState(0);

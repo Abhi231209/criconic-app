@@ -3,11 +3,11 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Dimensions,
   StyleSheet,
   ScrollView,
   useColorScheme,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -15,9 +15,7 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import PagerView from "react-native-pager-view";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+import TabSwitchPager from "./TabSwitchPager";
 
 const TabSwitch = ({
   tabs,
@@ -37,6 +35,7 @@ const TabSwitch = ({
 }) => {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
 
   // Blue/Cyan default color scheme
   const defaultActiveColor = "#2196F3";
@@ -86,7 +85,7 @@ const TabSwitch = ({
         animated: true,
       });
     }
-  }, []);
+  }, [SCREEN_WIDTH]);
 
   const updateIndicator = useCallback((index, animated = true) => {
     const layout = tabLayouts.current[index];
@@ -336,24 +335,16 @@ const TabSwitch = ({
           {tabs[activeIndex]?.content || null}
         </View>
       ) : (
-        <PagerView
+        <TabSwitchPager
           ref={pagerRef}
+          tabs={tabs}
           style={[{ flex: 1 }, contentStyle]}
           initialPage={safeInitialIndex}
           onPageSelected={handlePageSelected}
           onPageScroll={handlePageScroll}
           scrollEnabled={enableSwipeGesture}
-        >
-          {tabs.map((tab, index) => (
-            <View
-              key={tab.id || `tab_page_${index}`}
-              collapsable={false}
-              style={styles.page}
-            >
-              {tab.content || <View />}
-            </View>
-          ))}
-        </PagerView>
+          pageStyle={styles.page}
+        />
       )}
     </View>
   );

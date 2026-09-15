@@ -1,9 +1,7 @@
 // components/ui/custom/SwipeableTabs.jsx
 import React, { useRef, useEffect, useContext } from 'react';
-import { View, PanResponder, Dimensions } from 'react-native';
+import { View, PanResponder } from 'react-native';
 import { NavigationContext } from '@react-navigation/native';
-
-const { width } = Dimensions.get('window');
 
 const getTabValue = (tab) => {
   if (!tab) return '';

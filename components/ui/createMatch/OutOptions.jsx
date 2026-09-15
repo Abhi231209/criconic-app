@@ -7,7 +7,7 @@ import {
   ScrollView,
   TextInput,
   useColorScheme,
-  Dimensions,
+  useWindowDimensions,
   Alert,
   Switch,
   StyleSheet,
@@ -30,8 +30,6 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import ThemedText from "../custom/ThemedText";
 import { COLORS } from "@/theme/colors";
-
-const { height } = Dimensions.get("window");
 
 // Cricket Icon wrapper using MaterialCommunityIcons
 const CricketIcon = ({ size = 20, color, ...props }) => (
@@ -198,6 +196,7 @@ export default function OutOptions({
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const theme = isDarkMode ? COLORS.dark : COLORS.light;
+  const { height: windowHeight } = useWindowDimensions();
 
   // Modals visibility state
   const [mainModalVisible, setMainModalVisible] = useState(isControlled ? visible : false);
@@ -614,7 +613,7 @@ export default function OutOptions({
         onRequestClose={handleCloseMain}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.mainModal, isDarkMode ? styles.darkModal : styles.lightModal]}>
+          <View style={[styles.mainModal, { height: windowHeight * 0.82 }, isDarkMode ? styles.darkModal : styles.lightModal]}>
             <ModalHeader
               title="Select Dismissal Type"
               onClose={handleCloseMain}
@@ -653,7 +652,7 @@ export default function OutOptions({
         onRequestClose={() => closeSubModalAndReopenMain("CAUGHT")}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.mainModal, isDarkMode ? styles.darkModal : styles.lightModal]}>
+          <View style={[styles.mainModal, { height: windowHeight * 0.82 }, isDarkMode ? styles.darkModal : styles.lightModal]}>
             <ModalHeader
               title="Caught - Select Fielder"
               onClose={() => closeSubModalAndReopenMain("CAUGHT")}
@@ -728,7 +727,7 @@ export default function OutOptions({
         onRequestClose={() => closeSubModalAndReopenMain("STUMPED")}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.mainModal, isDarkMode ? styles.darkModal : styles.lightModal]}>
+          <View style={[styles.mainModal, { height: windowHeight * 0.82 }, isDarkMode ? styles.darkModal : styles.lightModal]}>
             <ModalHeader
               title="Stumped - Select Keeper"
               onClose={() => closeSubModalAndReopenMain("STUMPED")}
@@ -797,7 +796,7 @@ export default function OutOptions({
         onRequestClose={() => closeSubModalAndReopenMain("RUN_OUT")}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.mainModal, isDarkMode ? styles.darkModal : styles.lightModal]}>
+          <View style={[styles.mainModal, { height: windowHeight * 0.82 }, isDarkMode ? styles.darkModal : styles.lightModal]}>
             <ModalHeader
               title="Run Out Details"
               onClose={() => closeSubModalAndReopenMain("RUN_OUT")}
@@ -1056,7 +1055,7 @@ export default function OutOptions({
         onRequestClose={() => closeSubModalAndReopenMain("RETIRED")}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.mainModal, isDarkMode ? styles.darkModal : styles.lightModal]}>
+          <View style={[styles.mainModal, { height: windowHeight * 0.82 }, isDarkMode ? styles.darkModal : styles.lightModal]}>
             <ModalHeader
               title={`Batsman Retirement (${retiredType})`}
               onClose={() => closeSubModalAndReopenMain("RETIRED")}
@@ -1223,7 +1222,6 @@ const styles = StyleSheet.create({
   mainModal: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: height * 0.82,
     width: "100%",
   },
   lightModal: { backgroundColor: COLORS.light.background },
