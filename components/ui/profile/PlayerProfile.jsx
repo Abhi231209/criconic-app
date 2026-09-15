@@ -672,57 +672,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
   const liveMatches = [];
   const recentMatches = [];
-  const achievements = React.useMemo(() => {
-    const list = [];
-    if (battingStats.all.centuries > 0) {
-      list.push({
-        id: "century",
-        title: `${battingStats.all.centuries} Century Club`,
-        tournament: "Career Milestones",
-        description: `Scored ${battingStats.all.centuries} century(ies) with a career high score of ${battingStats.all.highest}`,
-      });
-    }
-    if (battingStats.all.fifties > 0) {
-      list.push({
-        id: "fifty",
-        title: `${battingStats.all.fifties} Half-Century Milestones`,
-        tournament: "Career Milestones",
-        description: `Scored ${battingStats.all.fifties} fifty(ies) across career matches`,
-      });
-    }
-    if (bowlingStats.all.fiveWickets > 0) {
-      list.push({
-        id: "5w",
-        title: "5-Wicket Haul",
-        tournament: "Career Milestones",
-        description: `Took 5 or more wickets in an innings with best figures of ${bowlingStats.all.bestBowling}`,
-      });
-    } else if (bowlingStats.all.fourWickets > 0) {
-      list.push({
-        id: "4w",
-        title: "4-Wicket Haul",
-        tournament: "Career Milestones",
-        description: `Took 4 wickets in an innings with best figures of ${bowlingStats.all.bestBowling}`,
-      });
-    }
-    if (battingStats.all.runs >= 100) {
-      list.push({
-        id: "runs100",
-        title: "Century Run Milestone",
-        tournament: "Career Milestones",
-        description: `Accumulated ${battingStats.all.runs} career runs`,
-      });
-    }
-    if (bowlingStats.all.wickets >= 5) {
-      list.push({
-        id: "wkt5",
-        title: "Wicket-Taker Milestone",
-        tournament: "Career Milestones",
-        description: `Claimed ${bowlingStats.all.wickets} career wickets`,
-      });
-    }
-    return list;
-  }, [battingStats.all, bowlingStats.all]);
+  // Career achievement badges — computed server-side (see server/utils/badges.js)
+  // from the player's persisted career stats, so thresholds and hat-trick/
+  // 5-wicket-haul detection stay in one authoritative place.
+  const badges = Array.isArray(fetchedPlayer?.badges) ? fetchedPlayer.badges : [];
+  const earnedBadges = badges.filter((b) => b.earned);
 
   const tabs = [
     {
@@ -1315,64 +1269,82 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   );
 
   const renderAchievements = () => (
-    <ScrollView 
-      className="flex-1" 
+    <ScrollView
+      className="flex-1"
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
     >
-      <ThemedText
-        className={`text-lg font-bold mb-4 ${
-          isDarkMode ? "text-white" : "text-gray-900"
-        }`}
-      >
-        Player Achievements
-      </ThemedText>
+      <View className="flex-row items-center justify-between mb-4">
+        <ThemedText
+          className={`text-lg font-bold ${
+            isDarkMode ? "text-white" : "text-gray-900"
+          }`}
+        >
+          Badges
+        </ThemedText>
+        <ThemedText className={`text-sm font-medium ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+          {earnedBadges.length} / {badges.length} earned
+        </ThemedText>
+      </View>
 
-      {achievements.length === 0 ? (
+      {badges.length === 0 ? (
         <View className="items-center justify-center py-12">
           <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
           <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-            No achievements recorded
+            No badges available yet
           </ThemedText>
         </View>
       ) : (
-        achievements.map((achievement) => (
-          <View
-            key={achievement.id}
-            className={`p-4 rounded-xl mb-3 ${
-              isDarkMode ? "bg-gray-800" : "bg-white"
-            } shadow-sm`}
-          >
-            <View className="flex-row items-start mb-2">
-              <View className="w-8 h-8 bg-yellow-100 rounded-full items-center justify-center mr-3 mt-1">
-                <Ionicons name="trophy-outline" size={16} color="#F59E0B" />
-              </View>
-              <View className="flex-1">
-                <ThemedText
-                  className={`text-lg font-semibold ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {achievement.title}
-                </ThemedText>
-                <ThemedText
-                  className={`text-sm font-medium mb-1 ${
-                    isDarkMode ? "text-yellow-400" : "text-yellow-600"
-                  }`}
-                >
-                  {achievement.tournament}
-                </ThemedText>
-                <ThemedText
-                  className={`text-sm ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {achievement.description}
+        <View className="flex-row flex-wrap justify-between">
+          {badges.map((badge) => (
+            <View
+              key={badge.id}
+              style={{ width: "48%" }}
+              className={`p-3 rounded-xl mb-3 items-center ${
+                badge.earned
+                  ? isDarkMode ? "bg-gray-800" : "bg-white"
+                  : isDarkMode ? "bg-gray-800/40" : "bg-gray-100"
+              } ${badge.earned ? "shadow-sm" : ""}`}
+            >
+              <View
+                className={`w-14 h-14 rounded-full items-center justify-center mb-2 ${
+                  badge.earned
+                    ? isDarkMode ? "bg-yellow-500/20" : "bg-yellow-100"
+                    : isDarkMode ? "bg-gray-700" : "bg-gray-200"
+                }`}
+              >
+                <ThemedText style={{ fontSize: 24, opacity: badge.earned ? 1 : 0.35 }}>
+                  {badge.icon}
                 </ThemedText>
               </View>
+              <ThemedText
+                className={`text-sm font-semibold text-center ${
+                  badge.earned
+                    ? isDarkMode ? "text-white" : "text-gray-900"
+                    : isDarkMode ? "text-gray-500" : "text-gray-400"
+                }`}
+              >
+                {badge.name}
+              </ThemedText>
+              <ThemedText
+                className={`text-xs text-center mt-1 ${
+                  isDarkMode ? "text-gray-500" : "text-gray-500"
+                }`}
+                numberOfLines={2}
+              >
+                {badge.description}
+              </ThemedText>
+              {!badge.earned && (
+                <View className="flex-row items-center mt-1.5">
+                  <Ionicons name="lock-closed" size={10} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                  <ThemedText className={`text-[10px] ml-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                    Locked
+                  </ThemedText>
+                </View>
+              )}
             </View>
-          </View>
-        ))
+          ))}
+        </View>
       )}
     </ScrollView>
   );
