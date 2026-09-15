@@ -43,7 +43,7 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}otpVerification/generateOTP`, { mobile: mobile.trim() });
+      const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, { mobile: mobile.trim() });
       if (res.data?.success !== false) {
         setValidationId(res.data?.validationId || res.data?._id || "");
         setStep(STEP_OTP);
@@ -61,7 +61,7 @@ export default function RegisterScreen() {
     if (!otp.trim()) { Alert.alert("Required", "Enter the OTP."); return; }
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}user/signup`, {
+      const res = await axios.post(`${API_URL}api/users/signup`, {
         username: name.trim(),
         mobile: mobile.trim(),
         password,
@@ -72,7 +72,7 @@ export default function RegisterScreen() {
       if (res.data?.success) {
         // Auto-login after registration
         const loginRes = await axios.post(
-          `${API_URL}user/login`,
+          `${API_URL}api/users/login`,
           { mobile: mobile.trim(), password },
           { withCredentials: true }
         );

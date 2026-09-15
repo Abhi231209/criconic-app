@@ -188,8 +188,8 @@ export default function WagonPitchViewerModal({
     return Array.from(map.values());
   }, [score, allDeliveries]);
 
-  // Filter shots for Wagon Wheel
-  const filteredShots = useMemo(() => {
+  // Shots matching the selected batsman, before the dots/singles/fours/sixes filter is applied
+  const batsmanFilteredShots = useMemo(() => {
     return allDeliveries.filter((d) => {
       const ww = d.wagonWheel || (d.angle !== undefined && d.zone !== undefined ? d : null);
       if (!ww) return false;
@@ -203,8 +203,14 @@ export default function WagonPitchViewerModal({
 
         if (!idMatches && !nameMatches) return false;
       }
+      return true;
+    });
+  }, [allDeliveries, selectedBatsmanId, selectedPlayer]);
 
-      // Crex shot filter
+  // Filter shots for Wagon Wheel
+  const filteredShots = useMemo(() => {
+    return batsmanFilteredShots.filter((d) => {
+      const ww = d.wagonWheel || d;
       const r = Number(d.runs ?? ww.runs ?? 0);
       if (shotFilter === "dots" && (r !== 0 || d.isWicket)) return false;
       if (shotFilter === "singles" && (r < 1 || r > 3 || d.isBoundary)) return false;
@@ -213,10 +219,25 @@ export default function WagonPitchViewerModal({
 
       return true;
     });
-  }, [allDeliveries, selectedBatsmanId, selectedPlayer, shotFilter]);
+  }, [batsmanFilteredShots, shotFilter]);
 
-  // Filter deliveries for Pitch Map
-  const filteredPitches = useMemo(() => {
+  // Real per-category counts for the filter pill labels (independent of the
+  // currently active shotFilter, which only narrows the plotted wheel).
+  const shotTypeCounts = useMemo(() => {
+    let dots = 0, singles = 0, fours = 0, sixes = 0;
+    batsmanFilteredShots.forEach((d) => {
+      const ww = d.wagonWheel || d;
+      const r = Number(d.runs ?? ww.runs ?? 0);
+      if (r === 0 && !d.isWicket) dots++;
+      else if (r >= 1 && r <= 3 && !d.isBoundary) singles++;
+      else if (r === 4) fours++;
+      else if (r === 6) sixes++;
+    });
+    return { dots, singles, fours, sixes };
+  }, [batsmanFilteredShots]);
+
+  // Deliveries matching the selected bowler, before the dots/runs/wickets filter is applied
+  const bowlerFilteredPitches = useMemo(() => {
     return allDeliveries.filter((d) => {
       const pm = d.pitchMap || (d.impactPoint !== undefined || d.coordinates !== undefined ? d : null);
       if (!pm) return false;
@@ -230,8 +251,14 @@ export default function WagonPitchViewerModal({
 
         if (!idMatches && !nameMatches) return false;
       }
+      return true;
+    });
+  }, [allDeliveries, selectedBowlerId, selectedPlayer]);
 
-      // Crex pitch filter
+  // Filter deliveries for Pitch Map
+  const filteredPitches = useMemo(() => {
+    return bowlerFilteredPitches.filter((d) => {
+      const pm = d.pitchMap || d;
       const r = Number(d.runs ?? pm.runs ?? 0);
       if (pitchFilter === "dots" && (r !== 0 || d.isWicket)) return false;
       if (pitchFilter === "runs" && r === 0) return false;
@@ -239,7 +266,20 @@ export default function WagonPitchViewerModal({
 
       return true;
     });
-  }, [allDeliveries, selectedBowlerId, selectedPlayer, pitchFilter]);
+  }, [bowlerFilteredPitches, pitchFilter]);
+
+  // Real per-category counts for the pitch filter pill labels
+  const pitchTypeCounts = useMemo(() => {
+    let dots = 0, runs = 0, wickets = 0;
+    bowlerFilteredPitches.forEach((d) => {
+      const pm = d.pitchMap || d;
+      const r = Number(d.runs ?? pm.runs ?? 0);
+      if (r === 0 && !d.isWicket) dots++;
+      if (r > 0) runs++;
+      if (d.isWicket || pm.isWicket) wickets++;
+    });
+    return { dots, runs, wickets };
+  }, [bowlerFilteredPitches]);
 
   // Wagon wheel stats summary
   const wagonStats = useMemo(() => {
@@ -529,7 +569,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Dots (0)
+                        Dots ({shotTypeCounts.dots})
                       </Text>
                     </TouchableOpacity>
 
@@ -562,7 +602,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        1s & 2s
+                        1s & 2s ({shotTypeCounts.singles})
                       </Text>
                     </TouchableOpacity>
 
@@ -595,7 +635,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Fours (4)
+                        Fours ({shotTypeCounts.fours})
                       </Text>
                     </TouchableOpacity>
 
@@ -628,7 +668,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Sixes (6)
+                        Sixes ({shotTypeCounts.sixes})
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -696,7 +736,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Dots (0)
+                        Dots ({pitchTypeCounts.dots})
                       </Text>
                     </TouchableOpacity>
 
@@ -729,7 +769,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Runs (1+)
+                        Runs ({pitchTypeCounts.runs})
                       </Text>
                     </TouchableOpacity>
 
@@ -762,7 +802,7 @@ export default function WagonPitchViewerModal({
                           },
                         ]}
                       >
-                        Wickets (W)
+                        Wickets ({pitchTypeCounts.wickets})
                       </Text>
                     </TouchableOpacity>
                   </>

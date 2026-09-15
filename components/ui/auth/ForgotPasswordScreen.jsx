@@ -39,7 +39,7 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}otpVerification/generateOTP`, { mobile: mobile.trim() });
+      const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, { mobile: mobile.trim() });
       if (res.data?.success !== false) {
         setValidationId(res.data?.validationId || res.data?._id || "");
         setStep(STEP_OTP);
@@ -60,7 +60,7 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}otpVerification/validateOtp`, {
+      const res = await axios.post(`${API_URL}api/otpVerification/validateOtp`, {
         mobile: mobile.trim(),
         otp: otp.trim(),
         validationId,
@@ -88,7 +88,7 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}user/forgotPassword`, {
+      const res = await axios.post(`${API_URL}api/users/forgotPassword`, {
         mobile: mobile.trim(),
         password,
         otp: otp.trim(),
