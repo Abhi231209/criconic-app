@@ -36,7 +36,6 @@ import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
-import { useNavigation } from "@react-navigation/native";
 
 const SafeIcon = ({ icon: Icon, size = 20, color, style }) => {
   if (!Icon) return <ThemedText style={{ color, fontSize: size - 4 }}>⚙</ThemedText>;

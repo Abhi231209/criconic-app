@@ -171,10 +171,11 @@ const PitchMap = ({
   };
 
   const getCoordinatesFromData = (item) => {
-    const impact = item.impactPoint || item.pitchMap?.impactPoint;
-    if (impact && impact.fromStumps !== undefined) {
-      const fromStumps = Number(impact.fromStumps ?? 6);
-      const fromCenter = Number(impact.fromCenter ?? 0);
+  const impact = item.impactPoint || item.pitchMap?.impactPoint;
+
+  if (impact && impact.fromStumps !== undefined) {
+    const fromStumps = Number(impact.fromStumps ?? 6);
+    const fromCenter = Number(impact.fromCenter ?? 0);
 
     const normY = Math.max(0, Math.min(1, fromStumps / 22));
     const normX = Math.max(0, Math.min(1, fromCenter / 10 + 0.5));
@@ -183,7 +184,11 @@ const PitchMap = ({
       x: pitchLeft + normX * pitchWidth,
       y: pitchTop + normY * pitchHeight,
     };
-  };
+  }
+
+  // Fallback if there is no impact-point data
+  return null;
+};
 
   // Length lines in SVG coordinates (measured from stumps at TOP)
   const yYorker = pitchTop + (2 / 22) * pitchHeight;
@@ -818,4 +823,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PitchMap;
+export default PitchMap
