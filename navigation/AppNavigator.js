@@ -3,6 +3,7 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  NavigationContext,
 } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import SCREENS from "@/screens";
@@ -160,7 +161,11 @@ export default function AppNavigator() {
   const { isDark } = useAppTheme();
   return (
     <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawer {...props} />}
+      drawerContent={(props) => (
+        <NavigationContext.Provider value={props.navigation}>
+          <CustomDrawer {...props} />
+        </NavigationContext.Provider>
+      )}
       screenOptions={{
         swipeEnabled: false,
         drawerType: "back",

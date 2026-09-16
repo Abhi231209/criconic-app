@@ -27,9 +27,10 @@ import useRequireAuth from "@/hooks/useRequireAuth";
 const MATCHES_CONDITION = { items: 10 };
 
 export default function Home({}) {
+  const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  const { requireAuth } = useRequireAuth();
+  const { requireAuth } = useRequireAuth(navigation);
 
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
@@ -61,7 +62,6 @@ export default function Home({}) {
   });
 
   const { width } = useWindowDimensions();
-  const navigation = useNavigation();
 
   const getConfig = async () => {
     const res = await getConfigDetails();

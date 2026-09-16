@@ -91,7 +91,7 @@ export default function NavBar({ handleSearch }) {
           <TouchableOpacity
             onPress={() => {
               setIsLeftSheet(true);
-              navigation.openDrawer();
+              navigation.dispatch(DrawerActions.openDrawer());
             }}
             activeOpacity={0.7}
             className={`w-10 h-10 rounded-full items-center justify-center ${

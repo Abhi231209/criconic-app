@@ -21,12 +21,13 @@ import { logout as logoutAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
+import useAppTheme from "@/hooks/useAppTheme";
 
 export default function Settings() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
-  const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const { themeMode, setThemeMode, isDark } = useAppTheme();
+  const isDarkMode = isDark;
 
   const authUser = useSelector((state) => state.auth?.user);
 
@@ -327,14 +328,125 @@ export default function Settings() {
             onValueChange={setNotificationsEnabled}
             color="#EF4444"
           />
-          <SettingsItem
-            icon="moon-outline"
-            title="Dark Mode"
-            isSwitch
-            value={darkModeEnabled}
-            onValueChange={setDarkModeEnabled}
-            color="#6366F1"
-          />
+          {/* Theme Preference Row */}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View
+                  style={[
+                    styles.iconContainer,
+                    { backgroundColor: "#6366F120" },
+                  ]}
+                >
+                  <Ionicons
+                    name="color-palette-outline"
+                    size={20}
+                    color="#6366F1"
+                  />
+                </View>
+                <ThemedText
+                  style={[
+                    styles.itemTitle,
+                    isDarkMode ? styles.textDark : styles.textLight,
+                  ]}
+                >
+                  Theme Preference
+                </ThemedText>
+              </View>
+              <ThemedText
+                style={{
+                  fontSize: 13,
+                  fontWeight: "600",
+                  color: isDarkMode ? "#60A5FA" : "#2563EB",
+                }}
+              >
+                {themeMode === "system"
+                  ? "System Default"
+                  : isDarkMode
+                  ? "Dark"
+                  : "Light"}
+              </ThemedText>
+            </View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                borderRadius: 10,
+                padding: 4,
+                backgroundColor: isDarkMode ? "#111827" : "#F1F5F9",
+              }}
+            >
+              {[
+                { id: "light", label: "Light", icon: "sunny" },
+                { id: "dark", label: "Dark", icon: "moon" },
+                { id: "system", label: "System", icon: "phone-portrait-outline" },
+              ].map((opt) => {
+                const isSelected = themeMode === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => setThemeMode(opt.id)}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      backgroundColor: isSelected
+                        ? isDarkMode
+                          ? "#2563EB"
+                          : "#FFFFFF"
+                        : "transparent",
+                      shadowColor: isSelected ? "#000" : "transparent",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: isSelected ? 0.15 : 0,
+                      shadowRadius: 2,
+                      elevation: isSelected ? 2 : 0,
+                    }}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={14}
+                      color={
+                        isSelected
+                          ? isDarkMode
+                            ? "#FFFFFF"
+                            : "#2563EB"
+                          : isDarkMode
+                          ? "#9CA3AF"
+                          : "#64748B"
+                      }
+                      style={{ marginRight: 6 }}
+                    />
+                    <ThemedText
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: isSelected
+                          ? isDarkMode
+                            ? "#FFFFFF"
+                            : "#2563EB"
+                          : isDarkMode
+                          ? "#9CA3AF"
+                          : "#64748B",
+                      }}
+                    >
+                      {opt.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
         </SettingsSection>
 
         {/* Account Settings */}

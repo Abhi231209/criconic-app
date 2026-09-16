@@ -13,15 +13,13 @@ import { useBottomSheet } from "./custom/CustomBottomSheet";
 import MatchActionSheet from "./scorecard/MatchActionSheet";
 import useAppTheme from "@/hooks/useAppTheme";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { matchesApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import User from "@/utils/User";
 
 const ACTION_SHEET_SNAP_POINTS = ["72%", "88%"];
 
-// In-memory cache for instant 0ms restoration of match data and scoring access
+// In-memory cache: socket score data keyed by matchId for instant re-renders
 const MATCH_CACHE = new Map();
-const IN_FLIGHT_REQUESTS = new Map();
 
 const getEntityId = (entity) => {
   if (!entity) return null;
@@ -62,69 +60,11 @@ function ScoreCard({
     if (!effectiveMatchId) return;
 
     const idStr = String(effectiveMatchId);
-    const existingEntry = MATCH_CACHE.get(idStr);
-    const isFresh = existingEntry && (Date.now() - (existingEntry.timestamp || 0) < 45000);
 
-    if (!hasExistingData && !isFresh) {
-      setLoading(true);
-    }
+    // If we already have data (from prop or cache), show immediately
+    setLoading(false);
 
-    if (!isFresh) {
-      let reqPromise = IN_FLIGHT_REQUESTS.get(idStr);
-      if (!reqPromise) {
-        reqPromise = Promise.all([
-          matchesApi.getMatchById(effectiveMatchId, { params: { private: 1 }, errorAlert: false }).catch(() => null),
-          matchesApi.getMatchScore(effectiveMatchId).catch(() => null),
-        ]).finally(() => {
-          IN_FLIGHT_REQUESTS.delete(idStr);
-        });
-        IN_FLIGHT_REQUESTS.set(idStr, reqPromise);
-      }
-
-      reqPromise
-        .then(([matchRes, scoreRes]) => {
-          let updatedDetails = null;
-          let updatedScore = null;
-          let updatedAccess = null;
-
-          const mData = matchRes?.data?.data || matchRes?.data || matchRes?.match;
-          if (mData && (mData._id || mData.teams || mData.title)) {
-            updatedDetails = mData;
-            setMatchDetails(mData);
-            if (mData.accessToUpdate !== undefined) {
-              updatedAccess = Boolean(mData.accessToUpdate);
-              setIsAccessToUpdate(updatedAccess);
-            }
-            if (mData.score) {
-              updatedScore = mData.score;
-              setLiveScore((prev) => ({ ...prev, ...mData.score }));
-            }
-          }
-          const sData = scoreRes?.data?.data || scoreRes?.data;
-          if (sData && typeof sData === "object" && sData.success !== false) {
-            updatedScore = sData;
-            setLiveScore((prev) => ({ ...prev, ...sData }));
-            if (sData.accessToUpdate !== undefined) {
-              updatedAccess = Boolean(sData.accessToUpdate);
-              setIsAccessToUpdate(updatedAccess);
-            }
-          }
-
-          // Cache result with timestamp for instant load next time
-          MATCH_CACHE.set(idStr, {
-            matchDetails: updatedDetails || mData || match,
-            liveScore: updatedScore || sData || match?.score,
-            isAccessToUpdate: updatedAccess !== null ? updatedAccess : Boolean(match?.accessToUpdate),
-            timestamp: Date.now(),
-          });
-        })
-        .catch((err) => console.log("[ScoreCard] Fetch error:", err))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-
-    // Connect to socket room for live updates
+    // Ask the socket for the latest score — this acts as our "fetch"
     const joinRoom = () => {
       emit("score", {
         matchId: effectiveMatchId,
@@ -171,6 +111,14 @@ function ScoreCard({
             timestamp: Date.now(),
           });
           return updated;
+        });
+      } else {
+        // Cache score-only update
+        MATCH_CACHE.set(idStr, {
+          matchDetails: matchDetails || match,
+          liveScore: data,
+          isAccessToUpdate: data.accessToUpdate !== undefined ? Boolean(data.accessToUpdate) : isAccessToUpdate,
+          timestamp: Date.now(),
         });
       }
     };

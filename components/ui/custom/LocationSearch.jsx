@@ -11,6 +11,7 @@ import {
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { request } from "@/utils/api";
+import { searchFallbackLocations } from "@/utils/locationHelper";
 
 export default function LocationSearch({
   label,
@@ -53,16 +54,22 @@ export default function LocationSearch({
         { method: "GET", errorAlert: false }
       );
 
-      const predictions =
+      let predictions =
         res?.data?.data?.predictions ||
         res?.data?.predictions ||
         (Array.isArray(res?.data?.data) ? res?.data?.data : []);
 
-      setResults(Array.isArray(predictions) ? predictions : []);
-      setIsOpen(true);
+      if (!Array.isArray(predictions) || predictions.length === 0) {
+        predictions = searchFallbackLocations(text);
+      }
+
+      setResults(predictions);
+      setIsOpen(predictions.length > 0);
     } catch (err) {
       console.warn("[LocationSearch] Search error:", err?.message || err);
-      setResults([]);
+      const fallback = searchFallbackLocations(text);
+      setResults(fallback);
+      setIsOpen(fallback.length > 0);
     } finally {
       setIsLoading(false);
     }

@@ -132,7 +132,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const { theme, isDark } = useAppTheme();
-  const { requireAuth } = useRequireAuth();
+  const { requireAuth } = useRequireAuth(navigation);
   const [activeTab, setActiveTab] = useState(currentTab || "Home");
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const menuItemAnimations = useRef([]).current;
@@ -400,7 +400,9 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
           {
             opacity: fadeAnim,
             transform: [{ scale: scaleAnim }],
-            backgroundColor: colors.menuBackground,
+            backgroundColor: isDark ? "#111827" : "#FFFFFF",
+            borderColor: isDark ? "#374151" : "#E5E7EB",
+            borderWidth: 1,
           },
         ]}
       >
@@ -416,7 +418,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
             style={[
               StyleSheet.absoluteFill,
               {
-                backgroundColor: colors.menuBackdrop,
+                backgroundColor: isDark ? "rgba(17, 24, 39, 0.96)" : "rgba(255, 255, 255, 0.96)",
               },
             ]}
           />
@@ -432,7 +434,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Sparkles size={24} color="#FFFFFF" strokeWidth={1.5} />
+                <Sparkles size={24} color={colors.primary} strokeWidth={1.5} />
               </LinearGradient>
             </View>
             <View style={styles.createMenuHeaderText}>

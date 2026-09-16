@@ -56,24 +56,47 @@ export function calculateCRR(runs, overs) {
 }
 
 export const getMatchStatusDisplay = (status) => {
-  switch (status) {
-    case MATCH_STATUS.MATCH_SCHEDULED:
-    case MATCH_STATUS.MATCH_CREATED:
+  const norm = String(status || "").trim().toUpperCase();
+  switch (norm) {
+    case "MATCH_SCHEDULED":
+    case "MATCH_CREATED":
+    case "SCHEDULED":
+    case "CREATED":
+    case "UPCOMING":
       return "Upcoming";
-    case MATCH_STATUS.MATCH_IN_PROGRESS:
-    case MATCH_STATUS.INNINGS_I:
-    case MATCH_STATUS.INNINGS_II:
-    case MATCH_STATUS.MATCH_RESUMED:
-    case MATCH_STATUS.MATCH_STARTED:
+    case "MATCH_IN_PROGRESS":
+    case "IN_PROGRESS":
+    case "INNINGS_I":
+    case "INNINGS_II":
+    case "INNINGS_1":
+    case "INNINGS_2":
+    case "MATCH_RESUMED":
+    case "MATCH_STARTED":
+    case "STARTED":
+    case "TOSS":
+    case "MATCH_OPENER_SELECTED":
+    case "MATCH_DETAILS_ENTERED":
+    case "INNINGS_BREAK":
+    case "INNINGS_I_ENDED":
+    case "TEA_BREAK":
+    case "DRINKS_BREAK":
+    case "SUPER_OVER":
+    case "EXTRA_INNINGS":
+    case "LIVE":
       return "Live";
-    case MATCH_STATUS.MATCH_COMPLETED:
-    case MATCH_STATUS.MATCH_TIE:
-    case MATCH_STATUS.MATCH_CANCELLED:
-    case MATCH_STATUS.MATCH_INTERRUPTED:
-    case MATCH_STATUS.MATCH_SUSPENDED:
-    case MATCH_STATUS.RAIN_DELAY:
-    case MATCH_STATUS.MATCH_PAUSED:
-    case MATCH_STATUS.MATCH_ENDED:
+    case "MATCH_COMPLETED":
+    case "COMPLETED":
+    case "MATCH_TIE":
+    case "TIE":
+    case "MATCH_CANCELLED":
+    case "CANCELLED":
+    case "MATCH_INTERRUPTED":
+    case "MATCH_SUSPENDED":
+    case "RAIN_DELAY":
+    case "MATCH_PAUSED":
+    case "MATCH_ENDED":
+    case "ENDED":
+    case "END":
       return "End";
     default:
       return status || "";

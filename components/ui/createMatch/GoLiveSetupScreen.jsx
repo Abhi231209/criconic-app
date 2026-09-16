@@ -152,6 +152,8 @@ export default function GoLiveSetupScreen() {
   // Live Mode: "match" or "tournament"
   const [liveMode, setLiveMode] = useState("match");
   const [tournamentInfo, setTournamentInfo] = useState(null);
+  const [isThisMatchLiveOnTournament, setIsThisMatchLiveOnTournament] = useState(false);
+  const [tournamentLiveUrl, setTournamentLiveUrl] = useState("");
 
   // Ads Config
   const [adsConfig, setAdsConfig] = useState({
@@ -180,6 +182,26 @@ export default function GoLiveSetupScreen() {
       }
       if (mData.tournament) {
         setTournamentInfo(mData.tournament);
+      } else if (mData.tournamentID || route.params?.tournamentId) {
+        const tId = mData.tournamentID || route.params?.tournamentId;
+        request(`api/tournaments/${tId}`, { method: "GET", errorAlert: false })
+          .then((tRes) => {
+            const tData = tRes?.data?.data || tRes?.data;
+            if (tData) setTournamentInfo(tData);
+          })
+          .catch(() => {});
+      }
+
+      // Check current live status from public config
+      const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" }).catch(() => null);
+      const tournLive = configRes?.data?.content?.goLiveTournament;
+      const matchLive = configRes?.data?.content?.goLive;
+      if (tournLive?.active && tournLive?.isTournamentLive) {
+        setLiveMode("tournament");
+        setIsThisMatchLiveOnTournament(true);
+        if (tournLive?.url) setTournamentLiveUrl(`${WEB_URL}/go-live/${tournLive.url}`);
+      } else if (matchLive?.active) {
+        setLiveMode("match");
       }
 
       // 2. Fetch scorecard themes
@@ -200,7 +222,7 @@ export default function GoLiveSetupScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [matchId]);
+  }, [matchId, route.params]);
 
   useEffect(() => {
     fetchData();
@@ -341,21 +363,32 @@ export default function GoLiveSetupScreen() {
       }
 
       // 3. Trigger Go Live API
-      const isTournLive = liveMode === "tournament" && !!tournamentInfo?.slug;
+      const tournKey =
+        tournamentInfo?.slug ||
+        tournamentInfo?._id ||
+        tournamentInfo?.id ||
+        matchDetails?.tournamentID ||
+        matchDetails?.tournament?._id;
+      const isTournLive = liveMode === "tournament" && !!tournKey;
       const goLiveRes = await request("api/matches/public/go-live", {
         method: "POST",
         data: {
           match: matchId,
           userStream: isTournLive,
-          key: isTournLive ? tournamentInfo.slug : undefined,
+          key: isTournLive ? tournKey : undefined,
         },
       });
 
       // 4. Fetch latest live URL
-      const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" });
+      const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" }).catch(() => null);
       const liveData = configRes?.data?.content?.goLive || configRes?.data?.content?.goLiveTournament || {};
-      const liveKey = liveData?.url || goLiveRes?.data?.matchId?.url || matchId;
+      const liveKey = liveData?.url || goLiveRes?.data?.matchId?.url || (isTournLive ? tournKey : matchId);
       const fullUrl = `${WEB_URL}/go-live/${liveKey}`;
+
+      if (isTournLive) {
+        setIsThisMatchLiveOnTournament(true);
+        setTournamentLiveUrl(fullUrl);
+      }
 
       setGeneratedLiveUrl(fullUrl);
       setSuccessModalVisible(true);
@@ -364,6 +397,45 @@ export default function GoLiveSetupScreen() {
       Alert.alert("Error", "Could not start live stream. Please check your connection.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleToggleTournamentMatchLive = async (value) => {
+    setIsThisMatchLiveOnTournament(value);
+    const tournKey =
+      tournamentInfo?.slug ||
+      tournamentInfo?._id ||
+      tournamentInfo?.id ||
+      matchDetails?.tournamentID ||
+      matchDetails?.tournament?._id;
+    try {
+      if (value) {
+        const goLiveRes = await request("api/matches/public/go-live", {
+          method: "POST",
+          data: {
+            match: matchId,
+            userStream: true,
+            key: tournKey,
+          },
+        });
+        const urlKey = goLiveRes?.data?.matchId?.url || tournKey || matchId;
+        const fullUrl = `${WEB_URL}/go-live/${urlKey}`;
+        setTournamentLiveUrl(fullUrl);
+        Alert.alert("Broadcasting Active", "This match is now streaming live on the tournament's live link.");
+      } else {
+        await request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: {
+            action: "goLiveTournament",
+            data: { active: false },
+          },
+        }).catch(() => {});
+        Alert.alert("Stream Paused", "Match stream under tournament has been turned off.");
+      }
+    } catch (e) {
+      console.warn("handleToggleTournamentMatchLive error:", e);
+      setIsThisMatchLiveOnTournament(!value);
+      Alert.alert("Notice", "Could not update tournament stream status.");
     }
   };
 
@@ -556,7 +628,15 @@ export default function GoLiveSetupScreen() {
   };
 
   const renderLiveModeTab = () => {
-    const hasTournament = !!tournamentInfo?.slug || !!matchDetails?.tournament;
+    const tournamentIdentifier =
+      tournamentInfo?.slug ||
+      tournamentInfo?._id ||
+      tournamentInfo?.id ||
+      matchDetails?.tournamentID ||
+      matchDetails?.tournament?._id ||
+      matchDetails?.tournament?.slug;
+    const hasTournament = Boolean(tournamentIdentifier || matchDetails?.tournament);
+
     return (
       <View style={{ gap: 14 }}>
         <ThemedText className="font-semibold text-sm" style={{ color: C.textSecondary }}>
@@ -629,6 +709,107 @@ export default function GoLiveSetupScreen() {
             {liveMode === "tournament" && <View style={styles.radioFill} />}
           </View>
         </TouchableOpacity>
+
+        {/* Dedicated "Go Live with this Match" toggle under Tournament mode */}
+        {hasTournament && liveMode === "tournament" && (
+          <View
+            style={[
+              styles.sectionCard,
+              {
+                backgroundColor: C.card,
+                borderColor: isThisMatchLiveOnTournament ? COLORS.primary : C.border,
+                borderWidth: 1.5,
+                marginTop: 2,
+              },
+            ]}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ThemedText className="font-bold text-sm" style={{ color: C.text }}>
+                    Go Live with this Match
+                  </ThemedText>
+                  {isThisMatchLiveOnTournament && (
+                    <View style={[styles.liveDot, { width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }]} />
+                  )}
+                </View>
+                <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 3 }}>
+                  <Text style={{ color: "#EF4444", fontWeight: "700" }}>* </Text>
+                  Turn on live score streaming for this match on the tournament's live link.
+                </ThemedText>
+              </View>
+              <Switch
+                value={isThisMatchLiveOnTournament}
+                onValueChange={handleToggleTournamentMatchLive}
+                thumbColor={isThisMatchLiveOnTournament ? COLORS.primary : "#CBD5E1"}
+                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
+              />
+            </View>
+
+            {isThisMatchLiveOnTournament && !!tournamentLiveUrl && (
+              <View
+                style={[
+                  styles.urlBox,
+                  {
+                    backgroundColor: isDarkMode ? "#0F172A" : "#F8FAFC",
+                    borderColor: isDarkMode ? "#334155" : "#E2E8F0",
+                    marginTop: 12,
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                  },
+                ]}
+              >
+                <ThemedText
+                  className="font-medium text-xs"
+                  style={{ color: C.text, marginBottom: 8 }}
+                  numberOfLines={1}
+                >
+                  {tournamentLiveUrl}
+                </ThemedText>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.miniBtn,
+                      {
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: `${COLORS.primary}18`,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                      },
+                    ]}
+                    onPress={() => handleCopy(tournamentLiveUrl)}
+                  >
+                    <Copy size={13} color={COLORS.primary} />
+                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary, marginLeft: 4 }}>
+                      Copy Link
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.miniBtn,
+                      {
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: `${COLORS.secondary}18`,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                      },
+                    ]}
+                    onPress={() => handleShare(tournamentLiveUrl)}
+                  >
+                    <Share2 size={13} color={COLORS.secondary} />
+                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.secondary, marginLeft: 4 }}>
+                      Share Link
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     );
   };

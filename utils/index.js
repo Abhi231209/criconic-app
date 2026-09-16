@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import * as Crypto from 'expo-crypto';
 import SCREENS from "@/screens";
 import { BASE_URL } from "@/config";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 export const formatNumber = (number) =>
   new Intl.NumberFormat("en-US").format(number);
@@ -96,27 +97,50 @@ export const MATCH_STATUS = {
 };
 
 export const getMatchStatusDisplay = (status) => {
-  switch (status) {
-    case MATCH_STATUS.MATCH_SCHEDULED:
-    case MATCH_STATUS.MATCH_CREATED:
+  const norm = String(status || "").trim().toUpperCase();
+  switch (norm) {
+    case "MATCH_SCHEDULED":
+    case "MATCH_CREATED":
+    case "SCHEDULED":
+    case "CREATED":
+    case "UPCOMING":
       return "Upcoming";
-    case MATCH_STATUS.MATCH_IN_PROGRESS:
-    case MATCH_STATUS.INNINGS_I:
-    case MATCH_STATUS.INNINGS_II:
-    case MATCH_STATUS.MATCH_RESUMED:
-    case MATCH_STATUS.MATCH_STARTED:
+    case "MATCH_IN_PROGRESS":
+    case "IN_PROGRESS":
+    case "INNINGS_I":
+    case "INNINGS_II":
+    case "INNINGS_1":
+    case "INNINGS_2":
+    case "MATCH_RESUMED":
+    case "MATCH_STARTED":
+    case "STARTED":
+    case "TOSS":
+    case "MATCH_OPENER_SELECTED":
+    case "MATCH_DETAILS_ENTERED":
+    case "INNINGS_BREAK":
+    case "INNINGS_I_ENDED":
+    case "TEA_BREAK":
+    case "DRINKS_BREAK":
+    case "SUPER_OVER":
+    case "EXTRA_INNINGS":
+    case "LIVE":
       return "Live";
-    case MATCH_STATUS.MATCH_COMPLETED:
-    case MATCH_STATUS.MATCH_TIE:
-    case MATCH_STATUS.MATCH_CANCELLED:
-    case MATCH_STATUS.MATCH_INTERRUPTED:
-    case MATCH_STATUS.MATCH_SUSPENDED:
-    case MATCH_STATUS.RAIN_DELAY:
-    case MATCH_STATUS.MATCH_PAUSED:
-    case MATCH_STATUS.MATCH_ENDED:
+    case "MATCH_COMPLETED":
+    case "COMPLETED":
+    case "MATCH_TIE":
+    case "TIE":
+    case "MATCH_CANCELLED":
+    case "CANCELLED":
+    case "MATCH_INTERRUPTED":
+    case "MATCH_SUSPENDED":
+    case "RAIN_DELAY":
+    case "MATCH_PAUSED":
+    case "MATCH_ENDED":
+    case "ENDED":
+    case "END":
       return "End";
     default:
-      return "";
+      return status || "";
   }
 };
 
@@ -251,7 +275,14 @@ export const exitPreScoreFlow = (navigation, params = {}) => {
     params.tournament?._id ||
     params.tournament;
   if (tournamentId) {
-    navigation.navigate(SCREENS.TournamentProfile, { tournamentId });
+    if (navigation.reset) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: SCREENS.TournamentProfile, params: { tournamentId } }],
+      });
+    } else {
+      navigation.navigate(SCREENS.TournamentProfile, { tournamentId });
+    }
     return;
   }
 
@@ -263,21 +294,40 @@ export const exitPreScoreFlow = (navigation, params = {}) => {
     SCREENS.MatchDetailsScreen,
     SCREENS.TossScreen,
     SCREENS.PlayerSelectionScreen,
+    SCREENS.ScorerScreen,
   ];
 
   if (returnScreen && !preScoreScreens.includes(returnScreen)) {
-    navigation.navigate(returnScreen);
+    if (navigation.reset) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: returnScreen }],
+      });
+    } else {
+      navigation.navigate(returnScreen);
+    }
     return;
   }
 
   const routes = navigation.getState?.()?.routes || [];
-  const priorRoute = [...routes].reverse().find((r) => !preScoreScreens.includes(r.name));
-  if (priorRoute) {
-    navigation.navigate(priorRoute.name, priorRoute.params);
+  const safeRoutes = routes.filter((r) => !preScoreScreens.includes(r.name));
+
+  if (safeRoutes.length > 0 && navigation.reset) {
+    navigation.reset({
+      index: safeRoutes.length - 1,
+      routes: safeRoutes,
+    });
     return;
   }
 
-  navigation.navigate(SCREENS.MyCricket);
+  if (navigation.reset) {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: SCREENS.Home }],
+    });
+  } else {
+    navigation.navigate(SCREENS.MyCricket);
+  }
 };
 
 export const confirmLeavePreScore = ({
@@ -287,22 +337,17 @@ export const confirmLeavePreScore = ({
   title = "Leave Match Setup?",
   message = "You will leave the match scoring screens. Are you sure you want to exit?",
 }) => {
-  Alert.alert(
+  showGlobalAlert({
     title,
     message,
-    [
-      { text: "Stay", style: "cancel" },
-      {
-        text: "Leave",
-        style: "destructive",
-        onPress: () => {
-          if (onLeave) onLeave();
-          exitPreScoreFlow(navigation, route?.params || {});
-        },
-      },
-    ],
-    { cancelable: true }
-  );
+    type: "danger",
+    confirmText: "Leave",
+    cancelText: "Stay",
+    onConfirm: () => {
+      if (onLeave) onLeave();
+      exitPreScoreFlow(navigation, route?.params || {});
+    },
+  });
 };
 
 export const getImageFullUrl = (img) => {

@@ -1,11 +1,11 @@
-import React, { useEffect } from "react";
+import React from "react";
 import {
   View,
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ScrollView,
 } from "react-native";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   Play,
@@ -208,11 +208,10 @@ const MatchActionSheet = ({
   const subtitleColor = isDark ? "#94A3B8" : "#64748B";
 
   return (
-    <ScrollView
+    <BottomSheetScrollView
       style={[styles.container, { backgroundColor: sheetBg }]}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
-      nestedScrollEnabled={true}
       bounces={false}
     >
       {/* Header */}
@@ -316,7 +315,7 @@ const MatchActionSheet = ({
           </TouchableOpacity>
         </View>
       )}
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 };
 

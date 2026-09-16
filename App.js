@@ -22,7 +22,7 @@ import { GluestackUIProvider } from "@gluestack-ui/themed";
 import { Provider } from "react-redux";
 import { persistor, store } from "./redux/store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SocketProvider } from "./contexts/SocketContext";
@@ -30,10 +30,19 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import useAppTheme from "./hooks/useAppTheme";
 import { BottomSheetProvider } from "./components/ui/custom/CustomBottomSheet";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { AlertProvider } from "./contexts/AlertContext";
 import { initSessionCookie, authApi } from "./utils/api";
 import { login as loginAction } from "./redux/authSlice";
 import User from "./utils/User";
 import analytics from "./utils/analytics";
+
+import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-reanimated";
+
+// Disable strict mode warnings in Reanimated to prevent render crashes on theme changes
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 function AppContent() {
   const { isDark } = useAppTheme();
@@ -68,10 +77,12 @@ function AppContent() {
     >
       <BottomSheetModalProvider>
         <BottomSheetProvider>
-          <SocketProvider>
-            <AppNavigator />
-            <StatusBar style={isDark ? "light" : "dark"} />
-          </SocketProvider>
+          <AlertProvider>
+            <SocketProvider>
+              <AppNavigator />
+              <StatusBar style={isDark ? "light" : "dark"} />
+            </SocketProvider>
+          </AlertProvider>
         </BottomSheetProvider>
       </BottomSheetModalProvider>
     </NavigationContainer>

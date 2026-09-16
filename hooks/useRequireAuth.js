@@ -1,12 +1,11 @@
 import { useCallback } from "react";
 import { Alert } from "react-native";
-import { useNavigation } from "@react-navigation/native";
 import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
 
-export default function useRequireAuth() {
-  const navigation = useNavigation();
+export default function useRequireAuth(passedNav) {
+  const navigation = passedNav;
   const authUser = useSelector((state) => state.auth?.user);
 
   const isLoggedIn = Boolean(
@@ -34,7 +33,7 @@ export default function useRequireAuth() {
               text: "Log In",
               style: "default",
               onPress: () => {
-                navigation.navigate(SCREENS.LoginScreen);
+                navigation?.navigate?.(SCREENS.LoginScreen);
               },
             },
           ],

@@ -167,6 +167,11 @@ export default function CreateTeam() {
       return;
     }
 
+    if (!formData.city?.trim()) {
+      Alert.alert('Error', 'Please enter and select a city/location for the team');
+      return;
+    }
+
     setIsLoading(true);
 
     try {

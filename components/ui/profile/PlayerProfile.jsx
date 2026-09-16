@@ -863,15 +863,6 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
           <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
             <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
-              Team
-            </ThemedText>
-            <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
-              {player.team}
-            </ThemedText>
-          </View>
-
-          <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
-            <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
               Nationality
             </ThemedText>
             <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
@@ -1032,18 +1023,6 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             key={tab.value}
             title={tab.label}
             tabName={tab.value}
-            icon={tab.icon}
-          />
-        ))}
-      </View>
-
-      {/* Ball Type Tabs */}
-      <View className="flex-row justify-center mb-4">
-        {ballTypeTabs.map((tab) => (
-          <BallTypeButton
-            key={tab.value}
-            title={tab.label}
-            ballType={tab.value}
             icon={tab.icon}
           />
         ))}

@@ -271,6 +271,11 @@ export default function CreateTournament() {
       return;
     }
 
+    if (!formData.venue?.trim()) {
+      Alert.alert('Error', 'Please enter and select a tournament venue/location');
+      return;
+    }
+
     setIsLoading(true);
 
     try {

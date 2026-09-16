@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Share,
+  Text,
 } from "react-native";
 import {
   ChevronDown,
@@ -292,7 +293,12 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     if (!matchId) return;
     setIsStartingLive(true);
     try {
-      const tournamentSlug = score?.tournament?.slug || matchDetails?.tournament?.slug;
+      const tournamentSlug =
+        score?.tournament?.slug ||
+        score?.tournament?._id ||
+        matchDetails?.tournament?.slug ||
+        matchDetails?.tournamentID ||
+        matchDetails?.tournament?._id;
       const res = await request("api/matches/public/go-live", {
         method: "POST",
         data: {
@@ -312,6 +318,45 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       Alert.alert("Error", e?.message || "Failed to start live stream.");
     } finally {
       setIsStartingLive(false);
+    }
+  };
+
+  const handleToggleTournamentMatch = async (val) => {
+    const tournamentKey =
+      score?.tournament?.slug ||
+      score?.tournament?._id ||
+      matchDetails?.tournament?.slug ||
+      matchDetails?.tournamentID ||
+      matchDetails?.tournament?._id;
+    if (!tournamentKey) {
+      Alert.alert("Tournament Required", "This match is not linked to a tournament.");
+      return;
+    }
+    try {
+      if (val) {
+        await request("api/matches/public/go-live", {
+          method: "POST",
+          data: {
+            match: matchId,
+            userStream: true,
+            key: tournamentKey,
+          },
+        });
+        Alert.alert("Success", "Live streaming activated for this match on tournament link!");
+      } else {
+        await request(`api/matches/${matchId}/settings`, {
+          method: "PUT",
+          data: {
+            action: "goLiveTournament",
+            data: { active: false },
+          },
+        }).catch(() => {});
+        Alert.alert("Notice", "Tournament live stream turned off for this match.");
+      }
+      loadConfigs();
+    } catch (e) {
+      console.error("handleToggleTournamentMatch error:", e);
+      Alert.alert("Error", "Could not toggle tournament stream status.");
     }
   };
 
@@ -381,17 +426,19 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           style={styles.playerBtn}
         />
       )}
-      <ActionButton
-        title="Change Squad"
-        icon={Users}
-        variant="ghost"
-        isDarkMode={isDarkMode}
-        onPress={() => {
-          onClose?.();
-          navigation.navigate(SCREENS.ChangeSquad, { matchId });
-        }}
-        style={styles.playerBtn}
-      />
+      {!isPreScorer && (
+        <ActionButton
+          title="Change Squad"
+          icon={Users}
+          variant="ghost"
+          isDarkMode={isDarkMode}
+          onPress={() => {
+            onClose?.();
+            navigation.navigate(SCREENS.ChangeSquad, { matchId });
+          }}
+          style={styles.playerBtn}
+        />
+      )}
     </View>
   );
 
@@ -594,6 +641,47 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
               </ThemedText>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* Tournament Live Match Toggle */}
+      {Boolean(score?.tournament || matchDetails?.tournament || matchDetails?.tournamentID) && (
+        <View
+          style={[
+            styles.settingRow,
+            {
+              backgroundColor: isDarkMode ? "#1E293B" : "#F8FAFC",
+              borderColor: isDarkMode ? "#334155" : "#E2E8F0",
+              borderWidth: 1,
+              borderRadius: 12,
+              padding: 12,
+              marginBottom: 12,
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            },
+          ]}
+        >
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <ThemedText className="font-bold text-xs" style={{ color: C.text }}>
+                Go Live with this Match
+              </ThemedText>
+              {isTournamentLive && isLive && (
+                <View style={[styles.liveDot, { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#10B981" }]} />
+              )}
+            </View>
+            <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
+              <Text style={{ color: "#EF4444", fontWeight: "bold" }}>* </Text>
+              Turn on live score streaming for this match on the tournament's live link.
+            </ThemedText>
+          </View>
+          <Switch
+            value={isTournamentLive && isLive}
+            onValueChange={handleToggleTournamentMatch}
+            thumbColor={isTournamentLive && isLive ? COLORS.primary : "#CBD5E1"}
+            trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
+          />
         </View>
       )}
 

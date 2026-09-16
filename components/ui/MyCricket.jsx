@@ -265,33 +265,39 @@ export default function MyCricket() {
         </View>
       }
       ListEmptyComponent={
-        <View className="items-center py-8 w-full">
-          <Ionicons
-            name="trophy-outline"
-            size={48}
-            color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-          />
-          <ThemedText
-            className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
-          >
-            No matches found
-          </ThemedText>
-          <ThemedText
-            className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}
-          >
-            Create your first match to get started
-          </ThemedText>
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.CreateMatch)}
-            className="mt-4 flex-row items-center bg-blue-600 px-4 py-2 rounded-xl shadow-sm"
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
-            <ThemedText className="text-white text-sm font-semibold ml-1.5">
-              Create Match
+        loading ? (
+          <View className="items-center py-16 w-full">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        ) : (
+          <View className="items-center py-8 w-full">
+            <Ionicons
+              name="trophy-outline"
+              size={48}
+              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+            <ThemedText
+              className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+            >
+              No matches found
             </ThemedText>
-          </TouchableOpacity>
-        </View>
+            <ThemedText
+              className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}
+            >
+              Create your first match to get started
+            </ThemedText>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+              className="mt-4 flex-row items-center bg-blue-600 px-4 py-2 rounded-xl shadow-sm"
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+              <ThemedText className="text-white text-sm font-semibold ml-1.5">
+                Create Match
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        )
       }
       showsVerticalScrollIndicator={false}
       className="px-4"
@@ -430,7 +436,11 @@ export default function MyCricket() {
         </TouchableOpacity>
       ))}
 
-      {tournaments.length === 0 && (
+      {loading ? (
+        <View className="items-center py-16 w-full">
+          <ActivityIndicator size="large" color="#3B82F6" />
+        </View>
+      ) : tournaments.length === 0 ? (
         <View className="items-center py-8 w-full">
           <Ionicons
             name="trophy-outline"
@@ -458,7 +468,7 @@ export default function MyCricket() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 
@@ -591,7 +601,11 @@ export default function MyCricket() {
         </TouchableOpacity>
       ))}
 
-      {teams.length === 0 && (
+      {loading ? (
+        <View className="items-center py-16 w-full">
+          <ActivityIndicator size="large" color="#3B82F6" />
+        </View>
+      ) : teams.length === 0 ? (
         <View className="items-center py-8 w-full">
           <Ionicons
             name="people-outline"
@@ -619,7 +633,7 @@ export default function MyCricket() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 

@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDeviceId } from "./index";
 import { store } from "@/redux/store";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 import User from "./User";
 import { BASE_URL, API_URL, apiUrl, SOCKET_URL } from "@/config";
 export { BASE_URL, API_URL, apiUrl, SOCKET_URL };
@@ -186,7 +187,12 @@ export const request = async (
     console.warn(`[API] Error on ${endpoint}:`, errorMsg);
 
     if (errorAlert) {
-      Alert.alert("Notice", String(errorMsg));
+      showGlobalAlert({
+        title: "Notice",
+        message: String(errorMsg),
+        type: "error",
+        confirmText: "OK",
+      });
     }
 
     return error?.response || { data: { success: false, message: errorMsg } };

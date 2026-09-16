@@ -29,6 +29,7 @@ import ThemedText from "../custom/ThemedText";
 import CustomPopup from "../custom/CustomPopup";
 import QuickActions from "./QuickActions";
 import { useBottomSheet } from "../custom/CustomBottomSheet";
+import { useAlert } from "@/contexts/AlertContext";
 import OutOptions from "./OutOptions";
 import BallTrackerModal from "./BallTrackerModal";
 import WagonPitchViewerModal from "./WagonPitchViewerModal";
@@ -37,11 +38,24 @@ import { MatchSettingEnum } from "@/utils/Common";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
+import {
+  generateActionId,
+  loadQueue as loadPendingActionQueue,
+  enqueueAction as enqueuePendingAction,
+  removeAction as removePendingAction,
+} from "@/utils/offlineActionQueue";
+
+// ─── Offline Action Queue Helpers ────────────────────────────────────────────
+// Persists pending scorer actions in AsyncStorage so they survive reconnects
+// and app restarts. Each queue is keyed by matchId.
+
+// Save a pending action and return the updated queue length for UI display.
 
 export const ScorerScreenContext = createContext(null);
 
 export default function ScorerScreen() {
   const { openSheet, closeSheet } = useBottomSheet();
+  const { showAlert } = useAlert();
   const socketRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -346,39 +360,48 @@ export default function ScorerScreen() {
 
   // Back Navigation Trap with confirmation
   const handleLeaveScoring = useCallback(() => {
-    Alert.alert(
-      "Leave Live Scoring?",
-      "Your match progress is saved and live. You can resume anytime from My Cricket.",
-      [
-        { text: "Stay", style: "cancel" },
-        {
-          text: "Leave Match",
-          style: "destructive",
-          onPress: () => {
-            isLeavingRef.current = true;
-            navigation.navigate(SCREENS.MyCricket);
-          },
-        },
-      ]
-    );
-  }, [navigation]);
+    showAlert({
+      title: "Leave Live Scoring?",
+      message:
+        "Your match progress is saved and live. You can resume anytime from My Cricket.",
+      type: "danger",
+      confirmText: "Leave Match",
+      cancelText: "Stay",
+      onConfirm: () => {
+        isLeavingRef.current = true;
+        if (navigation.reset) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: SCREENS.Home }],
+          });
+        } else {
+          navigation.navigate(SCREENS.Home);
+        }
+      },
+    });
+  }, [navigation, showAlert]);
 
   const handleGoHome = useCallback(() => {
-    Alert.alert(
-      "Return to Home?",
-      "Your match progress is saved and live. You can resume anytime from My Cricket.",
-      [
-        { text: "Stay Scoring", style: "cancel" },
-        {
-          text: "Go to Home",
-          onPress: () => {
-            isLeavingRef.current = true;
-            navigation.navigate(SCREENS.Home);
-          },
-        },
-      ]
-    );
-  }, [navigation]);
+    showAlert({
+      title: "Return to Home?",
+      message:
+        "Your match progress is saved and live. You can resume anytime from My Cricket.",
+      type: "danger",
+      confirmText: "Go to Home",
+      cancelText: "Stay Scoring",
+      onConfirm: () => {
+        isLeavingRef.current = true;
+        if (navigation.reset) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: SCREENS.Home }],
+          });
+        } else {
+          navigation.navigate(SCREENS.Home);
+        }
+      },
+    });
+  }, [navigation, showAlert]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1304,6 +1327,8 @@ export default function ScorerScreen() {
       ball_type: data?.ballType,
     });
 
+    // Generate a unique ID for this action so it can be tracked in the queue
+      const actionId = generateActionId();
     const payload = {
       userId: effectiveUserId,
       matchId: matchID,

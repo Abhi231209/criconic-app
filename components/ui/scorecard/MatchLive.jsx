@@ -57,128 +57,6 @@ export default function MatchLive({ score }) {
     });
   };
 
-  const getRecentOversFromScore = (scoreData) => {
-    const oldestFirst = (balls) => {
-      if (!Array.isArray(balls)) {
-        return typeof balls === "string" ? balls.split("").filter(Boolean).reverse() : [];
-      }
-
-      const hasSequence = balls.some((ball) => {
-        if (!ball || typeof ball !== "object") return false;
-        return (
-          ball.ballNumber !== undefined ||
-          ball.deliveryNumber !== undefined ||
-          ball.sequence !== undefined ||
-          ball.ballIndex !== undefined
-        );
-      });
-
-      if (hasSequence) {
-        return [...balls].sort((a, b) => {
-          const getSequence = (ball) =>
-            Number(
-              ball?.ballNumber ??
-              ball?.deliveryNumber ??
-              ball?.sequence ??
-              ball?.ballIndex ??
-              0
-            );
-          return getSequence(a) - getSequence(b);
-        });
-      }
-
-      return [...balls].reverse();
-    };
-
-    // 1. Direct overs from scoreData.overs or scoreData.score[innings].overs
-    const currentInn = scoreData?.currentInnings || scoreData?.currentInning || 1;
-    const innObj = scoreData?.score?.[`innings_${currentInn}`] || scoreData?.[`innings_${currentInn}`];
-    const rawOvers = innObj?.overs || scoreData?.overs;
-    if (Array.isArray(rawOvers) && rawOvers.length > 0) {
-      const parsed = rawOvers
-        .map((o, idx) => {
-          if (Array.isArray(o)) {
-            return { over: idx + 1, balls: oldestFirst(o) };
-          }
-          if (Array.isArray(o?.balls)) {
-            return { over: o.overNumber || idx + 1, balls: oldestFirst(o.balls) };
-          }
-          return null;
-        })
-        .filter(Boolean);
-      if (parsed.length > 0) {
-        return parsed.sort((a, b) => Number(a.over) - Number(b.over)).slice(-8);
-      }
-    }
-
-    // 2. Direct recentOvers from backend
-    if (Array.isArray(scoreData?.recentOvers) && scoreData.recentOvers.length > 0) {
-      return scoreData.recentOvers.map((o, idx) => {
-        if (Array.isArray(o)) {
-          return {
-            over: idx + 1,
-            balls: oldestFirst(o),
-          };
-        }
-        return {
-          over: o?.over ?? o?.overNumber ?? o?.overNo ?? idx + 1,
-          balls: oldestFirst(
-            Array.isArray(o?.balls)
-              ? o.balls
-              : Array.isArray(o?.deliveries)
-              ? o.deliveries
-              : o?.balls
-          ),
-        };
-      }).sort((a, b) => Number(a.over) - Number(b.over)).slice(-8);
-    }
-
-    // 3. Fallback to commentary
-    const comments = Array.isArray(scoreData?.fullCommentary) && scoreData.fullCommentary.length > 0
-      ? scoreData.fullCommentary
-      : (Array.isArray(scoreData?.commentary) ? scoreData.commentary : []);
-
-    const overMap = {};
-    if (comments.length > 0) {
-      const chronological = [...comments].reverse();
-      chronological.forEach((c) => {
-        const overStr = c?.ballNumber || c?.over;
-        if (!overStr || typeof overStr !== "string") return;
-        const parts = overStr.split(".");
-        const overIndex = parseInt(parts[0], 10);
-        if (isNaN(overIndex)) return;
-        const overNum = overIndex + 1;
-        if (!overMap[overNum]) {
-          overMap[overNum] = [];
-        }
-        const runVal = (c.runs !== undefined && c.runs !== null && c.runs !== "") ? c.runs : "0";
-        overMap[overNum].push(c.isWicket ? "W" : runVal);
-      });
-    }
-
-    // Add / override current over if score.currentOver has deliveries
-    if (Array.isArray(scoreData?.currentOver) && scoreData.currentOver.length > 0) {
-      const currentOverNumber = Math.floor(parseFloat(scoreData?.batting?.score?.over || "0")) + 1;
-      overMap[currentOverNumber] = oldestFirst(scoreData.currentOver);
-    }
-
-    const sortedOvers = Object.keys(overMap)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map((overNum) => ({
-        over: overNum,
-        balls: overMap[overNum],
-      }));
-
-    if (sortedOvers.length > 0) {
-      return sortedOvers.slice(-8);
-    }
-
-    return [];
-  };
-
-  const recentOvers = getRecentOversFromScore(score);
-
   // Projected score & run rate calculation
   const runs = Number(score?.batting?.score?.runs || 0);
   const overStr = String(score?.batting?.score?.over || "0.0");
@@ -325,87 +203,6 @@ export default function MatchLive({ score }) {
     );
   };
 
-  const OverCard = ({ over, balls = [], index = 0 }) => {
-    const ballList = Array.isArray(balls)
-      ? balls
-      : typeof balls === "string"
-      ? balls.split("").filter(Boolean)
-      : [];
-
-    // Calculate total runs and wickets in this over (Crex style)
-    let overRuns = 0;
-    let overWickets = 0;
-    ballList.forEach((b) => {
-      if (typeof b === "object" && b !== null) {
-        overRuns += Number(b.runs ?? b.run ?? b.score ?? 0);
-        if (b.isWicket || b.wicket || b.dismissalInfo) overWickets++;
-      } else {
-        const s = String(b || "").toUpperCase().trim();
-        if (s === "W" || s.endsWith("W")) {
-          overWickets++;
-          const num = parseInt(s.replace("W", ""), 10);
-          if (!isNaN(num)) overRuns += num;
-        } else {
-          const num = parseInt(s.replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(num)) overRuns += num;
-        }
-      }
-    });
-
-    return (
-      <Animated.View 
-        entering={SlideInRight.delay(index * 100)}
-        className={`px-3 py-2.5 rounded-xl mx-1.5 border min-w-[140px] shadow-sm ${
-          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-        }`}
-      >
-        <View className="flex-row justify-between items-center mb-2 px-0.5">
-          <ThemedText className={`font-bold text-xs ${
-            isDark ? "text-gray-300" : "text-gray-700"
-          }`}>
-            Over {over}
-          </ThemedText>
-          <View className={`px-2 py-0.5 rounded-md ${
-            overWickets > 0 
-              ? (isDark ? "bg-red-500/20" : "bg-red-100") 
-              : overRuns >= 10 
-              ? (isDark ? "bg-emerald-500/20" : "bg-emerald-100") 
-              : (isDark ? "bg-gray-700" : "bg-gray-100")
-          }`}>
-            <ThemedText className={`text-xs font-bold ${
-              overWickets > 0 
-                ? (isDark ? "text-red-400" : "text-red-600") 
-                : overRuns >= 10 
-                ? (isDark ? "text-emerald-400" : "text-emerald-700") 
-                : (isDark ? "text-gray-300" : "text-gray-700")
-            }`}>
-              = {overRuns} Run{overRuns === 1 ? "" : "s"}{overWickets > 0 ? `, ${overWickets}W` : ""}
-            </ThemedText>
-          </View>
-        </View>
-
-        <View className="flex-row items-center justify-center flex-nowrap gap-1">
-          {ballList.map((ball, ballIndex) => (
-            <BallIndicator key={ballIndex} ball={ball} />
-          ))}
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const ProgressBar = ({ percentage, color }) => (
-    <View className={`h-2 rounded-full overflow-hidden mt-1 ${
-      isDark ? "bg-gray-600" : "bg-gray-200"
-    }`}>
-      <View 
-        className="h-full rounded-full"
-        style={{ 
-          width: `${Math.min(Math.max(percentage || 0, 0), 100)}%`,
-          backgroundColor: color
-        }}
-      />
-    </View>
-  );
 
   const CommentaryItem = ({ item, index }) => (
     <Animated.View 
@@ -467,7 +264,7 @@ export default function MatchLive({ score }) {
       </View> */}
 
       {/* Live Match Run Rate & Projection Strip */}
-      <View className={`px-4 py-2.5 border-b flex-row justify-between items-center ${
+      {/* <View className={`px-4 py-2.5 border-b flex-row justify-between items-center ${
         isDark ? "bg-gray-800/90 border-gray-700" : "bg-blue-50/80 border-blue-100"
       }`}>
         <View className="flex-row items-center">
@@ -500,7 +297,7 @@ export default function MatchLive({ score }) {
             </ThemedText>
           </View>
         )}
-      </View>
+      </View> */}
 
       {/* Current Batsmen */}
       <View className={`p-4 border-b ${

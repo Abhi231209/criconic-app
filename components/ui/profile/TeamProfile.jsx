@@ -774,42 +774,48 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     animateContent();
   };
 
-  useEffect(() => {
-    animateContent();
-  }, [activeTab]);
-
   // ─── Tab button ────────────────────────────────────────────────────────────
-  const TabButton = ({ title, tabName, icon }) => (
-    <TouchableOpacity
-      onPress={() => switchTab(tabName)}
-      className={`flex-1 py-2.5 px-1 items-center rounded-lg mx-0.5 ${
-        activeTab === tabName
-          ? "bg-blue-600"
-          : isDarkMode
-          ? "bg-gray-800"
-          : "bg-gray-100"
-      }`}
-    >
-      <Ionicons
-        name={icon}
-        size={16}
-        color={
-          activeTab === tabName ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
-        }
-      />
-      <ThemedText
-        className={`text-xs mt-0.5 font-medium ${
-          activeTab === tabName
-            ? "text-white"
+  const TabButton = useCallback(({ title, tabName, icon }) => {
+    const isActive = activeTab === tabName;
+    return (
+      <TouchableOpacity
+        onPress={() => switchTab(tabName)}
+        style={{
+          flex: 1,
+          paddingVertical: 10,
+          paddingHorizontal: 4,
+          alignItems: "center",
+          borderRadius: 8,
+          marginHorizontal: 2,
+          backgroundColor: isActive
+            ? "#2563EB"
             : isDarkMode
-            ? "text-gray-400"
-            : "text-gray-600"
-        }`}
+            ? "#1F2937"
+            : "#F3F4F6",
+        }}
       >
-        {title}
-      </ThemedText>
-    </TouchableOpacity>
-  );
+        <Ionicons
+          name={icon}
+          size={16}
+          color={isActive ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+        />
+        <ThemedText
+          style={{
+            fontSize: 12,
+            marginTop: 2,
+            fontWeight: "500",
+            color: isActive
+              ? "#FFFFFF"
+              : isDarkMode
+              ? "#9CA3AF"
+              : "#6B7280",
+          }}
+        >
+          {title}
+        </ThemedText>
+      </TouchableOpacity>
+    );
+  }, [activeTab, isDarkMode]);
 
   // ─── Squad Tab ─────────────────────────────────────────────────────────────
   const renderSquad = () => (
@@ -900,7 +906,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                     });
                   }
                 }}
-                className={`mb-2.5 rounded-2xl ${isDarkMode ? "bg-gray-800" : "bg-white"} border ${isDarkMode ? "border-gray-700/60" : "border-gray-100"}`}
+                className={`mb-2.5 rounded-2xl ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"} border`}
                 activeOpacity={0.75}
               >
                 <View className="flex-row items-center p-3">
@@ -1320,8 +1326,8 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             }
           }}
           className={`p-3 rounded-2xl mb-2 flex-row items-center ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } border ${isDarkMode ? "border-gray-700/60" : "border-gray-100"}`}
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
+          } border`}
         >
           <ThemedText
             className={`text-base font-bold w-8 ${
@@ -1424,8 +1430,8 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             }
           }}
           className={`p-3 rounded-2xl mb-2 flex-row items-center ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } border ${isDarkMode ? "border-gray-700/60" : "border-gray-100"}`}
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
+          } border`}
         >
           <ThemedText
             className={`text-base font-bold w-8 ${
@@ -1503,11 +1509,11 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           <TouchableOpacity
             onPress={() => setLeaderboardTab("batting")}
             activeOpacity={0.8}
-            className={`flex-1 py-2.5 rounded-lg items-center ${
-              leaderboardTab === "batting"
-                ? "bg-blue-600 shadow-sm"
-                : "bg-transparent"
-            }`}
+            className="flex-1 py-2.5 rounded-lg items-center"
+            style={{
+              backgroundColor: leaderboardTab === "batting" ? "#2563EB" : "transparent",
+              elevation: leaderboardTab === "batting" ? 1 : 0,
+            }}
           >
             <ThemedText
               className={`font-semibold text-sm ${
@@ -1525,11 +1531,11 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           <TouchableOpacity
             onPress={() => setLeaderboardTab("bowling")}
             activeOpacity={0.8}
-            className={`flex-1 py-2.5 rounded-lg items-center ${
-              leaderboardTab === "bowling"
-                ? "bg-blue-600 shadow-sm"
-                : "bg-transparent"
-            }`}
+            className="flex-1 py-2.5 rounded-lg items-center"
+            style={{
+              backgroundColor: leaderboardTab === "bowling" ? "#2563EB" : "transparent",
+              elevation: leaderboardTab === "bowling" ? 1 : 0,
+            }}
           >
             <ThemedText
               className={`font-semibold text-sm ${
@@ -1849,7 +1855,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
               </ThemedText>
             ) : null}
 
-            <View className="p-4 bg-white rounded-xl shadow-sm my-2">
+            <View className="p-4 bg-white rounded-xl my-2" style={{ elevation: 1 }}>
               <QRCode
                 value={JSON.stringify({
                   type: SCANNER_TYPE_ACTION?.TEAM?.type || "TEAM",

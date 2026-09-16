@@ -1,3 +1,4 @@
+import React from 'react';
 import { Button } from '@gluestack-ui/themed';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable } from 'react-native';
