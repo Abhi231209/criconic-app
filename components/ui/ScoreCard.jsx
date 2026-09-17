@@ -51,6 +51,7 @@ function ScoreCard({
     cachedData?.isAccessToUpdate ?? Boolean(match?.accessToUpdate)
   );
   const { on, off, emit } = useSocket();
+  const lastScoreKeyRef = React.useRef(null);
   const { theme } = useAppTheme();
   const contextNavigation = useContext(NavigationContext);
   const navigation = propNavigation || contextNavigation;
@@ -150,6 +151,18 @@ function ScoreCard({
       if (!incomingId || String(incomingId) !== String(effectiveMatchId)) {
         return;
       }
+
+      // Skip re-rendering when this tick carries no actual change for this card.
+      // Every mounted ScoreCard listens to the same global "score" event, so on a
+      // screen with several live matches this fires often; without this guard every
+      // tick forces a re-render (and blocks the JS thread) even for unchanged data,
+      // which is what causes the action sheet's open animation to occasionally lag.
+      const dataKey = JSON.stringify(data);
+      if (dataKey === lastScoreKeyRef.current) {
+        return;
+      }
+      lastScoreKeyRef.current = dataKey;
+
       if (data.accessToUpdate !== undefined) {
         setIsAccessToUpdate(Boolean(data.accessToUpdate));
       }
