@@ -362,7 +362,18 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
 
   const handleOpenGoLiveStudio = () => {
     onClose?.();
-    navigation.navigate(SCREENS.GoLiveSetup, { matchId });
+    const tournamentId =
+      score?.tournament?._id ||
+      score?.tournament?.id ||
+      (typeof score?.tournament === "string" ? score?.tournament : null) ||
+      matchDetails?.tournamentID ||
+      matchDetails?.tournament?._id ||
+      matchDetails?.tournament?.id ||
+      (typeof matchDetails?.tournament === "string" ? matchDetails?.tournament : null);
+    navigation.navigate(SCREENS.GoLiveSetup, {
+      matchId,
+      tournamentId: typeof tournamentId === "object" ? tournamentId?._id || tournamentId?.id : tournamentId,
+    });
   };
 
   const handleCopyUrl = async (url) => {
@@ -685,29 +696,15 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </View>
       )}
 
-      {/* Go Live Studio CTAs */}
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-        {!isLive && (
-          <View style={{ flex: 1 }}>
-            <ActionButton
-              title={isStartingLive ? "Starting..." : "🔴 Go Live"}
-              icon={Zap}
-              variant="danger"
-              isDarkMode={isDarkMode}
-              disabled={isStartingLive}
-              onPress={handleQuickGoLive}
-            />
-          </View>
-        )}
-        <View style={{ flex: 1 }}>
-          <ActionButton
-            title={isLive ? "Go Live Studio" : "Studio & Themes"}
-            icon={Zap}
-            variant={isLive ? "outline" : "primary"}
-            isDarkMode={isDarkMode}
-            onPress={handleOpenGoLiveStudio}
-          />
-        </View>
+      {/* Go Live Studio CTA */}
+      <View style={{ marginBottom: 12 }}>
+        <ActionButton
+          title={isLive ? "Go Live Studio (Live Now)" : "🔴 Go Live"}
+          icon={Zap}
+          variant={isLive ? "outline" : "danger"}
+          isDarkMode={isDarkMode}
+          onPress={handleOpenGoLiveStudio}
+        />
       </View>
 
       {/* Offline guidance notice */}

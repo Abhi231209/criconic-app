@@ -101,17 +101,6 @@ export default function FullScoreCard({
     setTrackerModalRole("bowler");
     setTrackerModalVisible(true);
   };
-
-  const handleFowPress = (wicket) => {
-    analytics.logVisualizerView("fow_delivery", wicket?.batsman?.playerId || wicket?.batsman?._id || "", score?._id || score?.id, {
-      over: wicket?.over || "",
-      score: wicket?.score || "",
-    });
-    setSelectedTrackerPlayer(wicket?.batsman || { name: "Wicket" });
-    setTrackerModalTab("wagon");
-    setTrackerModalRole("fow");
-    setTrackerModalVisible(true);
-  };
   
   const isDark = colorScheme === "dark";
 
@@ -150,11 +139,17 @@ export default function FullScoreCard({
     description: ""
   };
 
-  const getInningData = (rawInning, fallbackTeam) => {
+  const getInningData = (rawInning, fallbackTeam, inningIdx = 0) => {
     if (!rawInning) return { ...emptyInning, batting: { ...emptyInning.batting, battingTeam: fallbackTeam } };
     const innRuns = rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0;
     const innOvers = rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0";
     const computedCRR = calculateCRR(innRuns, innOvers);
+    const isSuperOver = Boolean(
+      rawInning.isSuperOver ||
+      rawInning.batting?.isSuperOver ||
+      rawInning.isSuperOverInning ||
+      (typeof inningIdx === "number" && inningIdx >= 2)
+    );
 
     return {
       batting: {
@@ -166,7 +161,7 @@ export default function FullScoreCard({
           CRR: (computedCRR !== "0.00" ? computedCRR : (rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00")),
           projectedScore: rawInning.batting?.score?.projectedScore ?? rawInning.score?.projectedScore ?? 0,
         },
-        isSuperOver: rawInning.isSuperOver || false,
+        isSuperOver: isSuperOver,
       },
       playedBatsman: Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : (Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
       extras: rawInning.extras ?? 0,
@@ -182,17 +177,31 @@ export default function FullScoreCard({
     };
   };
 
+  let superOverCounter = 0;
   const inningsList = Array.isArray(score?.inning) && score.inning.length > 0
-    ? score.inning.map((inn, idx) => ({
-        number: idx + 1,
-        label: inn?.isSuperOver ? `Super Over ${Math.ceil((idx + 1) / 2)}` : `Inning ${idx + 1}`,
-        data: getInningData(inn, score?.teams?.[idx % 2]?.title || `Inning ${idx + 1}`)
-      }))
+    ? score.inning.map((inn, idx) => {
+        const isSuperOver = Boolean(
+          inn?.isSuperOver ||
+          inn?.batting?.isSuperOver ||
+          inn?.isSuperOverInning ||
+          idx >= 2
+        );
+        let label = `Inning ${idx + 1}`;
+        if (isSuperOver) {
+          superOverCounter += 1;
+          label = `Super Over ${superOverCounter}`;
+        }
+        return {
+          number: idx + 1,
+          label,
+          data: getInningData(inn, score?.teams?.[idx % 2]?.title || (isSuperOver ? `Super Over ${superOverCounter}` : `Inning ${idx + 1}`), idx)
+        };
+      })
     : [
         {
           number: 1,
           label: "Inning 1",
-          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1")
+          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1", 0)
         }
       ];
 
@@ -551,9 +560,6 @@ export default function FullScoreCard({
             <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
               Fall of Wickets
             </ThemedText>
-            <ThemedText className={`text-[11px] ${isDark ? "text-blue-400" : "text-blue-600"}`}>
-              Tap wicket to view shot & pitch
-            </ThemedText>
           </View>
           
           <View className="flex-row flex-wrap">
@@ -562,25 +568,17 @@ export default function FullScoreCard({
               const bowlerName = resolvePlayerDisplayName(wicket?.bowler, playerMap);
 
               return (
-                <Pressable
+                <View
                   key={i}
-                  onPress={() => handleFowPress(wicket)}
                   className={`w-full mb-2 p-2.5 rounded-xl border ${
-                    isDark ? "bg-gray-750/70 border-gray-700 active:bg-gray-700" : "bg-gray-50/90 border-gray-200 active:bg-gray-100"
+                    isDark ? "bg-gray-750/70 border-gray-700" : "bg-gray-50/90 border-gray-200"
                   }`}
                 >
                   <View className="flex-row justify-between items-center">
                     <View className="flex-1 pr-2">
-                      <View className="flex-row items-center">
-                        <ThemedText className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                          {i + 1}. {batsmanName}
-                        </ThemedText>
-                        <View className="ml-2 px-1.5 py-0.5 rounded bg-blue-500/15 border border-blue-500/30">
-                          <ThemedText className="text-[10px] font-semibold text-blue-500">
-                            View Delivery 🎯
-                          </ThemedText>
-                        </View>
-                      </View>
+                      <ThemedText className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+                        {i + 1}. {batsmanName}
+                      </ThemedText>
                       {bowlerName ? (
                         <ThemedText className={`text-xs mt-0.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                           b {bowlerName}
@@ -596,7 +594,7 @@ export default function FullScoreCard({
                       </ThemedText>
                     </View>
                   </View>
-                </Pressable>
+                </View>
               );
             })}
           </View>

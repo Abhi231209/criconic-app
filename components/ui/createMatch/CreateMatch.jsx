@@ -27,6 +27,9 @@ import squadSelectionStore from "./squadSelectionStore";
 import { matchesApi, tournamentsApi } from "@/utils/api";
 import analytics from "@/utils/analytics";
 
+// In-memory cache for instant modal display
+let cachedAuthorizedTournaments = null;
+
 export default function CreateMatch() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -49,9 +52,15 @@ export default function CreateMatch() {
 
   const [tournamentId, setTournamentId] = useState(initialTournamentId);
   const [selectedTournament, setSelectedTournament] = useState(initialTournament);
-  const [authorizedTournaments, setAuthorizedTournaments] = useState([]);
+  const [authorizedTournaments, setAuthorizedTournaments] = useState(
+    () => cachedAuthorizedTournaments || []
+  );
+  const [loadingTournaments, setLoadingTournaments] = useState(
+    () => !cachedAuthorizedTournaments
+  );
   const [tournamentSearchQuery, setTournamentSearchQuery] = useState("");
-  const [showTypeModal, setShowTypeModal] = useState(false);
+  // Show match type selection modal immediately on mount if not launched from a specific tournament
+  const [showTypeModal, setShowTypeModal] = useState(() => !initialTournamentId);
   const [showTournamentPickerModal, setShowTournamentPickerModal] = useState(false);
   const hasPromptedRef = useRef(Boolean(initialTournamentId));
 
@@ -92,14 +101,16 @@ export default function CreateMatch() {
       return;
     }
 
-    if (hasPromptedRef.current) return;
-    hasPromptedRef.current = true;
-
     tournamentsApi
       .getMyTournaments()
       .then((res) => {
+        setLoadingTournaments(false);
         const tourList = res?.data?.content || res?.data || [];
-        if (!Array.isArray(tourList) || tourList.length === 0) return;
+        if (!Array.isArray(tourList) || tourList.length === 0) {
+          cachedAuthorizedTournaments = [];
+          setAuthorizedTournaments([]);
+          return;
+        }
 
         const authorized = tourList.filter((t) => {
           if (isAdmin) return true;
@@ -121,13 +132,12 @@ export default function CreateMatch() {
           return isOrg || isCreator;
         });
 
-        if (authorized.length > 0) {
-          setAuthorizedTournaments(authorized);
-          setShowTypeModal(true);
-        }
+        cachedAuthorizedTournaments = authorized;
+        setAuthorizedTournaments(authorized);
       })
       .catch((err) => {
         console.warn("[CreateMatch] Failed to check user tournaments:", err);
+        setLoadingTournaments(false);
       });
   }, [initialTournamentId, currentUserId, isAdmin]);
 
@@ -320,6 +330,7 @@ export default function CreateMatch() {
         teamBSquad,
         returnScreen: initiatorScreen,
         tournamentId,
+        fromTournament: Boolean(route.params?.fromTournament || route.params?.cameFromTournament),
       });
     } catch (error) {
       console.warn("[CreateMatch] Error creating match:", error);
@@ -779,7 +790,7 @@ export default function CreateMatch() {
                   const t = authorizedTournaments[0];
                   setSelectedTournament(t);
                   setTournamentId(String(t._id || t.id || t.slug));
-                } else if (authorizedTournaments.length > 1) {
+                } else {
                   setShowTournamentPickerModal(true);
                 }
               }}
@@ -968,17 +979,28 @@ export default function CreateMatch() {
               }}
               ListEmptyComponent={
                 <View className="items-center justify-center py-10">
-                  <Ionicons
-                    name="search-outline"
-                    size={36}
-                    color={isDarkMode ? "#6B7280" : "#9CA3AF"}
-                    style={{ marginBottom: 8 }}
-                  />
-                  <ThemedText className="text-gray-500 dark:text-gray-400 text-sm">
-                    {tournamentSearchQuery
-                      ? `No tournaments found matching "${tournamentSearchQuery}"`
-                      : "No tournaments available"}
-                  </ThemedText>
+                  {loadingTournaments ? (
+                    <>
+                      <ActivityIndicator size="small" color="#2563EB" />
+                      <ThemedText className="text-gray-500 dark:text-gray-400 text-sm mt-3">
+                        Loading your tournaments...
+                      </ThemedText>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="search-outline"
+                        size={36}
+                        color={isDarkMode ? "#6B7280" : "#9CA3AF"}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <ThemedText className="text-gray-500 dark:text-gray-400 text-sm">
+                        {tournamentSearchQuery
+                          ? `No tournaments found matching "${tournamentSearchQuery}"`
+                          : "No tournaments available"}
+                      </ThemedText>
+                    </>
+                  )}
                 </View>
               }
             />

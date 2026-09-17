@@ -113,12 +113,10 @@ export default function BonusRuns({
         errorAlert: false,
       }).catch(() => {});
 
-      Alert.alert("Success", "Bonus runs added successfully");
       onSuccess?.();
       handleClose();
     } catch (error) {
       console.warn("Error updating bonus runs:", error);
-      Alert.alert("Notice", "Bonus runs recorded");
       handleClose();
     } finally {
       setLoading(false);

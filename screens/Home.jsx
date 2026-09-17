@@ -9,6 +9,7 @@ import {
   ImageBackground,
   useColorScheme,
   RefreshControl,
+  BackHandler,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
@@ -43,12 +44,49 @@ export default function Home({}) {
 
   useFocusEffect(
     useCallback(() => {
+      // 1. Sanitize navigation stack: ensure Home is the clean root and Scorer/setup screens cannot be returned to
+      const state = navigation.getState?.();
+      if (state?.routes && state.index > 0) {
+        const preScoreScreenNames = [
+          SCREENS.ScorerScreen,
+          SCREENS.CreateMatch,
+          SCREENS.SelectTeamScreen,
+          SCREENS.SelectSquadScreen,
+          SCREENS.MatchDetailsScreen,
+          SCREENS.TossScreen,
+          SCREENS.PlayerSelectionScreen,
+        ];
+        const hasScorerOrSetupInHistory = state.routes
+          .slice(0, state.index)
+          .some((r) => preScoreScreenNames.includes(r.name));
+        if (hasScorerOrSetupInHistory && navigation.reset) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: SCREENS.Home }],
+          });
+          return;
+        }
+      }
+
+      // 2. Hardware back button handling while on Home screen
+      const onHardwareBackPress = () => {
+        return false;
+      };
+      const backSubscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        onHardwareBackPress
+      );
+
       // Throttle tab focus refreshes to avoid freezing UI or re-fetching every tab switch
       if (Date.now() - lastFocusFetch.current > 60000) {
         lastFocusFetch.current = Date.now();
         refreshMatches?.();
       }
-    }, [refreshMatches])
+
+      return () => {
+        backSubscription.remove();
+      };
+    }, [navigation, refreshMatches])
   );
 
   const {

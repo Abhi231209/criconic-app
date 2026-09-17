@@ -22,6 +22,7 @@ import SCREENS from "@/screens";
 import { matchesApi, userApi, tournamentsApi } from "@/utils/api";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
 import { searchFallbackLocations } from "@/utils/locationHelper";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 import debounce from "lodash/debounce";
 
 export default function MatchDetailsScreen() {
@@ -291,10 +292,11 @@ export default function MatchDetailsScreen() {
 
   const saveMatchDetails = async (targetStatus) => {
     if (!matchDetails.location || !matchDetails.location.trim()) {
-      Alert.alert(
-        "Location Required",
-        "Please enter and select a ground or location from Google Places before proceeding."
-      );
+      showGlobalAlert({
+        title: "Location Required",
+        message: "Please enter and select a ground or location from Google Places before proceeding.",
+        type: "warning",
+      });
       return null;
     }
 
@@ -453,6 +455,7 @@ export default function MatchDetailsScreen() {
       fromMatchDetails: true,
       returnScreen: route.params?.returnScreen,
       tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+      fromTournament: Boolean(route.params?.fromTournament),
     });
   };
 
@@ -464,7 +467,8 @@ export default function MatchDetailsScreen() {
     Alert.alert("Success", "Match has been scheduled successfully!");
 
     const tId = route.params?.tournamentId || route.params?.tournamentID;
-    if (tId) {
+    const cameFromTournament = Boolean(route.params?.fromTournament);
+    if (cameFromTournament && tId) {
       navigation.navigate(SCREENS.TournamentProfile, { tournamentId: tId });
     } else if (
       route.params?.returnScreen &&

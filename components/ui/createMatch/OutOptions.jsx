@@ -809,7 +809,7 @@ export default function OutOptions({
               keyboardShouldPersistTaps="handled"
             >
               {/* 1. Batsman Out */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A" }]}>
                 1. Select Batsman Out *
               </ThemedText>
               <View style={styles.batterRow}>
@@ -828,10 +828,16 @@ export default function OutOptions({
                         styles.batterChoiceCard,
                         isSelected
                           ? { borderColor: COLORS.primary, backgroundColor: "rgba(220, 38, 38, 0.1)" }
-                          : { borderColor: theme.border, backgroundColor: theme.card },
+                          : { borderColor: isDarkMode ? "#334155" : "#E2E8F0", backgroundColor: isDarkMode ? "#1E293B" : "#F8FAFC" },
                       ]}
                     >
-                      <ThemedText style={[styles.batterChoiceName, isSelected && { color: COLORS.primary, fontWeight: "700" }]}>
+                      <ThemedText
+                        style={[
+                          styles.batterChoiceName,
+                          { color: isSelected ? COLORS.primary : isDarkMode ? "#F8FAFC" : "#0F172A" },
+                          isSelected && { fontWeight: "700" },
+                        ]}
+                      >
                         {batter?.name || batter?.username || `Batsman ${idx + 1}`}
                       </ThemedText>
                       {batter?.isStrikeEnd && (
@@ -845,7 +851,7 @@ export default function OutOptions({
               </View>
 
               {/* 2. Fielder 1 (Mandatory) */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText, { marginTop: 16 }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A", marginTop: 16 }]}>
                 2. Fielder 1 (Thrower / Direct Hit) *
               </ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
@@ -866,10 +872,10 @@ export default function OutOptions({
                           styles.chip,
                           isSelected
                             ? { backgroundColor: COLORS.primary, borderColor: COLORS.primary }
-                            : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                            : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                         ]}
                       >
-                        <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
+                        <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
                           {name}
                         </ThemedText>
                       </TouchableOpacity>
@@ -879,7 +885,7 @@ export default function OutOptions({
               </ScrollView>
 
               {/* 3. Fielder 2 (Optional) */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText, { marginTop: 16 }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A", marginTop: 16 }]}>
                 3. Fielder 2 (Catcher / Assisted, Optional)
               </ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
@@ -900,10 +906,10 @@ export default function OutOptions({
                           styles.chip,
                           isSelected
                             ? { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary }
-                            : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                            : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                         ]}
                       >
-                        <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
+                        <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
                           {name}
                         </ThemedText>
                       </TouchableOpacity>
@@ -913,7 +919,7 @@ export default function OutOptions({
               </ScrollView>
 
               {/* 4. Delivery Type */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText, { marginTop: 16 }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A", marginTop: 16 }]}>
                 4. Delivery Type
               </ThemedText>
               <View style={styles.chipRow}>
@@ -937,10 +943,10 @@ export default function OutOptions({
                         styles.chip,
                         isSelected
                           ? { backgroundColor: COLORS.warning, borderColor: COLORS.warning }
-                          : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                          : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                       ]}
                     >
-                      <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
+                      <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
                         {dt.label}
                       </ThemedText>
                     </TouchableOpacity>
@@ -949,7 +955,7 @@ export default function OutOptions({
               </View>
 
               {/* 5. Runs Completed */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText, { marginTop: 16 }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A", marginTop: 16 }]}>
                 5. Runs Completed Before Dismissal
               </ThemedText>
               <View style={[styles.chipRow, { justifyContent: "space-between" }]}>
@@ -968,10 +974,10 @@ export default function OutOptions({
                         styles.runRoundChip,
                         isSelected
                           ? { backgroundColor: COLORS.blue, borderColor: COLORS.blue }
-                          : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                          : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                       ]}
                     >
-                      <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 15, fontWeight: "700" }}>
+                      <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 15, fontWeight: "700" }}>
                         {num}
                       </ThemedText>
                     </TouchableOpacity>
@@ -981,7 +987,7 @@ export default function OutOptions({
 
               <TextInput
                 placeholder="Or type custom runs (e.g. 7)"
-                placeholderTextColor={theme.textSecondary}
+                placeholderTextColor={isDarkMode ? "#94A3B8" : "#64748B"}
                 keyboardType="numeric"
                 value={customRunInput}
                 onChangeText={(val) => {
@@ -992,8 +998,8 @@ export default function OutOptions({
                   styles.customInput,
                   {
                     backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
-                    borderColor: theme.border,
-                    color: theme.text,
+                    borderColor: isDarkMode ? "#334155" : "#E2E8F0",
+                    color: isDarkMode ? "#F8FAFC" : "#0F172A",
                   },
                 ]}
               />
@@ -1001,7 +1007,7 @@ export default function OutOptions({
               {/* 6. Run Source (for No Ball) */}
               {deliveryType === "no-ball" && (
                 <View style={{ marginTop: 16 }}>
-                  <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText]}>
+                  <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A" }]}>
                     6. Runs Credited To
                   </ThemedText>
                   <View style={styles.chipRow}>
@@ -1019,10 +1025,10 @@ export default function OutOptions({
                             styles.chip,
                             isSelected
                               ? { backgroundColor: COLORS.blue, borderColor: COLORS.blue }
-                              : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                              : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                           ]}
                         >
-                          <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 13, textTransform: "capitalize", fontWeight: isSelected ? "700" : "500" }}>
+                          <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 13, textTransform: "capitalize", fontWeight: isSelected ? "700" : "500" }}>
                             {type}
                           </ThemedText>
                         </TouchableOpacity>
@@ -1068,7 +1074,7 @@ export default function OutOptions({
               keyboardShouldPersistTaps="handled"
             >
               {/* Retirement Type */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A" }]}>
                 Retirement Type
               </ThemedText>
               <View style={styles.chipRow}>
@@ -1086,10 +1092,10 @@ export default function OutOptions({
                         styles.chip,
                         isSelected
                           ? { backgroundColor: COLORS.warning, borderColor: COLORS.warning }
-                          : { backgroundColor: theme.cardSecondary, borderColor: theme.border },
+                          : { backgroundColor: isDarkMode ? "#334155" : "#F1F5F9", borderColor: isDarkMode ? "#475569" : "#E2E8F0" },
                       ]}
                     >
-                      <ThemedText style={{ color: isSelected ? "#ffffff" : theme.text, fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
+                      <ThemedText style={{ color: isSelected ? "#ffffff" : isDarkMode ? "#F8FAFC" : "#0F172A", fontSize: 13, fontWeight: isSelected ? "700" : "500" }}>
                         {rt}
                       </ThemedText>
                     </TouchableOpacity>
@@ -1098,7 +1104,7 @@ export default function OutOptions({
               </View>
 
               {/* Select Batsman */}
-              <ThemedText style={[styles.sectionTitle, isDarkMode ? styles.darkText : styles.lightText, { marginTop: 16 }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDarkMode ? "#F8FAFC" : "#0F172A", marginTop: 16 }]}>
                 Select Retiring Batsman *
               </ThemedText>
               <View style={styles.batterRow}>
@@ -1117,10 +1123,16 @@ export default function OutOptions({
                         styles.batterChoiceCard,
                         isSelected
                           ? { borderColor: COLORS.warning, backgroundColor: "rgba(217, 119, 6, 0.1)" }
-                          : { borderColor: theme.border, backgroundColor: theme.card },
+                          : { borderColor: isDarkMode ? "#334155" : "#E2E8F0", backgroundColor: isDarkMode ? "#1E293B" : "#F8FAFC" },
                       ]}
                     >
-                      <ThemedText style={[styles.batterChoiceName, isSelected && { color: COLORS.warning, fontWeight: "700" }]}>
+                      <ThemedText
+                        style={[
+                          styles.batterChoiceName,
+                          { color: isSelected ? COLORS.warning : isDarkMode ? "#F8FAFC" : "#0F172A" },
+                          isSelected && { fontWeight: "700" },
+                        ]}
+                      >
                         {batter?.name || batter?.username || `Batsman ${idx + 1}`}
                       </ThemedText>
                       {batter?.isStrikeEnd && (

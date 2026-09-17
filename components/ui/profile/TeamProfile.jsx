@@ -35,8 +35,8 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const [showTeamQr, setShowTeamQr] = useState(false);
 
   // Animation values
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(30))[0];
+  const fadeAnim = useState(new Animated.Value(1))[0];
+  const slideAnim = useState(new Animated.Value(0))[0];
 
   const routeTeam = route?.params?.team;
   const rawRouteTeamId =
@@ -70,7 +70,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     let base = Array.isArray(routeTeam) ? routeTeam[0] : routeTeam;
     return unnestTeam(base) || null;
   });
-  const MATCHES_PER_PAGE = 5;
+  const MATCHES_PER_PAGE = 10;
   const [teamStats, setTeamStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [allTeamMatches, setAllTeamMatches] = useState([]);
@@ -168,7 +168,21 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
         else if (Array.isArray(res?.data?.data)) raw = res.data.data[0];
         else if (Array.isArray(res?.data?.teams)) raw = res.data.teams[0];
         else if (res?.data && typeof res.data === "object") raw = res.data;
-        if (raw) setTeamData(unnestTeam(raw));
+        if (raw) {
+          const unnested = unnestTeam(raw);
+          setTeamData(unnested);
+          // If batch endpoint returned team without populated players, fetch full team doc
+          if (!Array.isArray(unnested?.players) || unnested.players.length === 0) {
+            request(`api/teams/${teamId}`, { method: "GET", errorAlert: false })
+              .then((res2) => {
+                const raw2 = Array.isArray(res2?.data)
+                  ? res2.data[0]
+                  : res2?.data?.data || res2?.data;
+                if (raw2) setTeamData(unnestTeam(raw2));
+              })
+              .catch(() => {});
+          }
+        }
       })
       .catch(() => {
         request(`api/teams/${teamId}`, { method: "GET", errorAlert: false })
@@ -721,17 +735,19 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   }, [allTeamMatches, teamId, teamData]);
 
   const effectiveBattingLeaderboard = useMemo(() => {
-    if (Array.isArray(battingLeaderboard) && battingLeaderboard.length > 0) {
-      return battingLeaderboard;
-    }
-    return derivedLeaderboards.batting;
+    const list =
+      Array.isArray(battingLeaderboard) && battingLeaderboard.length > 0
+        ? battingLeaderboard
+        : derivedLeaderboards.batting;
+    return (list || []).slice(0, 10);
   }, [battingLeaderboard, derivedLeaderboards.batting]);
 
   const effectiveBowlingLeaderboard = useMemo(() => {
-    if (Array.isArray(bowlingLeaderboard) && bowlingLeaderboard.length > 0) {
-      return bowlingLeaderboard;
-    }
-    return derivedLeaderboards.bowling;
+    const list =
+      Array.isArray(bowlingLeaderboard) && bowlingLeaderboard.length > 0
+        ? bowlingLeaderboard
+        : derivedLeaderboards.bowling;
+    return (list || []).slice(0, 10);
   }, [bowlingLeaderboard, derivedLeaderboards.bowling]);
 
   const recentMatches =
@@ -751,18 +767,18 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   ];
 
   const animateContent = () => {
-    fadeAnim.setValue(0);
-    slideAnim.setValue(30);
+    slideAnim.setValue(8);
+    fadeAnim.setValue(0.85);
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 250,
+        duration: 150,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 250,
+        duration: 150,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),

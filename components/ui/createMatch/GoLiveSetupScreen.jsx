@@ -136,7 +136,7 @@ export default function GoLiveSetupScreen() {
 
   const C = isDarkMode ? COLORS.dark : COLORS.light;
 
-  const [activeTab, setActiveTab] = useState("theme"); // "theme" | "ads" | "mode"
+  const [activeTab, setActiveTab] = useState("mode"); // "mode" | "theme" | "ads"
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -180,28 +180,52 @@ export default function GoLiveSetupScreen() {
       if (mData.ads) {
         setAdsConfig((prev) => ({ ...prev, ...mData.ads }));
       }
+      let currentTournInfo = mData.tournament || null;
       if (mData.tournament) {
         setTournamentInfo(mData.tournament);
       } else if (mData.tournamentID || route.params?.tournamentId) {
         const tId = mData.tournamentID || route.params?.tournamentId;
-        request(`api/tournaments/${tId}`, { method: "GET", errorAlert: false })
-          .then((tRes) => {
-            const tData = tRes?.data?.data || tRes?.data;
-            if (tData) setTournamentInfo(tData);
-          })
-          .catch(() => {});
+        try {
+          const tRes = await request(`api/tournaments/${tId}`, { method: "GET", errorAlert: false });
+          const tData = tRes?.data?.data || tRes?.data;
+          if (tData) {
+            currentTournInfo = tData;
+            setTournamentInfo(tData);
+          }
+        } catch (e) {}
       }
 
-      // Check current live status from public config
+      // Check current live status from public config or match details
       const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" }).catch(() => null);
-      const tournLive = configRes?.data?.content?.goLiveTournament;
-      const matchLive = configRes?.data?.content?.goLive;
-      if (tournLive?.active && tournLive?.isTournamentLive) {
+      const tournLive = configRes?.data?.content?.goLiveTournament || mData?.config?.goLiveTournament || mData?.goLiveTournament;
+      const matchLive = configRes?.data?.content?.goLive || mData?.config?.goLive || mData?.goLive;
+
+      const tournKey =
+        currentTournInfo?.slug ||
+        currentTournInfo?._id ||
+        currentTournInfo?.id ||
+        mData?.tournamentID ||
+        mData?.tournament?._id ||
+        mData?.tournament?.slug;
+
+      const isTournActive = Boolean(
+        tournLive?.active === true ||
+        (tournLive && tournLive.active && tournLive.url) ||
+        (tournLive?.url && tournLive.active !== false && tournLive.active !== undefined)
+      );
+
+      if (isTournActive) {
         setLiveMode("tournament");
         setIsThisMatchLiveOnTournament(true);
-        if (tournLive?.url) setTournamentLiveUrl(`${WEB_URL}/go-live/${tournLive.url}`);
+        const urlKey = tournLive?.url || tournKey || matchId;
+        setTournamentLiveUrl(`${WEB_URL}/go-live/${urlKey}`);
       } else if (matchLive?.active) {
         setLiveMode("match");
+        setIsThisMatchLiveOnTournament(false);
+      } else {
+        if (tournKey) {
+          setTournamentLiveUrl(`${WEB_URL}/go-live/${tournKey}`);
+        }
       }
 
       // 2. Fetch scorecard themes
@@ -368,26 +392,50 @@ export default function GoLiveSetupScreen() {
         tournamentInfo?._id ||
         tournamentInfo?.id ||
         matchDetails?.tournamentID ||
-        matchDetails?.tournament?._id;
-      const isTournLive = liveMode === "tournament" && !!tournKey;
-      const goLiveRes = await request("api/matches/public/go-live", {
-        method: "POST",
-        data: {
-          match: matchId,
-          userStream: isTournLive,
-          key: isTournLive ? tournKey : undefined,
-        },
-      });
+        matchDetails?.tournament?._id ||
+        matchDetails?.tournament?.slug;
 
-      // 4. Fetch latest live URL
-      const configRes = await request(`api/matches/${matchId}/public/config`, { method: "GET" }).catch(() => null);
-      const liveData = configRes?.data?.content?.goLive || configRes?.data?.content?.goLiveTournament || {};
-      const liveKey = liveData?.url || goLiveRes?.data?.matchId?.url || (isTournLive ? tournKey : matchId);
-      const fullUrl = `${WEB_URL}/go-live/${liveKey}`;
+      const isTournLive = Boolean((isThisMatchLiveOnTournament || liveMode === "tournament") && tournKey);
 
+      let fullUrl = "";
       if (isTournLive) {
+        // Broadcast on shared tournament link
+        const goLiveRes = await request("api/matches/public/go-live", {
+          method: "POST",
+          data: {
+            match: matchId,
+            userStream: true,
+            key: tournKey,
+          },
+        });
+        const urlKey = goLiveRes?.data?.matchId?.url || tournKey;
+        fullUrl = `${WEB_URL}/go-live/${urlKey}`;
         setIsThisMatchLiveOnTournament(true);
+        setLiveMode("tournament");
         setTournamentLiveUrl(fullUrl);
+      } else {
+        // Broadcast on single match link
+        if (tournKey) {
+          // Deactivate tournament stream if previously live
+          await request(`api/matches/${matchId}/settings`, {
+            method: "PUT",
+            data: {
+              action: "goLiveTournament",
+              data: { active: false },
+            },
+          }).catch(() => {});
+        }
+        const goLiveRes = await request("api/matches/public/go-live", {
+          method: "POST",
+          data: {
+            match: matchId,
+            userStream: false,
+          },
+        });
+        const urlKey = goLiveRes?.data?.matchId?.url || matchId;
+        fullUrl = `${WEB_URL}/go-live/${urlKey}`;
+        setIsThisMatchLiveOnTournament(false);
+        setLiveMode("match");
       }
 
       setGeneratedLiveUrl(fullUrl);
@@ -400,42 +448,23 @@ export default function GoLiveSetupScreen() {
     }
   };
 
-  const handleToggleTournamentMatchLive = async (value) => {
+  // Toggle only updates local state — actual DB call is deferred to handleLaunchLive
+  const handleToggleTournamentMatchLive = (value) => {
     setIsThisMatchLiveOnTournament(value);
-    const tournKey =
-      tournamentInfo?.slug ||
-      tournamentInfo?._id ||
-      tournamentInfo?.id ||
-      matchDetails?.tournamentID ||
-      matchDetails?.tournament?._id;
-    try {
-      if (value) {
-        const goLiveRes = await request("api/matches/public/go-live", {
-          method: "POST",
-          data: {
-            match: matchId,
-            userStream: true,
-            key: tournKey,
-          },
-        });
-        const urlKey = goLiveRes?.data?.matchId?.url || tournKey || matchId;
-        const fullUrl = `${WEB_URL}/go-live/${urlKey}`;
-        setTournamentLiveUrl(fullUrl);
-        Alert.alert("Broadcasting Active", "This match is now streaming live on the tournament's live link.");
-      } else {
-        await request(`api/matches/${matchId}/settings`, {
-          method: "PUT",
-          data: {
-            action: "goLiveTournament",
-            data: { active: false },
-          },
-        }).catch(() => {});
-        Alert.alert("Stream Paused", "Match stream under tournament has been turned off.");
-      }
-    } catch (e) {
-      console.warn("handleToggleTournamentMatchLive error:", e);
-      setIsThisMatchLiveOnTournament(!value);
-      Alert.alert("Notice", "Could not update tournament stream status.");
+    if (value) {
+      setLiveMode("tournament");
+      const tournKey =
+        tournamentInfo?.slug ||
+        tournamentInfo?._id ||
+        tournamentInfo?.id ||
+        matchDetails?.tournamentID ||
+        matchDetails?.tournament?._id ||
+        matchDetails?.tournament?.slug;
+      const previewUrl = `${WEB_URL}/go-live/${tournKey || matchId}`;
+      setTournamentLiveUrl(previewUrl);
+    } else {
+      setLiveMode("match");
+      setTournamentLiveUrl("");
     }
   };
 
@@ -636,180 +665,255 @@ export default function GoLiveSetupScreen() {
       matchDetails?.tournament?._id ||
       matchDetails?.tournament?.slug;
     const hasTournament = Boolean(tournamentIdentifier || matchDetails?.tournament);
+    const tournamentName = tournamentInfo?.title || tournamentInfo?.name || matchDetails?.tournament?.title || "Tournament";
 
     return (
-      <View style={{ gap: 14 }}>
-        <ThemedText className="font-semibold text-sm" style={{ color: C.textSecondary }}>
-          Select how you want to broadcast this match
-        </ThemedText>
+      <View style={{ gap: 16 }}>
 
-        {/* Option 1: Match Live */}
-        <TouchableOpacity
-          style={[
-            styles.modeCard,
-            {
-              backgroundColor: C.card,
-              borderColor: liveMode === "match" ? COLORS.primary : C.border,
-              borderWidth: liveMode === "match" ? 2 : 1,
-            },
-          ]}
-          onPress={() => setLiveMode("match")}
-          activeOpacity={0.7}
-        >
-          <View style={styles.modeIconCircle}>
-            <Radio size={20} color={COLORS.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <ThemedText className="font-bold text-base" style={{ color: C.text }}>
-              Standard Match Live
-            </ThemedText>
-            <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
-              Creates an exclusive live scorecard overlay link for this match
-            </ThemedText>
-          </View>
-          <View style={[styles.radioCircle, { borderColor: liveMode === "match" ? COLORS.primary : C.border }]}>
-            {liveMode === "match" && <View style={styles.radioFill} />}
-          </View>
-        </TouchableOpacity>
-
-        {/* Option 2: Tournament Live */}
-        <TouchableOpacity
-          style={[
-            styles.modeCard,
-            {
-              backgroundColor: C.card,
-              borderColor: liveMode === "tournament" ? COLORS.primary : C.border,
-              borderWidth: liveMode === "tournament" ? 2 : 1,
-              opacity: hasTournament ? 1 : 0.6,
-            },
-          ]}
-          onPress={() => {
-            if (hasTournament) {
-              setLiveMode("tournament");
-            } else {
-              Alert.alert("Tournament Required", "This match is not part of a tournament.");
-            }
+        {/* Header explainer */}
+        <View
+          style={{
+            backgroundColor: isDarkMode ? "#1E3A5F" : "#EFF6FF",
+            borderRadius: 12,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: isDarkMode ? "#2563EB44" : "#BFDBFE",
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 10,
           }}
-          activeOpacity={0.7}
         >
-          <View style={[styles.modeIconCircle, { backgroundColor: "#FEF3C7" }]}>
-            <Trophy size={20} color="#D97706" />
-          </View>
+          <Radio size={18} color="#3B82F6" style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
-            <ThemedText className="font-bold text-base" style={{ color: C.text }}>
-              Live as Tournament
+            <ThemedText className="font-bold text-sm" style={{ color: isDarkMode ? "#93C5FD" : "#1D4ED8" }}>
+              How Live Streaming Works
             </ThemedText>
-            <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
-              {hasTournament
-                ? `Streams live under tournament '${tournamentInfo?.title || "Tournament"}' link`
-                : "Attach this match to a tournament to broadcast under the tournament page"}
+            <ThemedText className="font-normal text-xs" style={{ color: isDarkMode ? "#93C5FD99" : "#3B82F6", marginTop: 3, lineHeight: 17 }}>
+              Each match gets its own dedicated link. If the match belongs to a tournament, you can also broadcast it on the tournament's shared link — so viewers following the tournament always see the current live match.
             </ThemedText>
           </View>
-          <View style={[styles.radioCircle, { borderColor: liveMode === "tournament" ? COLORS.primary : C.border }]}>
-            {liveMode === "tournament" && <View style={styles.radioFill} />}
-          </View>
-        </TouchableOpacity>
+        </View>
 
-        {/* Dedicated "Go Live with this Match" toggle under Tournament mode */}
-        {hasTournament && liveMode === "tournament" && (
+        {/* ── CARD 1: Match Live ── */}
+        <View
+          style={{
+            backgroundColor: C.card,
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: liveMode === "match" ? COLORS.primary : C.border,
+            overflow: "hidden",
+          }}
+        >
+          {/* Card Header */}
           <View
-            style={[
-              styles.sectionCard,
-              {
-                backgroundColor: C.card,
-                borderColor: isThisMatchLiveOnTournament ? COLORS.primary : C.border,
-                borderWidth: 1.5,
-                marginTop: 2,
-              },
-            ]}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 16,
+              gap: 12,
+            }}
           >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <ThemedText className="font-bold text-sm" style={{ color: C.text }}>
-                    Go Live with this Match
-                  </ThemedText>
-                  {isThisMatchLiveOnTournament && (
-                    <View style={[styles.liveDot, { width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }]} />
-                  )}
-                </View>
-                <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 3 }}>
-                  <Text style={{ color: "#EF4444", fontWeight: "700" }}>* </Text>
-                  Turn on live score streaming for this match on the tournament's live link.
+            <View style={[styles.modeIconCircle, { backgroundColor: "#EFF6FF" }]}>
+              <Radio size={20} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText className="font-bold text-base" style={{ color: C.text }}>
+                Match Live Link
+              </ThemedText>
+              <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
+                A dedicated link just for this match
+              </ThemedText>
+            </View>
+            <Switch
+              value={!isThisMatchLiveOnTournament && liveMode === "match"}
+              onValueChange={(val) => {
+                if (val) {
+                  setLiveMode("match");
+                  setIsThisMatchLiveOnTournament(false);
+                } else if (hasTournament) {
+                  handleToggleTournamentMatchLive(true);
+                }
+              }}
+              thumbColor={!isThisMatchLiveOnTournament && liveMode === "match" ? COLORS.primary : "#CBD5E1"}
+              trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
+            />
+          </View>
+
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: C.border }} />
+
+          {/* How it works explainer */}
+          <View style={{ padding: 14, gap: 8 }}>
+            {[
+              { icon: "🔗", text: "Generates a unique URL exclusive to this match" },
+              { icon: "📺", text: "Viewers access only this match's live scorecard overlay" },
+              { icon: "⚡", text: "Link stays valid for the entire duration of the match" },
+            ].map((item, i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                <ThemedText style={{ fontSize: 13 }}>{item.icon}</ThemedText>
+                <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, flex: 1, lineHeight: 17 }}>
+                  {item.text}
                 </ThemedText>
               </View>
-              <Switch
-                value={isThisMatchLiveOnTournament}
-                onValueChange={handleToggleTournamentMatchLive}
-                thumbColor={isThisMatchLiveOnTournament ? COLORS.primary : "#CBD5E1"}
-                trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
-              />
-            </View>
+            ))}
+          </View>
+        </View>
 
-            {isThisMatchLiveOnTournament && !!tournamentLiveUrl && (
-              <View
-                style={[
-                  styles.urlBox,
-                  {
-                    backgroundColor: isDarkMode ? "#0F172A" : "#F8FAFC",
-                    borderColor: isDarkMode ? "#334155" : "#E2E8F0",
-                    marginTop: 12,
-                    flexDirection: "column",
-                    alignItems: "stretch",
-                  },
-                ]}
-              >
-                <ThemedText
-                  className="font-medium text-xs"
-                  style={{ color: C.text, marginBottom: 8 }}
-                  numberOfLines={1}
-                >
-                  {tournamentLiveUrl}
+        {/* ── CARD 2: Tournament Live ── */}
+        <View
+          style={{
+            backgroundColor: C.card,
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: isThisMatchLiveOnTournament ? "#D97706" : hasTournament ? C.border : (isDarkMode ? "#374151" : "#E5E7EB"),
+            overflow: "hidden",
+            opacity: hasTournament ? 1 : 0.55,
+          }}
+        >
+          {/* Card Header */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              padding: 16,
+              gap: 12,
+            }}
+          >
+            <View style={[styles.modeIconCircle, { backgroundColor: "#FEF3C7" }]}>
+              <Trophy size={20} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <ThemedText className="font-bold text-base" style={{ color: C.text }}>
+                  Tournament Live Link
                 </ThemedText>
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.miniBtn,
-                      {
-                        flexDirection: "row",
-                        alignItems: "center",
-                        backgroundColor: `${COLORS.primary}18`,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: 8,
-                      },
-                    ]}
-                    onPress={() => handleCopy(tournamentLiveUrl)}
+                {isThisMatchLiveOnTournament && (
+                  <View
+                    style={{
+                      backgroundColor: "#D97706",
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                    }}
                   >
-                    <Copy size={13} color={COLORS.primary} />
-                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary, marginLeft: 4 }}>
-                      Copy Link
+                    <ThemedText className="font-bold" style={{ fontSize: 9, color: "#fff" }}>
+                      ACTIVE
                     </ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.miniBtn,
-                      {
-                        flexDirection: "row",
-                        alignItems: "center",
-                        backgroundColor: `${COLORS.secondary}18`,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: 8,
-                      },
-                    ]}
-                    onPress={() => handleShare(tournamentLiveUrl)}
+                  </View>
+                )}
+              </View>
+              <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
+                {hasTournament
+                  ? `Shared link for "${tournamentName}"`
+                  : "Match is not part of any tournament"}
+              </ThemedText>
+            </View>
+            <Switch
+              value={isThisMatchLiveOnTournament}
+              onValueChange={hasTournament ? handleToggleTournamentMatchLive : undefined}
+              thumbColor={isThisMatchLiveOnTournament ? "#D97706" : "#CBD5E1"}
+              trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#FDE68A" }}
+              disabled={!hasTournament}
+            />
+          </View>
+
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: C.border }} />
+
+          {/* How it works explainer */}
+          <View style={{ padding: 14, gap: 8 }}>
+            {hasTournament ? (
+              <>
+                {[
+                  { icon: "🏆", text: `The tournament "${tournamentName}" has one permanent shared link` },
+                  { icon: "📡", text: "Toggle ON to make this match broadcast on that shared link" },
+                  { icon: "🔄", text: "Only one match at a time shows on the tournament's link — toggling another match will switch it" },
+                ].map((item, i) => (
+                  <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <ThemedText style={{ fontSize: 13 }}>{item.icon}</ThemedText>
+                    <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, flex: 1, lineHeight: 17 }}>
+                      {item.text}
+                    </ThemedText>
+                  </View>
+                ))}
+
+                {/* Tournament link preview box */}
+                {isThisMatchLiveOnTournament && !!tournamentLiveUrl && (
+                  <View
+                    style={{
+                      backgroundColor: isDarkMode ? "#0F172A" : "#FFFBEB",
+                      borderRadius: 10,
+                      padding: 12,
+                      borderWidth: 1,
+                      borderColor: isDarkMode ? "#92400E44" : "#FDE68A",
+                      marginTop: 4,
+                    }}
                   >
-                    <Share2 size={13} color={COLORS.secondary} />
-                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.secondary, marginLeft: 4 }}>
-                      Share Link
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#10B981" }} />
+                      <ThemedText className="font-bold text-xs" style={{ color: "#D97706" }}>
+                        Tournament is LIVE on this link
+                      </ThemedText>
+                    </View>
+                    <ThemedText
+                      className="font-medium text-xs"
+                      style={{ color: C.text, marginBottom: 10 }}
+                      numberOfLines={1}
+                    >
+                      {tournamentLiveUrl}
                     </ThemedText>
-                  </TouchableOpacity>
-                </View>
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: `${COLORS.primary}18`,
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          gap: 4,
+                        }}
+                        onPress={() => handleCopy(tournamentLiveUrl)}
+                      >
+                        <Copy size={13} color={COLORS.primary} />
+                        <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary }}>
+                          Copy Link
+                        </ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "#D9770618",
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          gap: 4,
+                        }}
+                        onPress={() => handleShare(tournamentLiveUrl)}
+                      >
+                        <Share2 size={13} color="#D97706" />
+                        <ThemedText className="font-bold text-xs" style={{ color: "#D97706" }}>
+                          Share Link
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                <ThemedText style={{ fontSize: 13 }}>ℹ️</ThemedText>
+                <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, flex: 1, lineHeight: 17 }}>
+                  This match is not linked to any tournament. Create or join a tournament and add this match to enable tournament broadcasting.
+                </ThemedText>
               </View>
             )}
           </View>
-        )}
+        </View>
+
       </View>
     );
   };
@@ -838,9 +942,9 @@ export default function GoLiveSetupScreen() {
       {/* Tabs */}
       <View style={[styles.tabsBar, { backgroundColor: C.card, borderBottomColor: C.border }]}>
         {[
+          { key: "mode", label: "Live Mode", icon: Radio },
           { key: "theme", label: "Overlay & Theme", icon: Palette },
           { key: "ads", label: "Sponsor Ads", icon: Megaphone },
-          { key: "mode", label: "Live Mode", icon: Radio },
         ].map((tab) => {
           const isActive = activeTab === tab.key;
           const Icon = tab.icon;
@@ -910,19 +1014,26 @@ export default function GoLiveSetupScreen() {
       <Modal visible={successModalVisible} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={[styles.successModal, { backgroundColor: C.card, borderColor: C.border }]}>
-            <View style={styles.successBadge}>
-              <View style={styles.pulseDot} />
-              <ThemedText className="font-extrabold text-sm text-red-600">LIVE NOW</ThemedText>
+            <View style={[styles.successBadge, isThisMatchLiveOnTournament && { backgroundColor: "#FEF3C7" }]}>
+              <View style={[styles.pulseDot, isThisMatchLiveOnTournament && { backgroundColor: "#D97706" }]} />
+              <ThemedText
+                className="font-extrabold text-sm"
+                style={{ color: isThisMatchLiveOnTournament ? "#D97706" : "#DC2626" }}
+              >
+                {isThisMatchLiveOnTournament ? "TOURNAMENT LIVE" : "LIVE NOW"}
+              </ThemedText>
             </View>
 
             <ThemedText className="font-bold text-xl" style={{ color: C.text, textAlign: "center", marginTop: 12 }}>
-              Match Stream is Live!
+              {isThisMatchLiveOnTournament ? "Match is Broadcasting on Tournament!" : "Match Stream is Live!"}
             </ThemedText>
             <ThemedText
               className="font-normal text-xs"
               style={{ color: C.textSecondary, textAlign: "center", marginTop: 4, paddingHorizontal: 10 }}
             >
-              Share this live broadcast link with fans, players, and viewers to watch real-time overlay scores:
+              {isThisMatchLiveOnTournament
+                ? "This match is now streaming on the tournament's shared live link. Anyone following the tournament can watch in real-time:"
+                : "Share this live broadcast link with fans, players, and viewers to watch real-time overlay scores:"}
             </ThemedText>
 
             {/* Generated URL Box */}

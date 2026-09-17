@@ -19,7 +19,7 @@ import User from "@/utils/User";
 const ACTION_SHEET_SNAP_POINTS = ["72%", "88%"];
 
 // In-memory cache: socket score data keyed by matchId for instant re-renders
-const MATCH_CACHE = new Map();
+export const MATCH_CACHE = new Map();
 
 const getEntityId = (entity) => {
   if (!entity) return null;
@@ -165,44 +165,72 @@ function ScoreCard({
   );
   const canScore = Boolean(isUserLoggedIn && (isAccessToUpdate || isUserOwnerOrScorer || match?.accessToUpdate));
 
-  // Resolve team names
-  const team1Name =
-    combinedMatch?.teams?.[0]?.title ||
-    combinedMatch?.teams?.[0]?.teamName ||
-    combinedMatch?.teams?.[0]?.name ||
-    liveScore?.teams?.[0]?.title ||
-    liveScore?.teams?.[0]?.teamName ||
-    liveScore?.teams?.[0]?.name ||
-    liveScore?.inning?.[0]?.batting?.name ||
+  // Helper to safely extract string team ID
+  const resolveTeamId = (team) => {
+    if (!team) return "";
+    if (typeof team.teamId === "object" && team.teamId?._id) return String(team.teamId._id);
+    if (team.teamId) return String(team.teamId);
+    if (team._id) return String(team._id);
+    if (team.id) return String(team.id);
+    return "";
+  };
+
+  // Raw teams from combinedMatch or liveScore
+  const rawTeamA = combinedMatch?.teams?.[0] || liveScore?.teams?.[0] || combinedMatch?.team1 || {};
+  const rawTeamB = combinedMatch?.teams?.[1] || liveScore?.teams?.[1] || combinedMatch?.team2 || {};
+
+  const teamAId = resolveTeamId(rawTeamA) || "team1";
+  const teamBId = resolveTeamId(rawTeamB) || "team2";
+
+  const teamAName =
+    rawTeamA.title ||
+    rawTeamA.teamName ||
+    rawTeamA.name ||
     combinedMatch?.team1?.name ||
     combinedMatch?.team1 ||
     "Team 1";
 
-  const team2Name =
-    combinedMatch?.teams?.[1]?.title ||
-    combinedMatch?.teams?.[1]?.teamName ||
-    combinedMatch?.teams?.[1]?.name ||
-    liveScore?.teams?.[1]?.title ||
-    liveScore?.teams?.[1]?.teamName ||
-    liveScore?.teams?.[1]?.name ||
-    liveScore?.inning?.[1]?.batting?.name ||
+  const teamBName =
+    rawTeamB.title ||
+    rawTeamB.teamName ||
+    rawTeamB.name ||
     combinedMatch?.team2?.name ||
     combinedMatch?.team2 ||
     "Team 2";
 
-  const team1Id =
-    combinedMatch?.teams?.[0]?.teamId ||
-    combinedMatch?.teams?.[0]?._id ||
-    liveScore?.teams?.[0]?.teamId ||
-    liveScore?.teams?.[0]?._id ||
-    "team1";
+  // Check which team batted first (Innings 1) to ensure Inning 1 team is ALWAYS shown on top (Row 1)
+  const inn1Source =
+    liveScore?.inning?.[0] ||
+    liveScore?.innings_1 ||
+    combinedMatch?.score?.innings_1 ||
+    combinedMatch?.innings_1;
 
-  const team2Id =
-    combinedMatch?.teams?.[1]?.teamId ||
-    combinedMatch?.teams?.[1]?._id ||
-    liveScore?.teams?.[1]?.teamId ||
-    liveScore?.teams?.[1]?._id ||
-    "team2";
+  const inn1BattingId = String(
+    inn1Source?.batting?.battingId ||
+    inn1Source?.batting?.teamId ||
+    inn1Source?.battingTeam?._id ||
+    inn1Source?.battingTeam ||
+    inn1Source?.teamId ||
+    ""
+  ).toLowerCase().trim();
+
+  const inn1BattingName = String(
+    inn1Source?.batting?.battingTeam ||
+    inn1Source?.battingTeam ||
+    inn1Source?.teamName ||
+    ""
+  ).toLowerCase().trim();
+
+  const isTeamBBattedFirst = Boolean(
+    (inn1BattingId && teamBId && (inn1BattingId === teamBId.toLowerCase() || inn1BattingId.includes(teamBId.toLowerCase()))) ||
+    (inn1BattingName && teamBName && inn1BattingName === teamBName.toLowerCase().trim())
+  );
+
+  // Row 1 is always Innings 1 team, Row 2 is always Innings 2 team
+  const team1Name = isTeamBBattedFirst ? teamBName : teamAName;
+  const team2Name = isTeamBBattedFirst ? teamAName : teamBName;
+  const team1Id = isTeamBBattedFirst ? teamBId : teamAId;
+  const team2Id = isTeamBBattedFirst ? teamAId : teamBId;
 
   // Extract all innings (including Super Over)
   const allInnings = useMemo(() => {
@@ -212,79 +240,57 @@ function ScoreCard({
     if (Array.isArray(combinedMatch?.inning) && combinedMatch.inning.length > 0) {
       return combinedMatch.inning;
     }
-    return [];
+    // Fallback: construct from innings_1, innings_2, etc.
+    const fromScore = [];
+    const src = liveScore?.score || combinedMatch?.score || liveScore || combinedMatch;
+    if (src && typeof src === "object") {
+      ["innings_1", "innings_2", "innings_3", "innings_4"].forEach((k) => {
+        if (src[k] && (src[k].totalRuns !== undefined || src[k].totalOvers !== undefined || src[k].score || src[k].batting)) {
+          fromScore.push(src[k]);
+        }
+      });
+    }
+    return fromScore;
   }, [liveScore, combinedMatch]);
-
-  // Fallbacks from standard score objects
-  const fallbackTeam1Runs =
-    liveScore?.inning?.[0]?.batting?.score?.runs ??
-    liveScore?.innings_1?.score?.runs ??
-    combinedMatch?.team1Score ??
-    "-";
-  const fallbackTeam1Wickets =
-    liveScore?.inning?.[0]?.batting?.score?.wicket ??
-    liveScore?.innings_1?.score?.wicket ??
-    "";
-  const fallbackTeam1Overs =
-    liveScore?.inning?.[0]?.batting?.score?.over ??
-    liveScore?.innings_1?.score?.over ??
-    combinedMatch?.team1Overs ??
-    "0.0";
-
-  const fallbackTeam2Runs =
-    liveScore?.inning?.[1]?.batting?.score?.runs ??
-    liveScore?.innings_2?.score?.runs ??
-    combinedMatch?.team2Score ??
-    "-";
-  const fallbackTeam2Wickets =
-    liveScore?.inning?.[1]?.batting?.score?.wicket ??
-    liveScore?.innings_2?.score?.wicket ??
-    "";
-  const fallbackTeam2Overs =
-    liveScore?.inning?.[1]?.batting?.score?.over ??
-    liveScore?.innings_2?.score?.over ??
-    combinedMatch?.team2Overs ??
-    "0.0";
 
   // Multi-innings extraction for a team (supports Super Over display)
   const getTeamInningsList = useCallback(
-    (tId, tName, fbRuns, fbWickets, fbOvers, isTeam1) => {
+    (tId, tName, isRow1) => {
       const idStr = tId ? String(tId).trim().toLowerCase() : "";
       const nameStr = tName ? String(tName).trim().toLowerCase() : "";
 
       let matched = allInnings.filter((inn) => {
         const b = inn?.batting || inn;
-        const innId = String(b?.battingId || b?.teamId || inn?.teamId || b?._id || "").trim().toLowerCase();
-        const innName = String(b?.battingTeam || b?.teamName || b?.name || "").trim().toLowerCase();
+        const innId = resolveTeamId(b) || String(inn?.teamId || inn?.battingTeam || "").trim().toLowerCase();
+        const innName = String(b?.battingTeam || b?.teamName || b?.name || inn?.battingTeam || "").trim().toLowerCase();
 
         if (idStr && innId && (innId === idStr || innId.includes(idStr) || idStr.includes(innId))) return true;
         if (nameStr && innName && (innName === nameStr || innName.includes(nameStr) || nameStr.includes(innName))) return true;
         return false;
       });
 
-      // Fallback by index if innings exists but ids did not match
+      // Fallback by position: Row 1 = Inning 1 (and SO 1), Row 2 = Inning 2 (and SO 2)
       if (matched.length === 0 && allInnings.length > 0) {
-        if (allInnings.length >= 2) {
-          if (isTeam1 && allInnings[0]) matched.push(allInnings[0]);
-          if (!isTeam1 && allInnings[1]) matched.push(allInnings[1]);
-          if (allInnings.length >= 3 && isTeam1 && allInnings[2]) matched.push(allInnings[2]);
-          if (allInnings.length >= 4 && !isTeam1 && allInnings[3]) matched.push(allInnings[3]);
-        } else if (isTeam1 && allInnings[0]) {
+        if (isRow1 && allInnings[0]) {
           matched.push(allInnings[0]);
+          if (allInnings.length >= 3 && allInnings[2]) matched.push(allInnings[2]);
+        } else if (!isRow1 && allInnings[1]) {
+          matched.push(allInnings[1]);
+          if (allInnings.length >= 4 && allInnings[3]) matched.push(allInnings[3]);
         }
       }
 
       if (matched.length > 0) {
         return matched.map((inn, idx) => {
           const b = inn?.batting || inn;
-          const runs = b?.score?.runs ?? 0;
-          const wickets = b?.score?.wicket ?? 0;
-          const over = b?.score?.over ? `${b.score.over}` : "0.0";
+          const runs = b?.score?.runs ?? inn?.totalRuns ?? b?.totalRuns ?? 0;
+          const wickets = b?.score?.wicket ?? inn?.totalWickets ?? b?.totalWickets ?? 0;
+          const over = b?.score?.over ?? inn?.totalOvers ?? b?.totalOvers ?? "0.0";
           const isSO = Boolean(inn?.isSuperOver || inn?.superOver || idx >= 1);
           return {
             runs,
             wickets,
-            over,
+            over: `${over}`,
             isSuperOver: isSO,
             scoreText: `${runs}/${wickets}`,
             oversText: `${over} ov`,
@@ -293,32 +299,40 @@ function ScoreCard({
         });
       }
 
-      if (fbRuns !== undefined && fbRuns !== "-") {
+      // Fallback to top-level innings_1 / innings_2
+      const fallbackInn = isRow1
+        ? (liveScore?.innings_1 || combinedMatch?.score?.innings_1)
+        : (liveScore?.innings_2 || combinedMatch?.score?.innings_2);
+
+      if (fallbackInn && (fallbackInn.totalRuns !== undefined || fallbackInn.score?.runs !== undefined)) {
+        const runs = fallbackInn.score?.runs ?? fallbackInn.totalRuns ?? 0;
+        const wickets = fallbackInn.score?.wicket ?? fallbackInn.totalWickets ?? 0;
+        const over = fallbackInn.score?.over ?? fallbackInn.totalOvers ?? "0.0";
         return [
           {
-            runs: fbRuns,
-            wickets: fbWickets !== "" ? fbWickets : 0,
-            over: fbOvers || "0.0",
+            runs,
+            wickets,
+            over: `${over}`,
             isSuperOver: false,
-            scoreText: `${fbRuns}${fbWickets !== "" ? `/${fbWickets}` : ""}`,
-            oversText: `${fbOvers} ov`,
-            label: `${fbRuns}${fbWickets !== "" ? `/${fbWickets}` : ""} (${fbOvers} ov)`,
+            scoreText: `${runs}/${wickets}`,
+            oversText: `${over} ov`,
+            label: `${runs}/${wickets} (${over} ov)`,
           },
         ];
       }
 
       return [];
     },
-    [allInnings]
+    [allInnings, liveScore, combinedMatch]
   );
 
   const team1Innings = useMemo(() => {
-    return getTeamInningsList(team1Id, team1Name, fallbackTeam1Runs, fallbackTeam1Wickets, fallbackTeam1Overs, true);
-  }, [getTeamInningsList, team1Id, team1Name, fallbackTeam1Runs, fallbackTeam1Wickets, fallbackTeam1Overs]);
+    return getTeamInningsList(team1Id, team1Name, true);
+  }, [getTeamInningsList, team1Id, team1Name]);
 
   const team2Innings = useMemo(() => {
-    return getTeamInningsList(team2Id, team2Name, fallbackTeam2Runs, fallbackTeam2Wickets, fallbackTeam2Overs, false);
-  }, [getTeamInningsList, team2Id, team2Name, fallbackTeam2Runs, fallbackTeam2Wickets, fallbackTeam2Overs]);
+    return getTeamInningsList(team2Id, team2Name, false);
+  }, [getTeamInningsList, team2Id, team2Name]);
 
   // Description & prompt aligned with web project
   const displayDescription = useMemo(() => {
@@ -352,9 +366,13 @@ function ScoreCard({
     "Cricket Match";
 
   const roundType = combinedMatch?.roundType || combinedMatch?.matchType || "Match";
-  const matchDate = combinedMatch?.startDate
-    ? new Date(combinedMatch.startDate).toLocaleDateString()
-    : startDate || "Scheduled";
+  const matchDate = (() => {
+    const raw = combinedMatch?.startDate || startDate;
+    if (!raw) return "Scheduled";
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return String(raw);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  })();
 
   const handleOpenActionSheet = () =>{
     console.log("[ScoreCard] Opening action sheet for matchId:", effectiveMatchId, "with scoring access:", canScore);

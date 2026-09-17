@@ -251,6 +251,9 @@ export default function TossScreen() {
             tossWinner: winner,
             tossDecision: decision,
             tossResult,
+            tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+            fromTournament: Boolean(route.params?.fromTournament),
+            returnScreen: route.params?.returnScreen,
           });
         } else {
           Alert.alert("Error", res?.data?.message || "Failed to record toss on server.");
@@ -269,6 +272,9 @@ export default function TossScreen() {
           tossWinner: winner,
           tossDecision: decision,
           tossResult,
+          tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+          fromTournament: Boolean(route.params?.fromTournament),
+          returnScreen: route.params?.returnScreen,
         });
       } finally {
         setIsSubmitting(false);
@@ -286,6 +292,9 @@ export default function TossScreen() {
         tossWinner: winner,
         tossDecision: decision,
         tossResult,
+        tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+        fromTournament: Boolean(route.params?.fromTournament),
+        returnScreen: route.params?.returnScreen,
       });
     }
   };

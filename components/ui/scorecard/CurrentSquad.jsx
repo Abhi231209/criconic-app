@@ -648,38 +648,6 @@ export default function CurrentSquad({ matchId, score }) {
           </View>
         )}
       </ScrollView>
-
-      {/* Team Summary */}
-      <View className={`p-4 border-t ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-        <View className="flex-row justify-between">
-          <View className="items-center">
-            <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              Total Players
-            </ThemedText>
-            <ThemedText className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {currentTeam?.players?.length || 0}
-            </ThemedText>
-          </View>
-          
-          <View className="items-center">
-            <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              Captain
-            </ThemedText>
-            <ThemedText className={`text-sm font-medium ${isDark ? "text-amber-400" : "text-amber-600"}`}>
-              {currentTeam?.players?.find(p => p?.isCaptain)?.name || "N/A"}
-            </ThemedText>
-          </View>
-          
-          <View className="items-center">
-            <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-              Wicket Keepers
-            </ThemedText>
-            <ThemedText className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-              {(currentTeam?.players || []).filter(p => p?.isWicketKeeper).length}
-            </ThemedText>
-          </View>
-        </View>
-      </View>
     </View>
   );
 }

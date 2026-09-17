@@ -369,6 +369,32 @@ export default function ScorerScreen() {
       cancelText: "Stay",
       onConfirm: () => {
         isLeavingRef.current = true;
+        const cameFromTournament = Boolean(
+          route.params?.fromTournament ||
+          route.params?.cameFromTournament ||
+          route.params?.returnScreen === SCREENS.TournamentProfile
+        );
+        const currentDetails = matchDetailsRef.current;
+        const tournamentId =
+          route.params?.tournamentId ||
+          route.params?.tournamentID ||
+          currentDetails?.tournamentId ||
+          currentDetails?.tournamentID ||
+          currentDetails?.tournament?._id ||
+          currentDetails?.tournament;
+
+        if (cameFromTournament && tournamentId) {
+          if (navigation.reset) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: SCREENS.TournamentProfile, params: { tournamentId } }],
+            });
+          } else {
+            navigation.navigate(SCREENS.TournamentProfile, { tournamentId });
+          }
+          return;
+        }
+
         if (navigation.reset) {
           navigation.reset({
             index: 0,
@@ -379,7 +405,7 @@ export default function ScorerScreen() {
         }
       },
     });
-  }, [navigation, showAlert]);
+  }, [navigation, showAlert, route.params]);
 
   const handleGoHome = useCallback(() => {
     showAlert({
@@ -403,24 +429,29 @@ export default function ScorerScreen() {
     });
   }, [navigation, showAlert]);
 
+  const lastFocusFetchRef = useRef(0);
+
   useFocusEffect(
     useCallback(() => {
       isLeavingRef.current = false;
 
-      // Re-request score and match details on focus (e.g. after returning from PlayerSelectionScreen for Inning 2)
-      if (socketRef.current && matchID) {
-        console.log("🔌 [ScorerScreen] Re-requesting score on focus:", matchID);
-        socketRef.current.emit("score", { matchId: matchID, matchID });
-      }
-      if (matchID) {
-        matchesApi
-          .getMatchById(matchID)
-          .then((res) => {
-            if (res?.data) {
-              setMatchDetails(res.data);
-            }
-          })
-          .catch(() => {});
+      // Throttle focus refetch to avoid repeated calls
+      const now = Date.now();
+      if (now - lastFocusFetchRef.current > 5000) {
+        lastFocusFetchRef.current = now;
+        if (socketRef.current && matchID) {
+          socketRef.current.emit("score", { matchId: matchID, matchID });
+        }
+        if (matchID) {
+          matchesApi
+            .getMatchById(matchID)
+            .then((res) => {
+              if (res?.data) {
+                setMatchDetails(res.data);
+              }
+            })
+            .catch(() => {});
+        }
       }
 
       const backAction = () => {
@@ -531,10 +562,22 @@ export default function ScorerScreen() {
               }
             }
 
-            const activeBatsmenIds = (currentScore?.batsman || []).map((b) => String(b.id || b.playerId || b._id));
-            const outBatsmenIds = (currentScore?.outBatsman || []).map((b) => String(b.id || b.playerId || b._id));
-            const eligible = squad.filter((p) => !activeBatsmenIds.includes(String(p.id || p._id || p.playerId)) && !outBatsmenIds.includes(String(p.id || p._id || p.playerId)));
-            setAvailableBatters(eligible.length > 0 ? eligible : squad);
+            const outBatsmenIds = [
+              ...(currentScore?.outBatsman || []).map((b) => String(b.id || b.playerId || b._id)),
+              ...(currentScore?.fallOfWickets || []).map((f) => String(f.batsman?.playerId || f.batsman?._id || f.batsman?.id)),
+              ...(currentScore?.batsman || []).filter((b) => b.notOut === false || b.dismissalInfo).map((b) => String(b.id || b.playerId || b._id)),
+            ];
+            const outSet = new Set(outBatsmenIds.filter(Boolean));
+            const activeBatsmenIds = (currentScore?.batsman || [])
+              .filter((b) => b.notOut !== false && !b.dismissalInfo)
+              .map((b) => String(b.id || b.playerId || b._id))
+              .filter((id) => !outSet.has(id));
+            const activeSet = new Set(activeBatsmenIds);
+            const eligible = squad.filter((p) => {
+              const pid = String(p.id || p._id || p.playerId);
+              return !activeSet.has(pid) && !outSet.has(pid);
+            });
+            setAvailableBatters(eligible);
             setNextBatterModalVisible(true);
           } else if (sheetToResume === "nextBowler") {
             const bowlTeam = allTeams.find((t) => bowlingId && String(t.teamId || t.id || t._id) === bowlingId) || allTeams[1] || allTeams[0];
@@ -693,21 +736,29 @@ export default function ScorerScreen() {
         activeBatsmen: snapshotActiveBatsmen,
       };
 
-      const activeBatsmenIds = (latestScore?.batsman || []).map((b) =>
-        String(b.id || b.playerId || b._id)
-      );
-      const outBatsmenIds = (latestScore?.outBatsman || []).map((b) =>
-        String(b.id || b.playerId || b._id)
-      );
+      const allOutBatsmenIds = [
+        ...(latestScore?.outBatsman || []).map((b) => String(b.id || b.playerId || b._id)),
+        ...(latestScore?.fallOfWickets || []).map((f) => String(f.batsman?.playerId || f.batsman?._id || f.batsman?.id)),
+        ...(latestScore?.batsman || []).filter((b) => b.notOut === false || b.dismissalInfo).map((b) => String(b.id || b.playerId || b._id)),
+        ...(options?.outBatman ? [String(options.outBatman)] : []),
+      ];
+      const outSet = new Set(allOutBatsmenIds.filter(Boolean));
 
-      const eligibleBatters =
-        latestScore?.batsmanUpcoming && latestScore.batsmanUpcoming.length > 0
+      const activeBatsmenIds = (latestScore?.batsman || [])
+        .filter((b) => b.notOut !== false && !b.dismissalInfo)
+        .map((b) => String(b.id || b.playerId || b._id))
+        .filter((id) => !outSet.has(id));
+      const activeSet = new Set(activeBatsmenIds);
+
+      const candidateList =
+        Array.isArray(latestScore?.batsmanUpcoming) && latestScore.batsmanUpcoming.length > 0
           ? latestScore.batsmanUpcoming
-          : battingSquad.filter(
-              (p) =>
-                !activeBatsmenIds.includes(String(p.id || p._id || p.playerId)) &&
-                !outBatsmenIds.includes(String(p.id || p._id || p.playerId))
-            );
+          : battingSquad;
+
+      const eligibleBatters = candidateList.filter((p) => {
+        const pid = String(p.id || p._id || p.playerId);
+        return !activeSet.has(pid) && !outSet.has(pid);
+      });
 
       setAvailableBatters(eligibleBatters);
       setNextBatterModalVisible(true);
@@ -985,20 +1036,8 @@ export default function ScorerScreen() {
   };
 
   const handleSuperOver = () => {
-    Alert.alert(
-      "Super Over",
-      "Create a Super Over? Each team will play 1 over to break the tie.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Start Super Over",
-          onPress: () => {
-            updateScore(MATCH_ACTION.SUPER_OVER, {});
-            setMatchTiedModalVisible(false);
-          },
-        },
-      ]
-    );
+    updateScore(MATCH_ACTION.SUPER_OVER, {});
+    setMatchTiedModalVisible(false);
   };
 
   const handleDeclareTied = () => {
@@ -1031,7 +1070,17 @@ export default function ScorerScreen() {
             setMatchCompleteModalVisible(false);
             isLeavingRef.current = true;
             setTimeout(() => {
-              navigation.navigate(SCREENS.MatchScoreCard, { matchId: matchID });
+              if (navigation.reset) {
+                navigation.reset({
+                  index: 1,
+                  routes: [
+                    { name: SCREENS.Home },
+                    { name: SCREENS.MatchScoreCard, params: { matchId: matchID } },
+                  ],
+                });
+              } else {
+                navigation.navigate(SCREENS.MatchScoreCard, { matchId: matchID });
+              }
             }, 1000);
           },
         },
@@ -1328,7 +1377,7 @@ export default function ScorerScreen() {
     });
 
     // Generate a unique ID for this action so it can be tracked in the queue
-      const actionId = generateActionId();
+    const actionId = generateActionId();
     const payload = {
       userId: effectiveUserId,
       matchId: matchID,
@@ -1469,8 +1518,16 @@ export default function ScorerScreen() {
 
   // Smart scoring interceptor: prompts BallTrackerModal when either check is ON
   const scoreBall = (params) => {
-    if (isWagonWheelChecked || isPitchMapChecked) {
-      setPendingBallParams(params);
+    const dismissalType =
+      params?.dismissalInfo?.dismissalType ||
+      params?.dismissalType ||
+      "";
+    const isBowled = String(dismissalType).toLowerCase() === "bowled";
+    const effectiveWagonWheel = isBowled ? false : isWagonWheelChecked;
+    const effectivePitchMap = isPitchMapChecked;
+
+    if (effectiveWagonWheel || effectivePitchMap) {
+      setPendingBallParams({ ...params, isBowled });
       setShowBallTrackerModal(true);
     } else {
       handleBall(params);
@@ -1518,16 +1575,7 @@ export default function ScorerScreen() {
 
   const rightButtons = ["UNDO", "5,7", "OUT", "LB"];
 
-  // ─── RENDER-TIME DEBUG ────────────────────────────────────────────────
-  console.log("═══════════════════════════════════════════════");
-  console.log("[RENDER] isStatusChecked:", isStatusChecked);
-  console.log("[RENDER] matchID:", matchID);
-  console.log("[RENDER] score.batting:", score?.batting);
-  console.log("[RENDER] score.batsman:", score?.batsman);
-  console.log("[RENDER] score.bowler:", score?.bowler);
-  console.log("[RENDER] score.totalOvers:", score?.totalOvers);
-  console.log("[RENDER] score keys:", Object.keys(score || {}));
-  console.log("═══════════════════════════════════════════════");
+
 
   // Gate render until the initial status-check API call completes.
   if (!isStatusChecked) {
@@ -1630,6 +1678,14 @@ export default function ScorerScreen() {
     players: resolvedBowlingObj?.players || resolvedBowlingObj?.squad || [],
   };
 
+  const hasTopBanner = Boolean(
+    !isConnected ||
+    (isConnected && pendingActionCount > 0) ||
+    powerplayBanner ||
+    (Number(score?.powerplayOvers) > 0 &&
+      parseFloat(score?.batting?.score?.over || "0") < Number(score.powerplayOvers))
+  );
+
   return (
     <ScorerScreenContext.Provider value={{ score }}>
       <View style={{ flex: 1, backgroundColor: isDarkMode ? "#111827" : "#ffffff" }}>
@@ -1722,19 +1778,22 @@ export default function ScorerScreen() {
           <View
             style={[
               styles.scoreContainer,
+              { paddingVertical: hasTopBanner ? 8 : 18 ,flex:1},
               isDarkMode ? styles.scoreContainerDark : styles.scoreContainerLight,
             ]}
             className="items-center justify-center bg-primary"
           >
-            <ThemedText className="text-4xl font-bold text-white">
+            <ThemedText className={`${hasTopBanner ? "text-3xl" : "text-4xl"} font-bold text-white`}>
               {`${score?.batting?.score?.runs ?? 0}/${score?.batting?.score?.wicket ?? 0}`}
             </ThemedText>
-            <ThemedText className="text-2xl text-gray-200">
+            <ThemedText className={`${hasTopBanner ? "text-lg" : "text-2xl"} text-gray-200`}>
               {`(${score?.batting?.score?.over ?? 0}/${score?.totalOvers ?? 0})`}
             </ThemedText>
-            <ThemedText className="text-xl text-gray-400">
-              {score?.description || ""}
-            </ThemedText>
+            {Boolean(score?.description) && (
+              <ThemedText className={`${hasTopBanner ? "text-xs" : "text-sm"} text-gray-300 mt-0.5 text-center px-4`}>
+                {score.description}
+              </ThemedText>
+            )}
           </View>
 
           {/* Batsmen */}
@@ -2160,6 +2219,7 @@ export default function ScorerScreen() {
             batsmen={score?.batsman}
             bowler={score?.bowler}
             navigation={navigation}
+            disabled={Boolean(matchStatus.isInningCompleted)}
             cb={() => emit("score", { matchId: matchID })}
           />
         </ScrollView>
@@ -2574,10 +2634,10 @@ export default function ScorerScreen() {
               <Ionicons name="close" size={24} color={isDarkMode ? "#9ca3af" : "#6b7280"} />
             </TouchableOpacity>
 
-            <ThemedText style={{ fontSize: 22, fontWeight: "bold", marginBottom: 8, marginTop: 4 }}>
+            <ThemedText style={{ fontSize: 22, fontWeight: "bold", marginBottom: 8, marginTop: 4, color: isDarkMode ? "#ffffff" : "#111827" }}>
               🏏 End of Innings 1
             </ThemedText>
-            <ThemedText style={{ fontSize: 15, color: "#9ca3af", textAlign: "center", marginBottom: 16 }}>
+            <ThemedText style={{ fontSize: 15, color: isDarkMode ? "#d1d5db" : "#4b5563", textAlign: "center", marginBottom: 16 }}>
               {`${score?.batting?.teamName || "Team"} scored ${score?.batting?.score?.runs || 0}/${score?.batting?.score?.wicket || 0} in ${score?.batting?.score?.over || 0} overs.`}
             </ThemedText>
             <View
@@ -2659,7 +2719,7 @@ export default function ScorerScreen() {
               { backgroundColor: isDarkMode ? "#1f2937" : "#ffffff" },
             ]}
           >
-            <ThemedText style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8 }}>
+            <ThemedText style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, color: isDarkMode ? "#ffffff" : "#111827" }}>
               🏆 Match Completed!
             </ThemedText>
             <ThemedText style={{ fontSize: 15, color: "#10b981", fontWeight: "600", textAlign: "center", marginBottom: 20 }}>
@@ -2669,7 +2729,17 @@ export default function ScorerScreen() {
               onPress={() => {
                 setMatchCompleteModalVisible(false);
                 isLeavingRef.current = true;
-                navigation.navigate(SCREENS.MatchScoreCard, { matchId: matchID });
+                if (navigation.reset) {
+                  navigation.reset({
+                    index: 1,
+                    routes: [
+                      { name: SCREENS.Home },
+                      { name: SCREENS.MatchScoreCard, params: { matchId: matchID } },
+                    ],
+                  });
+                } else {
+                  navigation.navigate(SCREENS.MatchScoreCard, { matchId: matchID });
+                }
               }}
               style={{
                 width: "100%",
@@ -2688,7 +2758,14 @@ export default function ScorerScreen() {
               onPress={() => {
                 setMatchCompleteModalVisible(false);
                 isLeavingRef.current = true;
-                navigation.navigate(SCREENS.Home);
+                if (navigation.reset) {
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: SCREENS.Home }],
+                  });
+                } else {
+                  navigation.navigate(SCREENS.Home);
+                }
               }}
               style={{
                 width: "100%",
@@ -2944,6 +3021,11 @@ export default function ScorerScreen() {
           ballType: pendingBallParams?.ballType ?? "ball",
           isBoundary: pendingBallParams?.isBoundary ?? false,
           isWicket: pendingBallParams?.isWicket ?? false,
+          isBowled: pendingBallParams?.isBowled ?? false,
+          dismissalType:
+            pendingBallParams?.dismissalInfo?.dismissalType ||
+            pendingBallParams?.dismissalType ||
+            "",
           strikerName:
             score?.batsman?.find((b) => b?.isStrikeEnd)?.name ||
             score?.batsman?.[0]?.name ||
@@ -2960,7 +3042,7 @@ export default function ScorerScreen() {
             score?.type === "box",
           matchType: matchDetails?.matchType || score?.matchType || "",
         }}
-        isWagonWheelEnabled={isWagonWheelChecked}
+        isWagonWheelEnabled={isWagonWheelChecked && !pendingBallParams?.isBowled}
         isPitchMapEnabled={isPitchMapChecked}
       />
 

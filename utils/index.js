@@ -269,12 +269,18 @@ export const canNavigateBackTo = (currentScreen, matchStatus) => {
 };
 
 export const exitPreScoreFlow = (navigation, params = {}) => {
+  const cameFromTournament = Boolean(
+    params.fromTournament ||
+    params.cameFromTournament ||
+    params.returnScreen === SCREENS.TournamentProfile ||
+    params.initiatorScreen === SCREENS.TournamentProfile
+  );
   const tournamentId =
     params.tournamentId ||
     params.tournamentID ||
     params.tournament?._id ||
     params.tournament;
-  if (tournamentId) {
+  if (cameFromTournament && tournamentId) {
     if (navigation.reset) {
       navigation.reset({
         index: 0,

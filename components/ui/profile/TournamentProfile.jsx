@@ -562,7 +562,14 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       0,
     status: tournamentData?.status || "upcoming",
     format: tournamentData?.format || tournamentData?.category || "Standard",
-    prizeMoney: tournamentData?.prizeMoney || "Not Specified",
+    prizeMoney: tournamentData?.prizeMoney
+      ? (String(tournamentData.prizeMoney).startsWith("₹") ? String(tournamentData.prizeMoney) : `₹${tournamentData.prizeMoney}`)
+      : tournamentData?.prize
+      ? (String(tournamentData.prize).startsWith("₹") ? String(tournamentData.prize) : `₹${tournamentData.prize}`)
+      : "Not Specified",
+    entryFee: tournamentData?.entryFee !== undefined && tournamentData?.entryFee !== null && tournamentData?.entryFee !== ""
+      ? (Number(tournamentData.entryFee) === 0 ? "Free" : (String(tournamentData.entryFee).startsWith("₹") ? String(tournamentData.entryFee) : `₹${tournamentData.entryFee}`))
+      : "Free",
     ballType: tournamentData?.ballType
       ? String(tournamentData.ballType).toUpperCase()
       : "Standard",
@@ -665,6 +672,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       tournamentID: tournament.id,
       tournament: tournamentData || tournament,
       returnScreen: SCREENS.TournamentProfile,
+      fromTournament: true,
+      cameFromTournament: true,
     });
   };
 
@@ -1184,6 +1193,32 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
             </ThemedText>
           </View>
 
+          {/* Entry Fee */}
+          <View className="flex-row justify-between items-center py-2">
+            <View className="flex-row items-center">
+              <Ionicons 
+                name="pricetag-outline" 
+                size={16} 
+                color={isDarkMode ? "#9CA3AF" : "#6B7280"} 
+                style={{marginRight: 8}}
+              />
+              <ThemedText
+                className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+              >
+                Entry Fee
+              </ThemedText>
+            </View>
+            <ThemedText
+              className={`font-bold ${
+                tournament.entryFee === "Free"
+                  ? (isDarkMode ? "text-green-400" : "text-green-600")
+                  : (isDarkMode ? "text-blue-400" : "text-blue-600")
+              }`}
+            >
+              {tournament.entryFee}
+            </ThemedText>
+          </View>
+
           <View className="flex-row justify-between items-center py-2">
             <View className="flex-row items-center">
               <Ionicons 
@@ -1674,7 +1709,34 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               const wins = item.totalWins ?? item.wins ?? item.w ?? 0;
               const losses = item.totalLosses ?? item.losses ?? item.l ?? 0;
               const nrr = item.totalNRR ?? item.netRunRate ?? item.nrr ?? "0.000";
-              const form = Array.isArray(item.last5Results) ? item.last5Results : (Array.isArray(item.recentForm) ? item.recentForm : []);
+              const rawForm = Array.isArray(item.last5Results) ? item.last5Results : (Array.isArray(item.recentForm) ? item.recentForm : []);
+              const targetTeamId = String(item.team?._id || item.teamId?._id || item.teamId || item._id || item.id || "");
+              const targetTeamName = String(teamName || "").toLowerCase().trim();
+
+              let resolvedForm = rawForm;
+              if (resolvedForm.length === 0 && Array.isArray(matchesList) && matchesList.length > 0) {
+                const teamEndedMatches = matchesList.filter((m) => {
+                  const rawStatus = String(m?.status || m?.matchCurrentStatus || "").toUpperCase();
+                  const isEnded = rawStatus.includes("ENDED") || rawStatus.includes("COMPLETED");
+                  if (!isEnded) return false;
+                  return (m?.teams || []).some((t) => {
+                    const tId = String(t?.teamId || t?._id || t?.id || "");
+                    const tName = String(t?.title || t?.teamName || t?.name || "").toLowerCase().trim();
+                    return (targetTeamId && tId && tId === targetTeamId) || (targetTeamName && tName && tName === targetTeamName);
+                  });
+                });
+
+                resolvedForm = teamEndedMatches.slice(0, 5).map((m) => {
+                  const winId = String(m?.matchResult?.winnerTeamId || m?.matchResult?.winningTeam || m?.winner || "");
+                  const winPrompt = String(m?.matchResult?.prompt || m?.description || "").toLowerCase();
+                  const winName = String(m?.matchResult?.winnerTeamName || "").toLowerCase().trim();
+
+                  if (targetTeamId && winId && winId === targetTeamId) return "W";
+                  if (targetTeamName && winName && winName === targetTeamName) return "W";
+                  if (targetTeamName && winPrompt.includes(targetTeamName) && winPrompt.includes("won")) return "W";
+                  return "L";
+                });
+              }
 
               return (
                 <View
@@ -1724,31 +1786,33 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                     </View>
                   </View>
 
-                  <View className="flex-row justify-between mb-2">
+                  <View className="flex-row items-center justify-between mb-2">
                     <ThemedText
                       className={`text-sm ${
                         isDarkMode ? "text-gray-400" : "text-gray-600"
                       }`}
                     >
-                      Matches: {matchesPlayed}
+                      M: <ThemedText className={`font-semibold ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>{matchesPlayed}</ThemedText>
                     </ThemedText>
-                    <ThemedText
-                      className={`text-sm ${
-                        isDarkMode ? "text-green-400" : "text-green-600"
-                      }`}
-                    >
-                      Wins: {wins}
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-sm ${
-                        isDarkMode ? "text-red-400" : "text-red-600"
-                      }`}
-                    >
-                      Losses: {losses}
-                    </ThemedText>
+                    <View className="flex-row items-center gap-3">
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-green-400" : "text-green-600"
+                        }`}
+                      >
+                        W: <ThemedText className="font-bold">{wins}</ThemedText>
+                      </ThemedText>
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-red-400" : "text-red-600"
+                        }`}
+                      >
+                        L: <ThemedText className="font-bold">{losses}</ThemedText>
+                      </ThemedText>
+                    </View>
                   </View>
 
-                  <View className="flex-row justify-between">
+                  <View className="flex-row items-center justify-between">
                     <ThemedText
                       className={`text-sm ${
                         isDarkMode ? "text-gray-400" : "text-gray-600"
@@ -1756,26 +1820,45 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                     >
                       NRR: {nrr}
                     </ThemedText>
-                    {form.length > 0 && (
-                      <View className="flex-row">
-                        {form.map((f, idx) => (
-                          <View
-                            key={idx}
-                            className={`w-5 h-5 rounded-full mx-1 items-center justify-center ${
-                              f === "W" ? "bg-green-100" : "bg-red-100"
-                            }`}
-                          >
-                            <ThemedText
-                              className={`text-xs ${
-                                f === "W" ? "text-green-800" : "text-red-800"
-                              }`}
-                            >
-                              {f}
-                            </ThemedText>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                    <View className="flex-row items-center">
+                      <ThemedText
+                        className={`text-xs mr-2 ${
+                          isDarkMode ? "text-gray-400" : "text-gray-500"
+                        }`}
+                      >
+                        Form:
+                      </ThemedText>
+                      {resolvedForm.length > 0 ? (
+                        <View className="flex-row items-center gap-1">
+                          {resolvedForm.map((f, fIdx) => {
+                            const isWin = String(f).toUpperCase().startsWith("W");
+                            return (
+                              <View
+                                key={fIdx}
+                                className={`w-5 h-5 rounded-full items-center justify-center ${
+                                  isWin ? "bg-emerald-500" : "bg-rose-500"
+                                }`}
+                                style={{
+                                  shadowColor: isWin ? "#10B981" : "#EF4444",
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.2,
+                                  shadowRadius: 2,
+                                  elevation: 1,
+                                }}
+                              >
+                                <ThemedText className="text-[10px] font-extrabold text-white">
+                                  {isWin ? "W" : "L"}
+                                </ThemedText>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ) : (
+                        <ThemedText className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                          -
+                        </ThemedText>
+                      )}
+                    </View>
                   </View>
                 </View>
               );

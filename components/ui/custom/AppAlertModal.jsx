@@ -45,12 +45,18 @@ export default function AppAlertModal({
   const getIconConfig = () => {
     switch (type) {
       case "danger":
-      case "warning":
         return {
-          name: "alert-triangle",
+          name: "alert-circle",
           color: "#EF4444",
           bg: isDark ? "rgba(239, 68, 68, 0.15)" : "#FEE2E2",
           gradient: ["#EF4444", "#DC2626"],
+        };
+      case "warning":
+        return {
+          name: "warning",
+          color: "#F59E0B",
+          bg: isDark ? "rgba(245, 158, 11, 0.15)" : "#FEF3C7",
+          gradient: ["#F59E0B", "#D97706"],
         };
       case "error":
         return {

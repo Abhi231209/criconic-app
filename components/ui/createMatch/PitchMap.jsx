@@ -202,35 +202,11 @@ const PitchMap = ({
 
   return (
     <View style={styles.container}>
-      {/* Top Header Row with Title & Stance Toggle */}
+      {/* Top Header Row with Title */}
       <View style={styles.topHeaderBar}>
         <Text style={[styles.titleText, { color: isDarkMode ? "#F8FAFC" : "#0F172A" }]}>
           {title || "Pitch Impact Map"}
         </Text>
-
-        {/* Stance Indicator / Switcher */}
-        <TouchableOpacity
-          onPress={toggleStance}
-          style={[
-            styles.stancePill,
-            {
-              backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
-              borderColor: isDarkMode ? "#334155" : "#CBD5E1",
-            },
-          ]}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.stanceIcon}>🏏</Text>
-          <Text
-            style={[
-              styles.stanceText,
-              { color: isDarkMode ? "#38BDF8" : "#0284C7" },
-            ]}
-          >
-            {stance === "RHB" ? "RHB (Right Hand)" : "LHB (Left Hand)"}
-          </Text>
-          <Text style={styles.stanceSwitchCue}>⇄</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Main Pitch Canvas */}
@@ -675,7 +651,7 @@ const PitchMap = ({
                   { color: isDarkMode ? "#94A3B8" : "#64748B" },
                 ]}
               >
-                {`${ballData.impactPoint.fromStumps}y from stumps • ${stance}`}
+                {`${ballData.impactPoint.fromStumps}y from stumps`}
               </Text>
             )}
           </View>

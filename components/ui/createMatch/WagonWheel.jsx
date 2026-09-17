@@ -148,9 +148,10 @@ const WagonWheel = ({
     const rad = (shotAngle * Math.PI) / 180;
     const originX = isBox ? boxCenterX : centerX;
     const originY = isBox ? boxCenterY : centerY;
+    const creaseY = isBox ? boxCenterY - 8 : centerY - 6;
     return {
       x: originX + shotDistance * Math.cos(rad),
-      y: originY + shotDistance * Math.sin(rad),
+      y: creaseY + shotDistance * Math.sin(rad),
     };
   };
 
@@ -177,8 +178,9 @@ const WagonWheel = ({
   // Touch handler for Standard Circular Stadium
   const handleTouchCircular = (x, y) => {
     if (readOnly) return;
+    const creaseY = centerY - 6;
     const dx = x - centerX;
-    const dy = y - centerY;
+    const dy = y - creaseY;
     let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
     if (angle < 0) angle += 360;
 
@@ -191,7 +193,7 @@ const WagonWheel = ({
 
     const rad = (angle * Math.PI) / 180;
     const finalX = isFourOrSix ? Math.round(centerX + radius * Math.cos(rad)) : Math.round(x);
-    const finalY = isFourOrSix ? Math.round(centerY + radius * Math.sin(rad)) : Math.round(y);
+    const finalY = isFourOrSix ? Math.round(creaseY + radius * Math.sin(rad)) : Math.round(y);
 
     const isLeft = x < centerX;
     const isOffSide = isRHB ? isLeft : !isLeft;
@@ -492,7 +494,7 @@ const WagonWheel = ({
   const renderHistoricalShots = () => {
     if (!historicalShots || historicalShots.length === 0) return null;
     const originX = isBox ? boxCenterX : centerX;
-    const originY = isBox ? boxCenterY : centerY;
+    const creaseY = isBox ? boxCenterY - 8 : centerY - 6;
 
     return historicalShots.map((shot, idx) => {
       const { x: shotX, y: shotY } = getShotCoordinates(shot);
@@ -502,10 +504,10 @@ const WagonWheel = ({
 
       return (
         <G key={`hist-${idx}`}>
-          {/* Glowing trajectory line */}
+          {/* Glowing trajectory line starting from the batting crease */}
           <Line
             x1={originX}
-            y1={originY}
+            y1={creaseY}
             x2={shotX}
             y2={shotY}
             stroke={color}
@@ -543,15 +545,15 @@ const WagonWheel = ({
   const renderCurrentShot = () => {
     if (!currentShot) return null;
     const originX = isBox ? boxCenterX : centerX;
-    const originY = isBox ? boxCenterY : centerY;
+    const creaseY = isBox ? boxCenterY - 8 : centerY - 6;
     const { x: shotX, y: shotY } = getShotCoordinates(currentShot);
 
     return (
       <G>
-        {/* Pulsing Trajectory Vector */}
+        {/* Pulsing Trajectory Vector starting from the batting crease */}
         <Line
           x1={originX}
-          y1={originY}
+          y1={creaseY}
           x2={shotX}
           y2={shotY}
           stroke="#EF4444"

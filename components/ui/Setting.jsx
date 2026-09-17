@@ -22,6 +22,8 @@ import { authApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import useAppTheme from "@/hooks/useAppTheme";
+import { showGlobalAlert } from "@/contexts/AlertContext";
+import analytics from "@/utils/analytics";
 
 export default function Settings() {
   const navigation = useNavigation();
@@ -72,29 +74,25 @@ export default function Settings() {
   const [darkModeEnabled, setDarkModeEnabled] = useState(isDarkMode);
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      {
-        text: "Cancel",
-        style: "cancel",
+    showGlobalAlert({
+      title: "Logout",
+      message: "Are you sure you want to logout?",
+      type: "danger",
+      confirmText: "Logout",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          await authApi.logout();
+        } catch (e) {
+          console.warn("[Logout] Error:", e);
+        } finally {
+          analytics.logLogout();
+          dispatch(logoutAction());
+          User.logout();
+          navigation.navigate(SCREENS.LoginScreen);
+        }
       },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await authApi.logout();
-          } catch (e) {
-            console.warn("[Logout] Error:", e);
-          } finally {
-            dispatch(logoutAction());
-            navigation.reset({
-              index: 0,
-              routes: [{ name: SCREENS.LoginScreen }],
-            });
-          }
-        },
-      },
-    ]);
+    });
   };
 
   const handleProfile = () => {
@@ -354,7 +352,7 @@ export default function Settings() {
                 <ThemedText
                   style={[
                     styles.itemTitle,
-                    isDarkMode ? styles.textDark : styles.textLight,
+                    isDarkMode ? styles.textWhite : styles.textBlack,
                   ]}
                 >
                   Theme Preference

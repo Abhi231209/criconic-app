@@ -24,13 +24,17 @@ import { getImageFullUrl } from "@/utils";
 import useAppTheme from "@/hooks/useAppTheme";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import analytics from "@/utils/analytics";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 export default function CustomDrawer(props) {
   const navigation = props?.navigation;
   // Drawer is the root navigator — navigate to Stack screens via the nested 'MainStack' route
   const navigateTo = (screen, params) => {
     props.navigation?.closeDrawer?.();
-    navigation.navigate('MainStack', { screen, params });
+    // Wait for drawer close animation to complete before navigating
+    setTimeout(() => {
+      navigation.navigate('MainStack', { screen, params });
+    }, 280);
   };
   const dispatch = useDispatch();
   const authUser = useSelector((state) => state.auth?.user);
@@ -56,31 +60,37 @@ export default function CustomDrawer(props) {
   }, [profileImageUrl]);
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          // Immediately close drawer
-          props.navigation?.closeDrawer?.();
-          try {
-            navigation.dispatch(DrawerActions.closeDrawer());
-          } catch (_) {}
+    // Show themed alert immediately on press (no animation delay)
+    showGlobalAlert({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      type: "danger",
+      confirmText: "Sign Out",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        props.navigation?.closeDrawer?.();
+        try {
+          navigation.dispatch(DrawerActions.closeDrawer());
+        } catch (_) {}
 
-          try {
-            await authApi.logout();
-          } catch (e) {
-            console.warn("Logout error:", e);
-          } finally {
-            analytics.logLogout();
-            dispatch(logoutAction());
-            User.logout();
-            navigation.navigate('MainStack', { screen: SCREENS.LoginScreen });
-          }
-        },
+        try {
+          await authApi.logout();
+        } catch (e) {
+          console.warn("[CustomDrawer] Logout error:", e);
+        } finally {
+          analytics.logLogout();
+          dispatch(logoutAction());
+          User.logout();
+          setTimeout(() => {
+            try {
+              navigation.navigate("MainStack", { screen: SCREENS.LoginScreen });
+            } catch (_) {
+              navigation.navigate(SCREENS.LoginScreen);
+            }
+          }, 200);
+        }
       },
-    ]);
+    });
   };
 
   const MenuItem = ({ icon, title, onPress, iconComponent: IconComponent = Ionicons, badge }) => (

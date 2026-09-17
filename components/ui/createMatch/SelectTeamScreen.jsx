@@ -21,6 +21,10 @@ import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import debounce from "lodash/debounce";
 
+// In-memory cache for instant pre-scorer screen loading
+let cachedTeams = null;
+let cachedTournamentTeams = {};
+
 export default function SelectTeamScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -29,10 +33,15 @@ export default function SelectTeamScreen() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   
-  const [teams, setTeams] = useState([]);
-  const [tournamentTeams, setTournamentTeams] = useState([]);
+  const [teams, setTeams] = useState(() => cachedTeams || []);
+  const [tournamentTeams, setTournamentTeams] = useState(() => (tournamentId && cachedTournamentTeams[tournamentId]) || []);
   const [tournamentTitle, setTournamentTitle] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (tournamentId) {
+      return !cachedTournamentTeams[tournamentId] && !cachedTeams;
+    }
+    return !cachedTeams;
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState(tournamentId ? "tournamentTeams" : "myTeams");
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,6 +53,17 @@ export default function SelectTeamScreen() {
     const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
     const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
     const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
+    
+    // Safely extract players without them getting overwritten by an empty outer array
+    const rawPlayers =
+      (Array.isArray(t?.teamId?.players) && t.teamId.players.length > 0)
+        ? t.teamId.players
+        : (Array.isArray(t?.players) && t.players.length > 0)
+        ? t.players
+        : (Array.isArray(raw?.players) && raw.players.length > 0)
+        ? raw.players
+        : [];
+
     return {
       ...raw,
       id: teamId,
@@ -53,71 +73,128 @@ export default function SelectTeamScreen() {
       title: teamName,
       location: raw?.location || "Location not specified",
       image: rawImg ? (rawImg.startsWith("http") ? rawImg : getImageFullUrl(rawImg)) : null,
-      players: Array.isArray(raw?.players) ? raw.players : [],
+      players: rawPlayers,
       isMyTeam: isMy,
     };
   };
 
   const fetchTeams = async () => {
     try {
-      const promises = [
-        teamsApi.getMyTeams().catch(() => null),
-        teamsApi.getOpponentTeams().catch(() => null),
-      ];
-      if (tournamentId) {
-        promises.push(tournamentsApi.getTournamentById(tournamentId).catch(() => null));
-      }
-
-      const results = await Promise.all(promises);
-      const myRes = results[0];
-      const oppRes = results[1];
-      const tournRes = tournamentId ? results[2] : null;
-
-      let myData = [];
-      if (Array.isArray(myRes?.data)) {
-        myData = myRes.data.map((t) => normalizeTeam(t, true));
-      }
-
-      const rawOppList = Array.isArray(oppRes?.data?.content)
-        ? oppRes.data.content
-        : Array.isArray(oppRes?.data)
-        ? oppRes.data
-        : [];
-      const oppData = rawOppList.map((t) => normalizeTeam(t, false));
-
-      // Combine and deduplicate
-      const combined = [...myData];
-      const seenIds = new Set(myData.map((t) => t.id).filter(Boolean));
-      for (const t of oppData) {
-        if (t.id && !seenIds.has(t.id)) {
-          seenIds.add(t.id);
-          combined.push(t);
-        }
-      }
-
-      setTeams(combined);
-
-      if (tournRes) {
-        let tData =
-          tournRes?.data?.content ||
-          tournRes?.data?.tournament ||
-          tournRes?.data;
-        if (tData?.content) tData = tData.content;
-        if (tData) {
-          setTournamentTitle(tData.title || tData.name || "Tournament");
-          if (Array.isArray(tData.teams)) {
-            const parsedTeams = tData.teams.map((t) => {
-              const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
-              return normalizeTeam(innerTeam, false);
-            });
-            setTournamentTeams(parsedTeams);
+      // 1. Fetch My Teams first for instant display
+      teamsApi.getMyTeams().then((myRes) => {
+        if (Array.isArray(myRes?.data)) {
+          const myData = myRes.data.map((t) => normalizeTeam(t, true));
+          setTeams((prev) => {
+            const seen = new Set(myData.map((t) => t.id).filter(Boolean));
+            const existingOpp = prev.filter((t) => !t.isMyTeam && !seen.has(t.id));
+            const updated = [...myData, ...existingOpp];
+            cachedTeams = updated;
+            return updated;
+          });
+          if (tournamentId) {
+            setTournamentTeams((prev) =>
+              prev.map((tt) => {
+                if (!tt.players || tt.players.length === 0) {
+                  const match = myData.find((m) => String(m.id) === String(tt.id));
+                  if (match?.players?.length > 0) return { ...tt, players: match.players };
+                }
+                return tt;
+              })
+            );
           }
+          setLoading(false);
         }
+      }).catch(() => {});
+
+      // 2. Fetch Opponents in parallel
+      teamsApi.getOpponentTeams().then((oppRes) => {
+        const rawOppList = Array.isArray(oppRes?.data?.content)
+          ? oppRes.data.content
+          : Array.isArray(oppRes?.data)
+          ? oppRes.data
+          : [];
+        const oppData = rawOppList.map((t) => normalizeTeam(t, false));
+        setTeams((prev) => {
+          const seen = new Set(prev.map((t) => t.id).filter(Boolean));
+          const newOpp = oppData.filter((t) => t.id && !seen.has(t.id));
+          const updated = [...prev, ...newOpp];
+          cachedTeams = updated;
+          return updated;
+        });
+        if (tournamentId) {
+          setTournamentTeams((prev) =>
+            prev.map((tt) => {
+              if (!tt.players || tt.players.length === 0) {
+                const match = oppData.find((m) => String(m.id) === String(tt.id));
+                if (match?.players?.length > 0) return { ...tt, players: match.players };
+              }
+              return tt;
+            })
+          );
+        }
+        setLoading(false);
+      }).catch(() => {});
+
+      // 3. Fetch Tournament data if applicable
+      if (tournamentId) {
+        tournamentsApi.getTournamentById(tournamentId).then((tournRes) => {
+          let tData =
+            tournRes?.data?.content ||
+            tournRes?.data?.tournament ||
+            tournRes?.data;
+          if (tData?.content) tData = tData.content;
+          if (tData) {
+            setTournamentTitle(tData.title || tData.name || "Tournament");
+            if (Array.isArray(tData.teams)) {
+              const currentAllTeams = cachedTeams || [];
+              const parsedTeams = tData.teams.map((t) => {
+                const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
+                const normalized = normalizeTeam(innerTeam, false);
+                const tId = normalized.id;
+                
+                // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents!
+                if (!normalized.players || normalized.players.length === 0) {
+                  const matched = currentAllTeams.find((ct) => String(ct.id) === String(tId));
+                  if (matched && Array.isArray(matched.players) && matched.players.length > 0) {
+                    normalized.players = matched.players;
+                  }
+                }
+                return normalized;
+              });
+
+              setTournamentTeams(parsedTeams);
+              cachedTournamentTeams[tournamentId] = parsedTeams;
+
+              // Background-fetch details for any tournament teams still missing players
+              parsedTeams.forEach((pt) => {
+                if (!pt.players || pt.players.length === 0) {
+                  teamsApi.getTeamById(pt.id).then((teamDetailRes) => {
+                    const teamDataObj = Array.isArray(teamDetailRes?.data)
+                      ? teamDetailRes.data[0]
+                      : (teamDetailRes?.data?.data || teamDetailRes?.data?.team || teamDetailRes?.data);
+                    const pl = teamDataObj?.players;
+                    if (Array.isArray(pl) && pl.length > 0) {
+                      setTournamentTeams((prev) => {
+                        const updated = prev.map((item) =>
+                          item.id === pt.id ? { ...item, players: pl } : item
+                        );
+                        cachedTournamentTeams[tournamentId] = updated;
+                        return updated;
+                      });
+                    }
+                  }).catch(() => {});
+                }
+              });
+            }
+          }
+          setLoading(false);
+        }).catch(() => {
+          setLoading(false);
+        });
       }
     } catch (error) {
       console.warn("[SelectTeam] Failed to fetch teams:", error);
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };

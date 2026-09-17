@@ -368,8 +368,15 @@ export const tournamentsApi = {
     request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
-  getMatchesByTournament: (id, options = {}) =>
-    request(`api/matches/tournament/${id}`, { method: "GET", errorAlert: false, ...options }),
+  getMatchesByTournament: (id, options = {}) => {
+    const params = { limit: 10, page: 1, ...(options?.params || {}) };
+    const query = new URLSearchParams(params).toString();
+    return request(`api/matches/tournament/${id}${query ? `?${query}` : ""}`, {
+      method: "GET",
+      errorAlert: false,
+      ...options,
+    });
+  },
   getTiers: (options = {}) =>
     request("api/tournaments/tiers", { method: "GET", errorAlert: false, ...options }),
   requestUpgrade: (tournamentId, note, options = {}) =>
@@ -380,7 +387,8 @@ export const tournamentsApi = {
 
 export const matchesApi = {
   getMatches: (params = {}, options = {}) => {
-    const query = new URLSearchParams(params).toString();
+    const finalParams = { limit: 10, ...params };
+    const query = new URLSearchParams(finalParams).toString();
     return request(`api/matches${query ? `?${query}` : ""}`, {
       method: "GET",
       errorAlert: false,

@@ -1182,8 +1182,9 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             className={`p-4 rounded-xl mb-3 ${
               isDarkMode ? "bg-gray-800" : "bg-white"
             } shadow-sm`}
-            onPress={() => {
-              // Navigate to team details
+          onPress={() => {
+              const teamId = team._id || team.id || team.teamId;
+              navigation.navigate(SCREENS.TeamProfile, { teamId, team });
             }}
           >
             <View className="flex-row justify-between items-center mb-2">

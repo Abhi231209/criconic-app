@@ -30,6 +30,7 @@ import { login as loginAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 const { height } = Dimensions.get("window");
 
@@ -112,7 +113,11 @@ export default function SignUpScreen() {
   const handleGenerateOtp = async () => {
     const trimmedMobile = mobile.trim();
     if (!trimmedMobile || trimmedMobile.length !== 10) {
-      Alert.alert("Mobile Required", "Please enter a valid 10-digit mobile number.");
+      showGlobalAlert({
+        title: "Mobile Required",
+        message: "Please enter a valid 10-digit mobile number.",
+        type: "warning",
+      });
       return;
     }
 
@@ -137,24 +142,37 @@ export default function SignUpScreen() {
         if (res.data.isOTPByPass) {
           setIsOtpBypass(true);
           setIsPhoneValidated(true);
-          Alert.alert("Verified", res.data.message || "Mobile number verified successfully!");
+          showGlobalAlert({
+            title: "Verified",
+            message: res.data.message || "Mobile number verified successfully!",
+            type: "success",
+          });
         } else {
-          Alert.alert("OTP Sent", res.data.message || "OTP has been sent to your mobile number.");
+          showGlobalAlert({
+            title: "OTP Sent",
+            message: res.data.message || "OTP has been sent to your mobile number.",
+            type: "info",
+          });
         }
       } else {
         analytics.logAction("otp_request_failed", "authentication", {
           reason: res?.data?.message || "Failed to generate OTP",
         });
-        Alert.alert(
-          "Notice",
-          res?.data?.message || "Failed to generate OTP. Please try again."
-        );
+        showGlobalAlert({
+          title: "Notice",
+          message: res?.data?.message || "Failed to generate OTP. Please try again.",
+          type: "warning",
+        });
       }
     } catch (err) {
       analytics.logAction("otp_request_failed", "authentication", {
         reason: err?.response?.data?.message || "Network error",
       });
-      Alert.alert("Error", err?.response?.data?.message || "Failed to send OTP.");
+      showGlobalAlert({
+        title: "Error",
+        message: err?.response?.data?.message || "Failed to send OTP.",
+        type: "error",
+      });
     } finally {
       setIsGeneratingOtp(false);
     }
@@ -163,7 +181,11 @@ export default function SignUpScreen() {
   const handleValidateOtp = async () => {
     const trimmedOtp = otp.trim();
     if (!trimmedOtp) {
-      Alert.alert("OTP Required", "Please enter the OTP sent to your phone.");
+      showGlobalAlert({
+        title: "OTP Required",
+        message: "Please enter the OTP sent to your phone.",
+        type: "warning",
+      });
       return;
     }
 
@@ -178,18 +200,30 @@ export default function SignUpScreen() {
       if (res?.data?.success) {
         setIsPhoneValidated(true);
         analytics.logAction("otp_verified", "authentication", { success: true });
-        Alert.alert("Success", res.data.message || "Mobile number verified successfully!");
+        showGlobalAlert({
+          title: "Success",
+          message: res.data.message || "Mobile number verified successfully!",
+          type: "success",
+        });
       } else {
         analytics.logAction("otp_verification_failed", "authentication", {
           reason: res?.data?.message || "Invalid OTP",
         });
-        Alert.alert("Verification Failed", res?.data?.message || "Invalid OTP entered.");
+        showGlobalAlert({
+          title: "Verification Failed",
+          message: res?.data?.message || "Invalid OTP entered.",
+          type: "error",
+        });
       }
     } catch (err) {
       analytics.logAction("otp_verification_failed", "authentication", {
         reason: err?.response?.data?.message || "Validation error",
       });
-      Alert.alert("Error", err?.response?.data?.message || "OTP validation failed.");
+      showGlobalAlert({
+        title: "Error",
+        message: err?.response?.data?.message || "OTP validation failed.",
+        type: "error",
+      });
     } finally {
       setIsValidatingOtp(false);
     }
@@ -201,27 +235,47 @@ export default function SignUpScreen() {
     const trimmedPass = password.trim();
 
     if (!trimmedName || trimmedName.length < 2) {
-      Alert.alert("Required", "Please enter your full name (at least 2 characters).");
+      showGlobalAlert({
+        title: "Required",
+        message: "Please enter your full name (at least 2 characters).",
+        type: "warning",
+      });
       return;
     }
 
     if (!trimmedMobile || trimmedMobile.length !== 10) {
-      Alert.alert("Required", "Please enter a valid 10-digit mobile number.");
+      showGlobalAlert({
+        title: "Required",
+        message: "Please enter a valid 10-digit mobile number.",
+        type: "warning",
+      });
       return;
     }
 
     if (!isPhoneValidated && !isOtpBypass) {
-      Alert.alert("Mobile Verification Required", "Please verify your mobile number with the OTP first.");
+      showGlobalAlert({
+        title: "Mobile Verification Required",
+        message: "Please verify your mobile number with the OTP first.",
+        type: "warning",
+      });
       return;
     }
 
     if (!trimmedPass || trimmedPass.length < 6) {
-      Alert.alert("Weak Password", "Password must be at least 6 characters long.");
+      showGlobalAlert({
+        title: "Weak Password",
+        message: "Password must be at least 6 characters long.",
+        type: "warning",
+      });
       return;
     }
 
     if (trimmedPass !== confirmPassword.trim()) {
-      Alert.alert("Password Mismatch", "Password and Confirm Password do not match.");
+      showGlobalAlert({
+        title: "Password Mismatch",
+        message: "Password and Confirm Password do not match.",
+        type: "warning",
+      });
       return;
     }
 
@@ -255,13 +309,21 @@ export default function SignUpScreen() {
             dispatch(loginAction(user));
             User.login(user);
           }
-          Alert.alert("Success", "Account created successfully! Welcome to Criconic.", [
-            { text: "Continue", onPress: () => navigation.replace(SCREENS.Home) },
-          ]);
+          showGlobalAlert({
+            title: "Success",
+            message: "Account created successfully! Welcome to Criconic.",
+            type: "success",
+            confirmText: "Continue",
+            onConfirm: () => navigation.replace(SCREENS.Home),
+          });
         } catch {
-          Alert.alert("Account Created", "Registration successful! Please sign in with your credentials.", [
-            { text: "Sign In", onPress: () => navigation.navigate(SCREENS.LoginScreen) },
-          ]);
+          showGlobalAlert({
+            title: "Account Created",
+            message: "Registration successful! Please sign in with your credentials.",
+            type: "success",
+            confirmText: "Sign In",
+            onConfirm: () => navigation.navigate(SCREENS.LoginScreen),
+          });
         }
       } else {
         const errorMsg =
@@ -270,7 +332,11 @@ export default function SignUpScreen() {
             ? res.data.error.map((e) => e.message || e).join("\n")
             : "Registration failed. Please check your details.");
         analytics.logAction("sign_up_failed", "authentication", { reason: errorMsg });
-        Alert.alert("Registration Failed", errorMsg);
+        showGlobalAlert({
+          title: "Registration Failed",
+          message: errorMsg,
+          type: "error",
+        });
       }
     } catch (err) {
       const errorMsg =
@@ -279,7 +345,11 @@ export default function SignUpScreen() {
           ? err.response.data.error.map((e) => e.message || e).join("\n")
           : err.message || "An unexpected error occurred.");
       analytics.logAction("sign_up_failed", "authentication", { reason: errorMsg });
-      Alert.alert("Error", errorMsg);
+      showGlobalAlert({
+        title: "Error",
+        message: errorMsg,
+        type: "error",
+      });
     } finally {
       setIsLoading(false);
     }

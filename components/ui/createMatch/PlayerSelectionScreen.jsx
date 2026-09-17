@@ -381,6 +381,7 @@ export default function PlayerSelectionScreen() {
             setOpenersCompleted(true);
             isLeavingRef.current = true;
             navigation.replace(SCREENS.ScorerScreen, {
+              ...route.params,
               matchId,
               isSuperOver: true,
             });
@@ -796,6 +797,9 @@ export default function PlayerSelectionScreen() {
         currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
         isWagonWheelEnabled,
         isPitchMapEnabled,
+        tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+        fromTournament: Boolean(route.params?.fromTournament),
+        returnScreen: route.params?.returnScreen,
       };
 
       navigation.navigate(SCREENS.ScorerScreen, navParams);
@@ -823,6 +827,9 @@ export default function PlayerSelectionScreen() {
         currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
         isWagonWheelEnabled,
         isPitchMapEnabled,
+        tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+        fromTournament: Boolean(route.params?.fromTournament),
+        returnScreen: route.params?.returnScreen,
       });
     } finally {
       setIsSubmitting(false);

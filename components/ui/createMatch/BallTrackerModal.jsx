@@ -28,9 +28,15 @@ export default function BallTrackerModal({
   const isDarkMode = colorScheme === "dark";
   const C = isDarkMode ? COLORS.dark : COLORS.light;
 
+  const isBowled =
+    Boolean(ballContext?.isBowled) ||
+    String(ballContext?.dismissalType || "").toLowerCase() === "bowled" ||
+    String(ballContext?.dismissalInfo?.dismissalType || "").toLowerCase() === "bowled";
+  const effectiveWagonWheelEnabled = isBowled ? false : isWagonWheelEnabled;
+
   // Determine initial active tab
   const [activeTab, setActiveTab] = useState(
-    isPitchMapEnabled ? "pitch" : "wagon"
+    isPitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
   );
   const [selectedPitch, setSelectedPitch] = useState(null);
   const [selectedShot, setSelectedShot] = useState(null);
@@ -40,9 +46,11 @@ export default function BallTrackerModal({
       // Reset state for new ball
       setSelectedPitch(null);
       setSelectedShot(null);
-      setActiveTab(isPitchMapEnabled ? "pitch" : "wagon");
+      setActiveTab(
+        isPitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
+      );
     }
-  }, [visible, isPitchMapEnabled]);
+  }, [visible, isPitchMapEnabled, effectiveWagonWheelEnabled]);
 
   const {
     runs = 0,
@@ -96,7 +104,7 @@ export default function BallTrackerModal({
     onSkip?.();
   };
 
-  const bothEnabled = isPitchMapEnabled && isWagonWheelEnabled;
+  const bothEnabled = isPitchMapEnabled && effectiveWagonWheelEnabled;
 
   return (
     <Modal
@@ -264,7 +272,7 @@ export default function BallTrackerModal({
               />
             )}
 
-            {activeTab === "wagon" && isWagonWheelEnabled && (
+            {activeTab === "wagon" && effectiveWagonWheelEnabled && (
               <WagonWheel
                 size={280}
                 selectedShot={selectedShot}
