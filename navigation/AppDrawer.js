@@ -1,6 +1,6 @@
 import React from "react";
 import { createDrawerNavigator } from "@react-navigation/drawer";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, NavigationContext } from "@react-navigation/native";
 import SCREENS from "@/screens";
 import Home from "@/screens/Home";
 import LoginScreen from "@/screens/LoginScreen";
@@ -17,7 +17,11 @@ export default function AppDrawer() {
 
   return (
     <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawer {...props} />}
+      drawerContent={(props) => (
+        <NavigationContext.Provider value={props.navigation}>
+          <CustomDrawer {...props} />
+        </NavigationContext.Provider>
+      )}
       screenOptions={{
         drawerType: "back",
         headerShown: false, // Set true if you want header

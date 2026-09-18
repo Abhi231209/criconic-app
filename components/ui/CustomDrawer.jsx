@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from "react";
 import {
-  DrawerContentScrollView,
-} from "@react-navigation/drawer";
-import {
   View,
   Image,
   Switch,
+  ScrollView,
   TouchableOpacity,
   useColorScheme,
   Alert,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useNavigation } from "@react-navigation/native";
+import { DrawerActions } from "@react-navigation/native";
 import SCREENS from "@/screens";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,15 +21,27 @@ import { logout as logoutAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import { getImageFullUrl } from "@/utils";
-
 import useAppTheme from "@/hooks/useAppTheme";
+import useRequireAuth from "@/hooks/useRequireAuth";
+import analytics from "@/utils/analytics";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 export default function CustomDrawer(props) {
-  const navigation = useNavigation();
+  const navigation = props?.navigation;
+  // Drawer is the root navigator — navigate to Stack screens via the nested 'MainStack' route
+  const navigateTo = (screen, params) => {
+    props.navigation?.closeDrawer?.();
+    // Wait for drawer close animation to complete before navigating
+    setTimeout(() => {
+      navigation.navigate('MainStack', { screen, params });
+    }, 280);
+  };
   const dispatch = useDispatch();
   const authUser = useSelector((state) => state.auth?.user);
-  const { isDark, toggleTheme } = useAppTheme();
+  const { isLoggedIn, requireAuth } = useRequireAuth(navigation);
+  const { isDark, toggleTheme, themeMode, setThemeMode } = useAppTheme();
   const isDarkMode = isDark;
+  const insets = useSafeAreaInsets();
 
   const rawPhoto =
     authUser?.profileImage ||
@@ -49,31 +60,45 @@ export default function CustomDrawer(props) {
   }, [profileImageUrl]);
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await authApi.logout();
-          } catch (e) {
-            console.warn("Logout error:", e);
-          } finally {
-            dispatch(logoutAction());
-            navigation.reset({
-              index: 0,
-              routes: [{ name: SCREENS.LoginScreen }],
-            });
-          }
-        },
+    // Show themed alert immediately on press (no animation delay)
+    showGlobalAlert({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      type: "danger",
+      confirmText: "Sign Out",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        props.navigation?.closeDrawer?.();
+        try {
+          navigation.dispatch(DrawerActions.closeDrawer());
+        } catch (_) {}
+
+        try {
+          await authApi.logout();
+        } catch (e) {
+          console.warn("[CustomDrawer] Logout error:", e);
+        } finally {
+          analytics.logLogout();
+          dispatch(logoutAction());
+          User.logout();
+          setTimeout(() => {
+            try {
+              navigation.navigate("MainStack", { screen: SCREENS.LoginScreen });
+            } catch (_) {
+              navigation.navigate(SCREENS.LoginScreen);
+            }
+          }, 200);
+        }
       },
-    ]);
+    });
   };
 
   const MenuItem = ({ icon, title, onPress, iconComponent: IconComponent = Ionicons, badge }) => (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => {
+        analytics.logDrawerNavigation(title);
+        onPress?.();
+      }}
       activeOpacity={0.7}
       className={`flex-row items-center justify-between py-3 px-3.5 rounded-xl mb-1 ${
         isDarkMode ? "active:bg-gray-800" : "active:bg-gray-100"
@@ -101,7 +126,10 @@ export default function CustomDrawer(props) {
       </View>
 
       {badge ? (
-        <View className="px-2 py-0.5 rounded-full bg-blue-500/20">
+        <View
+          className="px-2 py-0.5 rounded-full"
+          style={{ backgroundColor: "rgba(59, 130, 246, 0.2)" }}
+        >
           <ThemedText className="text-[10px] font-bold text-blue-400">
             {badge}
           </ThemedText>
@@ -129,17 +157,18 @@ export default function CustomDrawer(props) {
   );
 
   return (
-    <DrawerContentScrollView
-      {...props}
+    <ScrollView
       style={{
         backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
+        flex: 1,
       }}
       contentContainerStyle={{
         flexGrow: 1,
-        padding: 0,
+        paddingTop: insets.top,
+        paddingBottom: insets.bottom + 16,
         backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
       }}
-      className={isDarkMode ? "bg-gray-900" : "bg-white"}
+      showsVerticalScrollIndicator={false}
     >
       <View
         style={{
@@ -219,73 +248,167 @@ export default function CustomDrawer(props) {
         */}
 
         {/* Real Dynamic User Profile Card */}
-        <LinearGradient
-          colors={
-            isDarkMode
-              ? ["#1E3A8A", "#1E1B4B"]
-              : ["#2563EB", "#1D4ED8"]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="p-4 rounded-2xl relative overflow-hidden"
+        <TouchableOpacity
+          activeOpacity={isLoggedIn ? 1 : 0.8}
+          onPress={() => {
+            if (!isLoggedIn) {
+              navigateTo(SCREENS.LoginScreen);
+            }
+          }}
         >
-          <View className="flex-row items-center">
-            <View className="w-12 h-12 rounded-full border-2 border-white/40 overflow-hidden mr-3 bg-white/20 items-center justify-center">
-              {profileImageUrl && !imageError ? (
-                <Image
-                  source={{ uri: profileImageUrl }}
-                  className="w-full h-full"
-                  resizeMode="cover"
-                  onError={() => setImageError(true)}
-                />
-              ) : (
-                <Ionicons name="person" size={24} color="#FFFFFF" />
+          <LinearGradient
+            colors={
+              isDarkMode
+                ? ["#1E3A8A", "#1E1B4B"]
+                : ["#2563EB", "#1D4ED8"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            className="p-4 rounded-2xl relative overflow-hidden"
+          >
+            <View className="flex-row items-center">
+              <View
+                className="w-12 h-12 rounded-full border-2 overflow-hidden mr-3 items-center justify-center"
+                style={{
+                  borderColor: "rgba(255, 255, 255, 0.4)",
+                  backgroundColor: "rgba(255, 255, 255, 0.2)",
+                }}
+              >
+                {profileImageUrl && !imageError && isLoggedIn ? (
+                  <Image
+                    source={{ uri: profileImageUrl }}
+                    className="w-full h-full"
+                    resizeMode="cover"
+                    onError={() => setImageError(true)}
+                  />
+                ) : (
+                  <Ionicons name="person" size={24} color="#FFFFFF" />
+                )}
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center">
+                  <ThemedText className="text-white text-base font-bold mr-1.5">
+                    {isLoggedIn
+                      ? authUser?.username || authUser?.name || "Player Profile"
+                      : "Guest User"}
+                  </ThemedText>
+                  {isLoggedIn ? (
+                    <Ionicons name="checkmark-circle" size={14} color="#60A5FA" />
+                  ) : null}
+                </View>
+                <ThemedText className="text-blue-200 text-xs mt-0.5">
+                  {isLoggedIn
+                    ? authUser?.mobile
+                      ? `+91 ${authUser.mobile}`
+                      : authUser?.email || "Criconic Member"
+                    : "Tap to sign in / create account"}
+                </ThemedText>
+              </View>
+              {!isLoggedIn && (
+                <Ionicons name="log-in-outline" size={20} color="#93C5FD" />
               )}
             </View>
-            <View className="flex-1">
-              <View className="flex-row items-center">
-                <ThemedText className="text-white text-base font-bold mr-1.5">
-                  {authUser?.username || authUser?.name || "Player Profile"}
-                </ThemedText>
-                {authUser ? (
-                  <Ionicons name="checkmark-circle" size={14} color="#60A5FA" />
-                ) : null}
-              </View>
-              <ThemedText className="text-blue-200 text-xs mt-0.5">
-                {authUser?.mobile ? `+91 ${authUser.mobile}` : authUser?.email || "Criconic User"}
-              </ThemedText>
-            </View>
-          </View>
-        </LinearGradient>
+          </LinearGradient>
+        </TouchableOpacity>
 
-        {/* Theme Toggle Pill */}
+        {/* Theme Selector (Light / Dark / System) */}
         <View
-          className={`flex-row items-center justify-between p-3 rounded-xl mt-3 border ${
-            isDarkMode
-              ? "bg-gray-800/80 border-gray-700"
-              : "bg-gray-50 border-gray-100"
-          }`}
+          className="p-2.5 rounded-xl mt-3 border"
+          style={{
+            backgroundColor: isDarkMode ? "rgba(31, 41, 55, 0.85)" : "#F3F4F6",
+            borderColor: isDarkMode ? "#374151" : "#E5E7EB",
+          }}
         >
-          <View className="flex-row items-center">
-            <Ionicons
-              name={isDarkMode ? "moon" : "sunny"}
-              size={16}
-              color={isDarkMode ? "#FBBF24" : "#D97706"}
-            />
+          <View className="flex-row items-center justify-between mb-2 px-1">
             <ThemedText
-              className={`text-xs font-semibold ml-2.5 ${
-                isDarkMode ? "text-gray-200" : "text-gray-800"
+              className={`text-xs font-bold uppercase tracking-wider ${
+                isDarkMode ? "text-gray-400" : "text-gray-500"
               }`}
             >
-              {isDarkMode ? "Dark Mode" : "Light Mode"}
+              Theme
+            </ThemedText>
+            <ThemedText
+              className={`text-xs font-semibold ${
+                isDarkMode ? "text-blue-400" : "text-blue-600"
+              }`}
+            >
+              {themeMode === "system"
+                ? "System"
+                : isDarkMode
+                ? "Dark"
+                : "Light"}
             </ThemedText>
           </View>
-          <Switch
-            value={isDarkMode}
-            onValueChange={toggleTheme}
-            thumbColor={isDarkMode ? "#3B82F6" : "#FFFFFF"}
-            trackColor={{ false: "#CBD5E1", true: "#1D4ED8" }}
-          />
+
+          <View
+            className="flex-row rounded-lg p-1"
+            style={{
+              backgroundColor: isDarkMode
+                ? "rgba(17, 24, 39, 0.65)"
+                : "rgba(229, 231, 235, 0.75)",
+            }}
+          >
+            {[
+              { id: "light", label: "Light", icon: "sunny" },
+              { id: "dark", label: "Dark", icon: "moon" },
+              { id: "system", label: "System", icon: "phone-portrait-outline" },
+            ].map((opt) => {
+              const isSelected = themeMode === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => {
+                    analytics.logAction("theme_mode_changed", "drawer", {
+                      mode: opt.id,
+                    });
+                    setThemeMode(opt.id);
+                  }}
+                  activeOpacity={0.8}
+                  className={`flex-1 flex-row items-center justify-center py-1.5 rounded-md ${
+                    isSelected
+                      ? isDarkMode
+                        ? "bg-blue-600"
+                        : "bg-white"
+                      : "bg-transparent"
+                  }`}
+                  style={
+                    isSelected
+                      ? {
+                          elevation: 1,
+                        }
+                      : undefined
+                  }
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={14}
+                    color={
+                      isSelected
+                        ? isDarkMode
+                          ? "#FFFFFF"
+                          : "#2563EB"
+                        : isDarkMode
+                        ? "#9CA3AF"
+                        : "#64748B"
+                    }
+                  />
+                  <ThemedText
+                    className={`text-xs font-semibold ml-1.5 ${
+                      isSelected
+                        ? isDarkMode
+                          ? "text-white"
+                          : "text-blue-600"
+                        : isDarkMode
+                        ? "text-gray-400"
+                        : "text-gray-600"
+                    }`}
+                  >
+                    {opt.label}
+                  </ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </View>
 
@@ -295,17 +418,23 @@ export default function CustomDrawer(props) {
         <MenuItem
           icon="add-circle-outline"
           title="Create Match"
-          onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.CreateMatch))
+          }
         />
         <MenuItem
           icon="people-outline"
           title="Create Team"
-          onPress={() => navigation.navigate(SCREENS.CreateTeam)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.CreateTeam))
+          }
         />
         <MenuItem
           icon="trophy-outline"
           title="Create Tournament"
-          onPress={() => navigation.navigate(SCREENS.CreateTournament)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.CreateTournament))
+          }
         />
 
         <SectionHeading title="My Cricket" />
@@ -313,54 +442,81 @@ export default function CustomDrawer(props) {
           icon="cricket"
           title="My Matches"
           iconComponent={MaterialCommunityIcons}
-          onPress={() => navigation.navigate(SCREENS.MyCricket)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.MyCricket))
+          }
         />
         <MenuItem
           icon="trophy-outline"
           title="My Tournaments"
-          onPress={() => navigation.navigate(SCREENS.AllTournaments)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.AllTournaments))
+          }
         />
         <MenuItem
           icon="person-outline"
           title="Player Profile"
-          onPress={() => navigation.navigate(SCREENS.PlayerProfile)}
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.PlayerProfile))
+          }
         />
         <MenuItem
           icon="podium-outline"
           title="Local Rankings"
-          onPress={() => navigation.navigate(SCREENS.PlayerRankings)}
+          onPress={() => navigateTo(SCREENS.PlayerRankings)}
         />
 
         <SectionHeading title="Preferences" />
         <MenuItem
           icon="settings-outline"
           title="Settings"
-          onPress={() => navigation.navigate(SCREENS.Settings)}
+          onPress={() => navigateTo(SCREENS.Settings)}
         />
       </View>
 
-        {/* Sign Out Action at Bottom */}
+        {/* Sign Out or Sign In Action at Bottom */}
         <View className="mt-auto px-4 py-6">
-          <TouchableOpacity
-            onPress={handleLogout}
-            activeOpacity={0.7}
-            className={`flex-row items-center justify-center py-3 rounded-xl border ${
-              isDarkMode
-                ? "bg-red-950/20 border-red-900/50"
-                : "bg-red-50 border-red-200"
-            }`}
-          >
-            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-            <ThemedText
-              className={`text-xs font-bold ml-2 ${
-                isDarkMode ? "text-red-400" : "text-red-600"
-              }`}
+          {isLoggedIn ? (
+            <TouchableOpacity
+              onPress={handleLogout}
+              activeOpacity={0.7}
+              className="flex-row items-center justify-center py-3 rounded-xl border"
+              style={{
+                backgroundColor: isDarkMode ? "rgba(69, 10, 10, 0.25)" : "#FEF2F2",
+                borderColor: isDarkMode ? "rgba(127, 29, 29, 0.5)" : "#FECACA",
+              }}
             >
-              Sign Out
-            </ThemedText>
-          </TouchableOpacity>
+              <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+              <ThemedText
+                className={`text-xs font-bold ml-2 ${
+                  isDarkMode ? "text-red-400" : "text-red-600"
+                }`}
+              >
+                Sign Out
+              </ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => navigateTo(SCREENS.LoginScreen)}
+              activeOpacity={0.85}
+              className="rounded-xl overflow-hidden"
+              style={{ elevation: 2 }}
+            >
+              <LinearGradient
+                colors={["#2563EB", "#1D4ED8"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                className="py-3 flex-row items-center justify-center"
+              >
+                <Ionicons name="log-in-outline" size={18} color="#FFFFFF" />
+                <ThemedText className="text-xs font-bold text-white ml-2">
+                  Sign In / Register
+                </ThemedText>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-    </DrawerContentScrollView>
+    </ScrollView>
   );
 }

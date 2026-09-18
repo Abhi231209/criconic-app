@@ -16,6 +16,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { searchApi } from "@/utils/api";
+import analytics from "@/utils/analytics";
 
 export default function SearchScreen() {
   const navigation = useNavigation();
@@ -166,6 +167,7 @@ export default function SearchScreen() {
       return;
     }
 
+    analytics.logSearch(q);
     setIsSearching(true);
     try {
       const res = await searchApi.search(q);
@@ -209,7 +211,10 @@ export default function SearchScreen() {
 
   const TabButton = ({ tab }) => (
     <TouchableOpacity
-      onPress={() => setActiveTab(tab.id)}
+      onPress={() => {
+        analytics.logTabChange(tab.id, "search_category");
+        setActiveTab(tab.id);
+      }}
       className={`flex-1 py-3 px-2 items-center rounded-lg mx-1 ${
         activeTab === tab.id
           ? "bg-blue-600"

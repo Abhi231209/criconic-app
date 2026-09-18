@@ -3,10 +3,12 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  NavigationContext,
 } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import SCREENS from "@/screens";
 import LoginScreen from "@/screens/LoginScreen";
+import SignUpScreen from "@/screens/SignUpScreen";
 import { View } from "react-native";
 import Home from "@/screens/Home";
 import AppDrawer from "@/navigation/AppDrawer";
@@ -61,15 +63,22 @@ const Drawer = createDrawerNavigator();
 function MainStack() {
   return (
     <Stack.Navigator
+      initialRouteName={SCREENS.Home}
       screenOptions={{
         headerShown: false, // Hide header for all stack screens
       }}
     >
-      {/* <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} /> */}
-      {/* <Stack.Screen name="MatchDetailsScreen" component={MatchDetailsScreen} /> */}
+      <Stack.Screen name={SCREENS.Home} component={Home} />
       <Stack.Screen
         name={SCREENS.LoginScreen}
         component={LoginScreen}
+        options={{
+          swipeEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name={SCREENS.SignUpScreen}
+        component={SignUpScreen}
         options={{
           swipeEnabled: false,
         }}
@@ -78,7 +87,6 @@ function MainStack() {
       <Stack.Screen name={SCREENS.MainDrawer} component={AppDrawer} />
 
       <Stack.Screen name={SCREENS.NavBar} component={NavBar} />
-      <Stack.Screen name={SCREENS.Home} component={Home} />
 
       <Stack.Screen name={SCREENS.ScoreCard} component={ScoreCard} />
       <Stack.Screen name={SCREENS.MatchScoreCard} component={MatchScoreCard} />
@@ -153,7 +161,11 @@ export default function AppNavigator() {
   const { isDark } = useAppTheme();
   return (
     <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawer {...props} />}
+      drawerContent={(props) => (
+        <NavigationContext.Provider value={props.navigation}>
+          <CustomDrawer {...props} />
+        </NavigationContext.Provider>
+      )}
       screenOptions={{
         swipeEnabled: false,
         drawerType: "back",

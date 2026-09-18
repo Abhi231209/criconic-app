@@ -15,6 +15,7 @@ import ThemedText from "../custom/ThemedText";
 import { useColorScheme } from "react-native";
 import { matchesApi } from "@/utils/api";
 import SCREENS from "@/screens";
+import { isMongoObjectId, resolvePlayerDisplayName } from "@/utils/Common";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -92,23 +93,26 @@ export default function MatchFullCommentary({ matchId, score }) {
   };
 
   // Extract all known players from match data for intelligent name resolution
-  const { allMatchPlayers, battingPlayerNames, bowlingPlayerNames } = useMemo(() => {
+  const { allMatchPlayers, playerMap, battingPlayerNames, bowlingPlayerNames } = useMemo(() => {
     const list = [];
     const seen = new Map();
+    const map = new Map();
     const battingNames = new Set();
     const bowlingNames = new Set();
 
     const add = (p, role = "") => {
       if (!p) return;
       const name = p.name || p.username || p.playerName;
-      const id = p.id || p._id || p.playerId;
-      if (name && typeof name === "string" && name.trim().length > 1) {
-        const lower = name.trim().toLowerCase();
+      const id = String(p.id || p._id || p.playerId || "");
+      if (name && typeof name === "string" && name.trim().length > 1 && !isMongoObjectId(name)) {
+        const cleanName = name.trim();
+        const lower = cleanName.toLowerCase();
         if (role === "batsman") battingNames.add(lower);
         if (role === "bowler") bowlingNames.add(lower);
+        if (id) map.set(id, cleanName);
 
         if (!seen.has(lower)) {
-          const entry = { id, name: name.trim(), username: name.trim(), role };
+          const entry = { id, name: cleanName, username: cleanName, role };
           seen.set(lower, entry);
           list.push(entry);
         } else if (role && !seen.get(lower).role) {
@@ -135,6 +139,7 @@ export default function MatchFullCommentary({ matchId, score }) {
 
     return {
       allMatchPlayers: list.sort((a, b) => b.name.length - a.name.length),
+      playerMap: map,
       battingPlayerNames: battingNames,
       bowlingPlayerNames: bowlingNames,
     };
@@ -146,19 +151,34 @@ export default function MatchFullCommentary({ matchId, score }) {
       : runsVal === "4" || c?.runs === 4 || (c?.isBoundary && runsVal === "4") ? "boundary" 
       : runsVal === "6" || c?.runs === 6 ? "six" 
       : "run";
-    const desc = c?.comment || c?.message || (typeof c === "string" ? c : "");
+    let desc = c?.comment || c?.message || (typeof c === "string" ? c : "");
 
-    let bMan = c?.batsman?.name || c?.batsman?.username || (typeof c?.batsman === "string" ? c.batsman : "");
+    let bMan = resolvePlayerDisplayName(c?.batsman, playerMap);
     let bObj = typeof c?.batsman === "object" ? c.batsman : null;
-    let bowl = c?.bowler?.name || c?.bowler?.username || (typeof c?.bowler === "string" ? c.bowler : "");
+    let bowl = resolvePlayerDisplayName(c?.bowler, playerMap);
     let bowlObj = typeof c?.bowler === "object" ? c.bowler : null;
+
+    if (!bMan && bObj) {
+      const bid = String(bObj?._id || bObj?.id || bObj?.playerId || "");
+      if (bid && playerMap.has(bid)) bMan = playerMap.get(bid);
+    }
+    if (!bowl && bowlObj) {
+      const bid = String(bowlObj?._id || bowlObj?.id || bowlObj?.playerId || "");
+      if (bid && playerMap.has(bid)) bowl = playerMap.get(bid);
+    }
 
     // Pattern 1: Regex "Bowler to Batter"
     if ((!bMan || !bowl) && desc) {
       const toMatch = desc.match(/(?:No Ball!|Wide!|)\s*([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+?)(?:\s+Free Hit|\s+for|\s*$|\.)/i);
       if (toMatch) {
-        if (!bowl) bowl = toMatch[1].trim();
-        if (!bMan) bMan = toMatch[2].trim();
+        const candBowl = toMatch[1].trim();
+        const candBMan = toMatch[2].trim();
+        if (!bowl && candBowl && candBowl.toLowerCase() !== "undefined" && !isMongoObjectId(candBowl)) {
+          bowl = candBowl;
+        }
+        if (!bMan && candBMan && candBMan.toLowerCase() !== "undefined" && !isMongoObjectId(candBMan)) {
+          bMan = candBMan;
+        }
       }
     }
 
@@ -210,6 +230,26 @@ export default function MatchFullCommentary({ matchId, score }) {
       }
     }
 
+    // Pattern 3: Fallback from match score active bowler or over
+    if (!bowl) {
+      const overNumStr = String(c?.ballNumber || c?.over || "");
+      if (overNumStr) {
+        const overInt = parseInt(overNumStr.split(".")[0], 10);
+        (score?.inning || []).forEach((inn) => {
+          const overObj = (inn?.overs || [])[overInt];
+          const overBowler = overObj?.bowler || overObj?.bowlerName;
+          const resolved = resolvePlayerDisplayName(overBowler, playerMap);
+          if (resolved) {
+            bowl = resolved;
+            bowlObj = overBowler;
+          }
+        });
+      }
+      if (!bowl && score?.bowler) {
+        bowl = resolvePlayerDisplayName(score.bowler, playerMap);
+      }
+    }
+
     // Safety swap check: if bowl is batsman and bMan is bowler, swap them!
     if (bowl && bMan && battingPlayerNames.has(bowl.toLowerCase()) && bowlingPlayerNames.has(bMan.toLowerCase())) {
       const tempN = bowl;
@@ -218,6 +258,19 @@ export default function MatchFullCommentary({ matchId, score }) {
       bowlObj = bObj;
       bMan = tempN;
       bObj = tempO;
+    }
+
+    // Clean up description: replace "undefined to " with "${bowl} to " or remove undefined
+    if (desc) {
+      if (bowl) {
+        desc = desc.replace(/^undefined\s+to\s+/i, `${bowl} to `);
+      } else {
+        desc = desc.replace(/^undefined\s+to\s+/i, "");
+      }
+      // Replace any raw 24-character hexadecimal MongoDB ObjectIds in desc with mapped names
+      desc = desc.replace(/\b[a-fA-F0-9]{24}\b/g, (matchId) => {
+        return playerMap.get(matchId) || "";
+      });
     }
 
     return {
@@ -231,7 +284,7 @@ export default function MatchFullCommentary({ matchId, score }) {
       batsmanObj: bObj,
       bowlerObj: bowlObj,
     };
-  }, [allMatchPlayers, battingPlayerNames, bowlingPlayerNames]);
+  }, [allMatchPlayers, playerMap, battingPlayerNames, bowlingPlayerNames, score]);
 
   // Map incoming score commentary as initial fallback
   const rawInitial = Array.isArray(score?.fullCommentary) 

@@ -562,7 +562,14 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       0,
     status: tournamentData?.status || "upcoming",
     format: tournamentData?.format || tournamentData?.category || "Standard",
-    prizeMoney: tournamentData?.prizeMoney || "Not Specified",
+    prizeMoney: tournamentData?.prizeMoney
+      ? (String(tournamentData.prizeMoney).startsWith("₹") ? String(tournamentData.prizeMoney) : `₹${tournamentData.prizeMoney}`)
+      : tournamentData?.prize
+      ? (String(tournamentData.prize).startsWith("₹") ? String(tournamentData.prize) : `₹${tournamentData.prize}`)
+      : "Not Specified",
+    entryFee: tournamentData?.entryFee !== undefined && tournamentData?.entryFee !== null && tournamentData?.entryFee !== ""
+      ? (Number(tournamentData.entryFee) === 0 ? "Free" : (String(tournamentData.entryFee).startsWith("₹") ? String(tournamentData.entryFee) : `₹${tournamentData.entryFee}`))
+      : "Free",
     ballType: tournamentData?.ballType
       ? String(tournamentData.ballType).toUpperCase()
       : "Standard",
@@ -665,6 +672,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       tournamentID: tournament.id,
       tournament: tournamentData || tournament,
       returnScreen: SCREENS.TournamentProfile,
+      fromTournament: true,
+      cameFromTournament: true,
     });
   };
 
@@ -754,37 +763,47 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
     return num.toFixed(2);
   };
 
-  const TabButton = ({ title, tabName, icon }) => (
-    <TouchableOpacity
-      onPress={() => switchTab(tabName)}
-      className={`flex-1 py-3 px-2 items-center rounded-lg mx-1 ${
-        activeTab === tabName
-          ? "bg-blue-600"
-          : isDarkMode
-          ? "bg-gray-800"
-          : "bg-gray-200"
-      }`}
-    >
-      <Ionicons
-        name={icon}
-        size={18}
-        color={
-          activeTab === tabName ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
-        }
-      />
-      <ThemedText
-        className={`text-xs mt-1 font-medium ${
-          activeTab === tabName
-            ? "text-white"
+  const TabButton = useCallback(({ title, tabName, icon }) => {
+    const isActive = activeTab === tabName;
+    return (
+      <TouchableOpacity
+        onPress={() => switchTab(tabName)}
+        style={{
+          flex: 1,
+          paddingVertical: 12,
+          paddingHorizontal: 8,
+          alignItems: "center",
+          borderRadius: 8,
+          marginHorizontal: 4,
+          backgroundColor: isActive
+            ? "#2563EB"
             : isDarkMode
-            ? "text-gray-400"
-            : "text-gray-600"
-        }`}
+            ? "#1F2937"
+            : "#E5E7EB",
+        }}
       >
-        {title}
-      </ThemedText>
-    </TouchableOpacity>
-  );
+        <Ionicons
+          name={icon}
+          size={18}
+          color={isActive ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+        />
+        <ThemedText
+          style={{
+            fontSize: 12,
+            marginTop: 4,
+            fontWeight: "500",
+            color: isActive
+              ? "#FFFFFF"
+              : isDarkMode
+              ? "#9CA3AF"
+              : "#6B7280",
+          }}
+        >
+          {title}
+        </ThemedText>
+      </TouchableOpacity>
+    );
+  }, [activeTab, isDarkMode]);
 
   const renderLeaderboardItem = (item, index, type) => {
     try {
@@ -948,7 +967,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       <View
         className={`p-5 rounded-xl mb-4 ${
           isDarkMode ? "bg-gray-800" : "bg-white"
-        } shadow-sm`}
+        }`}
+        style={{ elevation: 1 }}
       >
         <View className="flex-row items-center mb-4">
           <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3 dark:bg-blue-900/40">
@@ -1133,7 +1153,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       <View
         className={`p-5 rounded-xl mb-4 ${
           isDarkMode ? "bg-gray-800" : "bg-white"
-        } shadow-sm`}
+        }`}
+        style={{ elevation: 1 }}
       >
         <View className="flex-row items-center mb-4">
           <View className="w-10 h-10 bg-amber-100 rounded-full items-center justify-center mr-3 dark:bg-amber-900/40">
@@ -1169,6 +1190,32 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               }`}
             >
               {tournament.prizeMoney}
+            </ThemedText>
+          </View>
+
+          {/* Entry Fee */}
+          <View className="flex-row justify-between items-center py-2">
+            <View className="flex-row items-center">
+              <Ionicons 
+                name="pricetag-outline" 
+                size={16} 
+                color={isDarkMode ? "#9CA3AF" : "#6B7280"} 
+                style={{marginRight: 8}}
+              />
+              <ThemedText
+                className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+              >
+                Entry Fee
+              </ThemedText>
+            </View>
+            <ThemedText
+              className={`font-bold ${
+                tournament.entryFee === "Free"
+                  ? (isDarkMode ? "text-green-400" : "text-green-600")
+                  : (isDarkMode ? "text-blue-400" : "text-blue-600")
+              }`}
+            >
+              {tournament.entryFee}
             </ThemedText>
           </View>
 
@@ -1214,9 +1261,10 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
 
       {/* Tournament QR Code Card */}
       <View
-        className={`p-5 rounded-xl mb-4 ${
+        className={`p-5 rounded-xl mb-4 items-center ${
           isDarkMode ? "bg-gray-800" : "bg-white"
-        } shadow-sm items-center`}
+        }`}
+        style={{ elevation: 1 }}
       >
         <View className="w-full flex-row items-center justify-between mb-3">
           <View className="flex-row items-center flex-1 pr-2">
@@ -1396,7 +1444,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       {canCreateMatch && (
         <TouchableOpacity
           onPress={handleCreateTournamentMatch}
-          className="w-full max-w-md bg-blue-600 py-3.5 px-4 rounded-xl flex-row items-center justify-center mb-4 shadow-sm"
+          className="w-full max-w-md bg-blue-600 py-3.5 px-4 rounded-xl flex-row items-center justify-center mb-4"
+          style={{ elevation: 1 }}
           activeOpacity={0.8}
         >
           <Ionicons name="add-circle-outline" size={22} color="#FFFFFF" />
@@ -1511,7 +1560,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           {canCreateMatch && (
             <TouchableOpacity
               onPress={handleCreateTournamentMatch}
-              className="mt-4 bg-blue-600 px-5 py-2.5 rounded-full flex-row items-center shadow-sm"
+              className="mt-4 bg-blue-600 px-5 py-2.5 rounded-full flex-row items-center"
+              style={{ elevation: 1 }}
               activeOpacity={0.8}
             >
               <Ionicons name="add" size={18} color="#FFFFFF" />
@@ -1568,7 +1618,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                 }}
                 className={`p-4 rounded-lg mb-3 ${
                   isDarkMode ? "bg-gray-800" : "bg-white"
-                } shadow-sm`}
+                }`}
+                style={{ elevation: 1 }}
               >
                 <View className="flex-row justify-between items-center">
                   <View className="flex-row items-center flex-1 mr-2">
@@ -1658,7 +1709,34 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               const wins = item.totalWins ?? item.wins ?? item.w ?? 0;
               const losses = item.totalLosses ?? item.losses ?? item.l ?? 0;
               const nrr = item.totalNRR ?? item.netRunRate ?? item.nrr ?? "0.000";
-              const form = Array.isArray(item.last5Results) ? item.last5Results : (Array.isArray(item.recentForm) ? item.recentForm : []);
+              const rawForm = Array.isArray(item.last5Results) ? item.last5Results : (Array.isArray(item.recentForm) ? item.recentForm : []);
+              const targetTeamId = String(item.team?._id || item.teamId?._id || item.teamId || item._id || item.id || "");
+              const targetTeamName = String(teamName || "").toLowerCase().trim();
+
+              let resolvedForm = rawForm;
+              if (resolvedForm.length === 0 && Array.isArray(matchesList) && matchesList.length > 0) {
+                const teamEndedMatches = matchesList.filter((m) => {
+                  const rawStatus = String(m?.status || m?.matchCurrentStatus || "").toUpperCase();
+                  const isEnded = rawStatus.includes("ENDED") || rawStatus.includes("COMPLETED");
+                  if (!isEnded) return false;
+                  return (m?.teams || []).some((t) => {
+                    const tId = String(t?.teamId || t?._id || t?.id || "");
+                    const tName = String(t?.title || t?.teamName || t?.name || "").toLowerCase().trim();
+                    return (targetTeamId && tId && tId === targetTeamId) || (targetTeamName && tName && tName === targetTeamName);
+                  });
+                });
+
+                resolvedForm = teamEndedMatches.slice(0, 5).map((m) => {
+                  const winId = String(m?.matchResult?.winnerTeamId || m?.matchResult?.winningTeam || m?.winner || "");
+                  const winPrompt = String(m?.matchResult?.prompt || m?.description || "").toLowerCase();
+                  const winName = String(m?.matchResult?.winnerTeamName || "").toLowerCase().trim();
+
+                  if (targetTeamId && winId && winId === targetTeamId) return "W";
+                  if (targetTeamName && winName && winName === targetTeamName) return "W";
+                  if (targetTeamName && winPrompt.includes(targetTeamName) && winPrompt.includes("won")) return "W";
+                  return "L";
+                });
+              }
 
               return (
                 <View
@@ -1708,31 +1786,33 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                     </View>
                   </View>
 
-                  <View className="flex-row justify-between mb-2">
+                  <View className="flex-row items-center justify-between mb-2">
                     <ThemedText
                       className={`text-sm ${
                         isDarkMode ? "text-gray-400" : "text-gray-600"
                       }`}
                     >
-                      Matches: {matchesPlayed}
+                      M: <ThemedText className={`font-semibold ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>{matchesPlayed}</ThemedText>
                     </ThemedText>
-                    <ThemedText
-                      className={`text-sm ${
-                        isDarkMode ? "text-green-400" : "text-green-600"
-                      }`}
-                    >
-                      Wins: {wins}
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-sm ${
-                        isDarkMode ? "text-red-400" : "text-red-600"
-                      }`}
-                    >
-                      Losses: {losses}
-                    </ThemedText>
+                    <View className="flex-row items-center gap-3">
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-green-400" : "text-green-600"
+                        }`}
+                      >
+                        W: <ThemedText className="font-bold">{wins}</ThemedText>
+                      </ThemedText>
+                      <ThemedText
+                        className={`text-sm font-semibold ${
+                          isDarkMode ? "text-red-400" : "text-red-600"
+                        }`}
+                      >
+                        L: <ThemedText className="font-bold">{losses}</ThemedText>
+                      </ThemedText>
+                    </View>
                   </View>
 
-                  <View className="flex-row justify-between">
+                  <View className="flex-row items-center justify-between">
                     <ThemedText
                       className={`text-sm ${
                         isDarkMode ? "text-gray-400" : "text-gray-600"
@@ -1740,26 +1820,45 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                     >
                       NRR: {nrr}
                     </ThemedText>
-                    {form.length > 0 && (
-                      <View className="flex-row">
-                        {form.map((f, idx) => (
-                          <View
-                            key={idx}
-                            className={`w-5 h-5 rounded-full mx-1 items-center justify-center ${
-                              f === "W" ? "bg-green-100" : "bg-red-100"
-                            }`}
-                          >
-                            <ThemedText
-                              className={`text-xs ${
-                                f === "W" ? "text-green-800" : "text-red-800"
-                              }`}
-                            >
-                              {f}
-                            </ThemedText>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                    <View className="flex-row items-center">
+                      <ThemedText
+                        className={`text-xs mr-2 ${
+                          isDarkMode ? "text-gray-400" : "text-gray-500"
+                        }`}
+                      >
+                        Form:
+                      </ThemedText>
+                      {resolvedForm.length > 0 ? (
+                        <View className="flex-row items-center gap-1">
+                          {resolvedForm.map((f, fIdx) => {
+                            const isWin = String(f).toUpperCase().startsWith("W");
+                            return (
+                              <View
+                                key={fIdx}
+                                className={`w-5 h-5 rounded-full items-center justify-center ${
+                                  isWin ? "bg-emerald-500" : "bg-rose-500"
+                                }`}
+                                style={{
+                                  shadowColor: isWin ? "#10B981" : "#EF4444",
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.2,
+                                  shadowRadius: 2,
+                                  elevation: 1,
+                                }}
+                              >
+                                <ThemedText className="text-[10px] font-extrabold text-white">
+                                  {isWin ? "W" : "L"}
+                                </ThemedText>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ) : (
+                        <ThemedText className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                          -
+                        </ThemedText>
+                      )}
+                    </View>
                   </View>
                 </View>
               );
@@ -1792,11 +1891,11 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         <TouchableOpacity
           onPress={() => setLeaderboardTab("batting")}
           activeOpacity={0.8}
-          className={`flex-1 py-2.5 rounded-lg items-center flex-row justify-center ${
-            leaderboardTab === "batting"
-              ? "bg-blue-600 shadow-sm"
-              : "bg-transparent"
-          }`}
+          className="flex-1 py-2.5 rounded-lg items-center flex-row justify-center"
+          style={{
+            backgroundColor: leaderboardTab === "batting" ? "#2563EB" : "transparent",
+            elevation: leaderboardTab === "batting" ? 1 : 0,
+          }}
         >
           <Ionicons
             name="baseball-outline"
@@ -1825,11 +1924,11 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         <TouchableOpacity
           onPress={() => setLeaderboardTab("bowling")}
           activeOpacity={0.8}
-          className={`flex-1 py-2.5 rounded-lg items-center flex-row justify-center ${
-            leaderboardTab === "bowling"
-              ? "bg-blue-600 shadow-sm"
-              : "bg-transparent"
-          }`}
+          className="flex-1 py-2.5 rounded-lg items-center flex-row justify-center"
+          style={{
+            backgroundColor: leaderboardTab === "bowling" ? "#2563EB" : "transparent",
+            elevation: leaderboardTab === "bowling" ? 1 : 0,
+          }}
         >
           <Ionicons
             name="disc-outline"
@@ -2032,14 +2131,18 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         <View className="flex-row items-end justify-between -mt-10 mb-3">
           {/* Overlapping Logo */}
           <View
-            className={`w-20 h-20 rounded-2xl overflow-hidden shadow-lg items-center justify-center ${
+            className={`w-20 h-20 rounded-2xl overflow-hidden items-center justify-center ${
               isDarkMode
-                ? "border-gray-800 bg-gray-900 shadow-black/50"
-                : "border-white bg-slate-100 shadow-slate-300"
+                ? "border-gray-800 bg-gray-900"
+                : "border-white bg-slate-100"
             }`}
             style={{
               elevation: 6,
               borderWidth: 3,
+              shadowColor: isDarkMode ? "#000000" : "#64748B",
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: isDarkMode ? 0.5 : 0.25,
+              shadowRadius: 5,
             }}
           >
             {tournament.logo ? (
@@ -2258,7 +2361,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               </ThemedText>
             ) : null}
 
-            <View className="p-4 bg-white rounded-xl shadow-sm my-2">
+            <View className="p-4 bg-white rounded-xl my-2" style={{ elevation: 1 }}>
               <QRCode
                 value={JSON.stringify({
                   type: SCANNER_TYPE_ACTION?.TOURNAMENT?.type || "TOURNAMENT",

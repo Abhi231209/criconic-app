@@ -143,14 +143,16 @@ export default function MatchSummary({ matchData }) {
   const t1Name = t1?.title || t1?.teamName || t1?.name || matchData?.teamA?.title || matchData?.teamA?.name;
   const t2Name = t2?.title || t2?.teamName || t2?.name || matchData?.teamB?.title || matchData?.teamB?.name;
 
-  const inn1 = matchData?.inning?.[0];
-  const inn1BattingTeam = inn1?.batting?.battingTeam;
-  const inn1BowlingTeam = inn1?.bowling?.teamName;
+  const inn1 = matchData?.inning?.[0] || matchData?.innings_1;
+  const currentBattingTeam = matchData?.batting?.battingTeam;
+  const currentInningsNum = matchData?.currentInnings || matchData?.currentInning || 1;
+  const inn1BattingTeam = inn1?.batting?.battingTeam || inn1?.battingTeam || (currentInningsNum === 1 ? currentBattingTeam : null);
+  const inn1BowlingTeam = inn1?.bowling?.teamName || matchData?.bowling?.teamName;
 
   // Find second inning with distinct batting team
   const inn2 = (matchData?.inning || []).find((inn, idx) => 
     idx > 0 && inn?.batting?.battingTeam && inn?.batting?.battingTeam !== inn1BattingTeam
-  ) || matchData?.inning?.[1];
+  ) || matchData?.inning?.[1] || matchData?.innings_2;
 
   const team1Name = inn1BattingTeam || t1Name || titleTeam1 || "Team 1";
   let team2Name = (inn2?.batting?.battingTeam && inn2?.batting?.battingTeam !== team1Name)

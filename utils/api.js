@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDeviceId } from "./index";
 import { store } from "@/redux/store";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 import User from "./User";
 import { BASE_URL, API_URL, apiUrl, SOCKET_URL } from "@/config";
 export { BASE_URL, API_URL, apiUrl, SOCKET_URL };
@@ -186,7 +187,12 @@ export const request = async (
     console.warn(`[API] Error on ${endpoint}:`, errorMsg);
 
     if (errorAlert) {
-      Alert.alert("Notice", String(errorMsg));
+      showGlobalAlert({
+        title: "Notice",
+        message: String(errorMsg),
+        type: "error",
+        confirmText: "OK",
+      });
     }
 
     return error?.response || { data: { success: false, message: errorMsg } };
@@ -293,8 +299,10 @@ export const authApi = {
     }
     return res;
   },
+  signup: (data) =>
+    request("api/users/signup", { method: "POST", data }),
   register: (data) =>
-    request("api/users/register", { method: "POST", data }),
+    request("api/users/signup", { method: "POST", data }),
   logout: async () => {
     try {
       await request("api/logout", { method: "POST", errorAlert: false });
@@ -360,8 +368,15 @@ export const tournamentsApi = {
     request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
-  getMatchesByTournament: (id, options = {}) =>
-    request(`api/matches/tournament/${id}`, { method: "GET", errorAlert: false, ...options }),
+  getMatchesByTournament: (id, options = {}) => {
+    const params = { limit: 10, page: 1, ...(options?.params || {}) };
+    const query = new URLSearchParams(params).toString();
+    return request(`api/matches/tournament/${id}${query ? `?${query}` : ""}`, {
+      method: "GET",
+      errorAlert: false,
+      ...options,
+    });
+  },
   getTiers: (options = {}) =>
     request("api/tournaments/tiers", { method: "GET", errorAlert: false, ...options }),
   requestUpgrade: (tournamentId, note, options = {}) =>
@@ -372,7 +387,8 @@ export const tournamentsApi = {
 
 export const matchesApi = {
   getMatches: (params = {}, options = {}) => {
-    const query = new URLSearchParams(params).toString();
+    const finalParams = { limit: 10, ...params };
+    const query = new URLSearchParams(finalParams).toString();
     return request(`api/matches${query ? `?${query}` : ""}`, {
       method: "GET",
       errorAlert: false,

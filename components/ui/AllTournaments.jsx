@@ -422,23 +422,29 @@ export default function AllTournaments() {
           />
         }
         ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <Ionicons
-              name="trophy-outline"
-              size={48}
-              color={isDarkMode ? "#4B5563" : "#9CA3AF"}
-            />
-            <ThemedText
-              className={`text-lg mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
-            >
-              No tournaments found
-            </ThemedText>
-            <ThemedText
-              className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}
-            >
-              Try adjusting your search or filters
-            </ThemedText>
-          </View>
+          loading ? (
+            <View className="items-center justify-center py-16">
+              <ActivityIndicator size="large" color="#3B82F6" />
+            </View>
+          ) : (
+            <View className="items-center justify-center py-10">
+              <Ionicons
+                name="trophy-outline"
+                size={48}
+                color={isDarkMode ? "#4B5563" : "#9CA3AF"}
+              />
+              <ThemedText
+                className={`text-lg mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
+              >
+                No tournaments found
+              </ThemedText>
+              <ThemedText
+                className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}
+              >
+                Try adjusting your search or filters
+              </ThemedText>
+            </View>
+          )
         }
       />
       <AnimatedFooter currentTab="Tournament" />

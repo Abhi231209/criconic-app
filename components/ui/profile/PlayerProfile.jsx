@@ -863,15 +863,6 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
           <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
             <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
-              Team
-            </ThemedText>
-            <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
-              {player.team}
-            </ThemedText>
-          </View>
-
-          <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
-            <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
               Nationality
             </ThemedText>
             <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
@@ -1037,18 +1028,6 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         ))}
       </View>
 
-      {/* Ball Type Tabs */}
-      <View className="flex-row justify-center mb-4">
-        {ballTypeTabs.map((tab) => (
-          <BallTypeButton
-            key={tab.value}
-            title={tab.label}
-            ballType={tab.value}
-            icon={tab.icon}
-          />
-        ))}
-      </View>
-
       <ScrollView 
         className="flex-1" 
         showsVerticalScrollIndicator={false}
@@ -1203,8 +1182,9 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             className={`p-4 rounded-xl mb-3 ${
               isDarkMode ? "bg-gray-800" : "bg-white"
             } shadow-sm`}
-            onPress={() => {
-              // Navigate to team details
+          onPress={() => {
+              const teamId = team._id || team.id || team.teamId;
+              navigation.navigate(SCREENS.TeamProfile, { teamId, team });
             }}
           >
             <View className="flex-row justify-between items-center mb-2">

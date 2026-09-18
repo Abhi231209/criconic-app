@@ -14,9 +14,16 @@ import {
 import ThemedText from "../custom/ThemedText";
 import PlayerAvatar from "../custom/PlayerAvatar";
 import { useColorScheme } from "react-native";
-import { convertBallToOvers, getBatsmenDescription, calculateCRR, MATCH_STATUS } from "@/utils/Common";
+import {
+  convertBallToOvers,
+  getBatsmenDescription,
+  calculateCRR, MATCH_STATUS,
+  resolvePlayerDisplayName,
+  isMongoObjectId,
+} from "@/utils/Common";
 import SCREENS from "@/screens";
 import WagonPitchViewerModal from "../createMatch/WagonPitchViewerModal";
+import analytics from "@/utils/analytics";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -40,17 +47,58 @@ export default function FullScoreCard({
   }, [isChasing]);
   const [trackerModalVisible, setTrackerModalVisible] = useState(false);
   const [trackerModalTab, setTrackerModalTab] = useState("wagon");
+  const [trackerModalRole, setTrackerModalRole] = useState("all");
   const [selectedTrackerPlayer, setSelectedTrackerPlayer] = useState(null);
 
+  // Build comprehensive player lookup map to prevent raw ObjectIds from leaking
+  const playerMap = React.useMemo(() => {
+    const map = new Map();
+    const add = (p) => {
+      if (!p) return;
+      const id = String(p?.playerId || p?._id || p?.id || (typeof p === "string" && isMongoObjectId(p) ? p : ""));
+      const name = typeof p === "string" ? (!isMongoObjectId(p) ? p : "") : (p?.name || p?.username || p?.playerName);
+      if (id && name && !isMongoObjectId(name)) {
+        map.set(id, String(name).trim());
+      }
+    };
+
+    (score?.teams || []).forEach((t) => (t?.players || []).forEach(add));
+    (score?.squads || []).forEach((s) => (s?.players || []).forEach(add));
+    (score?.inning || []).forEach((inn) => {
+      (inn?.playedBatsman || []).forEach(add);
+      (inn?.batsman || []).forEach(add);
+      (inn?.batsmanUpcoming || []).forEach(add);
+      (inn?.bowling?.allBowlers || []).forEach(add);
+      (inn?.bowling?.bowlers || []).forEach(add);
+      (inn?.bowlers || []).forEach(add);
+    });
+    add(score?.bowler);
+    (score?.bowling?.lastTwoBowlers || []).forEach(add);
+    (score?.bowling?.allBowlers || []).forEach(add);
+    return map;
+  }, [score]);
+
   const handleBatsmanPress = (player) => {
+    const pid = player?.playerId || player?._id || player?.id || "";
+    analytics.logVisualizerView("wagon_wheel", pid, score?._id || score?.id, {
+      player_name: resolvePlayerDisplayName(player, playerMap) || "",
+      role: "batsman",
+    });
     setSelectedTrackerPlayer(player);
     setTrackerModalTab("wagon");
+    setTrackerModalRole("batsman");
     setTrackerModalVisible(true);
   };
 
   const handleBowlerPress = (player) => {
+    const pid = player?.playerId || player?._id || player?.id || "";
+    analytics.logVisualizerView("pitch_map", pid, score?._id || score?.id, {
+      player_name: resolvePlayerDisplayName(player, playerMap) || "",
+      role: "bowler",
+    });
     setSelectedTrackerPlayer(player);
     setTrackerModalTab("pitch");
+    setTrackerModalRole("bowler");
     setTrackerModalVisible(true);
   };
   
@@ -91,11 +139,17 @@ export default function FullScoreCard({
     description: ""
   };
 
-  const getInningData = (rawInning, fallbackTeam) => {
+  const getInningData = (rawInning, fallbackTeam, inningIdx = 0) => {
     if (!rawInning) return { ...emptyInning, batting: { ...emptyInning.batting, battingTeam: fallbackTeam } };
     const innRuns = rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0;
     const innOvers = rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0";
     const computedCRR = calculateCRR(innRuns, innOvers);
+    const isSuperOver = Boolean(
+      rawInning.isSuperOver ||
+      rawInning.batting?.isSuperOver ||
+      rawInning.isSuperOverInning ||
+      (typeof inningIdx === "number" && inningIdx >= 2)
+    );
 
     return {
       batting: {
@@ -107,7 +161,7 @@ export default function FullScoreCard({
           CRR: (computedCRR !== "0.00" ? computedCRR : (rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00")),
           projectedScore: rawInning.batting?.score?.projectedScore ?? rawInning.score?.projectedScore ?? 0,
         },
-        isSuperOver: rawInning.isSuperOver || false,
+        isSuperOver: isSuperOver,
       },
       playedBatsman: Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : (Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
       extras: rawInning.extras ?? 0,
@@ -123,17 +177,31 @@ export default function FullScoreCard({
     };
   };
 
+  let superOverCounter = 0;
   const inningsList = Array.isArray(score?.inning) && score.inning.length > 0
-    ? score.inning.map((inn, idx) => ({
-        number: idx + 1,
-        label: inn?.isSuperOver ? `Super Over ${Math.ceil((idx + 1) / 2)}` : `Inning ${idx + 1}`,
-        data: getInningData(inn, score?.teams?.[idx % 2]?.title || `Inning ${idx + 1}`)
-      }))
+    ? score.inning.map((inn, idx) => {
+        const isSuperOver = Boolean(
+          inn?.isSuperOver ||
+          inn?.batting?.isSuperOver ||
+          inn?.isSuperOverInning ||
+          idx >= 2
+        );
+        let label = `Inning ${idx + 1}`;
+        if (isSuperOver) {
+          superOverCounter += 1;
+          label = `Super Over ${superOverCounter}`;
+        }
+        return {
+          number: idx + 1,
+          label,
+          data: getInningData(inn, score?.teams?.[idx % 2]?.title || (isSuperOver ? `Super Over ${superOverCounter}` : `Inning ${idx + 1}`), idx)
+        };
+      })
     : [
         {
           number: 1,
           label: "Inning 1",
-          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1")
+          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1", 0)
         }
       ];
 
@@ -153,7 +221,10 @@ export default function FullScoreCard({
 
   const InningButton = ({ inningNumber, label, isActive }) => (
     <Pressable
-      onPress={() => setActiveInning(inningNumber)}
+      onPress={() => {
+        analytics.logAction("switch_inning", "scorecard", { inning_number: inningNumber });
+        setActiveInning(inningNumber);
+      }}
       className={`py-2 px-4 rounded-lg mx-1 items-center flex-1 ${
         isActive 
           ? (isDark ? "bg-blue-600" : "bg-blue-500") 
@@ -170,7 +241,10 @@ export default function FullScoreCard({
 
   const TabButton = ({ value, label, isActive }) => (
     <Pressable
-      onPress={() => setActiveTab(value)}
+      onPress={() => {
+        analytics.logTabChange(value, "scorecard_tabs");
+        setActiveTab(value);
+      }}
       className={`flex-1 py-2 rounded-lg mx-1 items-center ${
         isActive 
           ? (isDark ? "bg-blue-600" : "bg-blue-500") 
@@ -331,13 +405,13 @@ export default function FullScoreCard({
                     </Pressable>
                     <View className="flex-1 pr-1">
                       <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`}>
-                        {player?.name || player?.username || player?.playerName || "Batter"}
+                        {resolvePlayerDisplayName(player, playerMap) || "Batter"}
                         {player?.notOut && (
                           <ThemedText className={isDark ? "text-green-400" : "text-green-600"}>*</ThemedText>
                         )}
                       </ThemedText>
                       <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-600"}`} numberOfLines={1}>
-                        {getBatsmenDescription(player)}
+                        {getBatsmenDescription(player, playerMap)}
                       </ThemedText>
                     </View>
                   </View>
@@ -447,7 +521,7 @@ export default function FullScoreCard({
                     </Pressable>
                     <View className="flex-1 pr-1">
                       <ThemedText className={`font-medium ${isDark ? "text-white" : "text-gray-900"}`} numberOfLines={1}>
-                        {player?.name || player?.username || player?.playerName || "Bowler"}
+                        {resolvePlayerDisplayName(player, playerMap) || "Bowler"}
                       </ThemedText>
                     </View>
                   </View>
@@ -476,41 +550,49 @@ export default function FullScoreCard({
         </Animated.View>
       )}
 
-      {/* Fall of Wickets */}
+      {/* Fall of Wickets with Delivery Detail */}
       {Array.isArray(currentInning?.fallOfWickets) && currentInning.fallOfWickets.length > 0 && (
         <Animated.View 
           entering={FadeInDown.duration(500)}
           className={`mx-4 p-4 rounded-lg ${isDark ? "bg-gray-800" : "bg-white"} mb-6`}
         >
-          <ThemedText className={`font-bold mb-3 ${isDark ? "text-white" : "text-gray-900"}`}>
-            Fall of Wickets
-          </ThemedText>
+          <View className="flex-row items-center justify-between mb-3">
+            <ThemedText className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+              Fall of Wickets
+            </ThemedText>
+          </View>
           
           <View className="flex-row flex-wrap">
             {currentInning.fallOfWickets.map((wicket, i) => {
-              const batsmanName = typeof wicket?.batsman === "string" 
-                ? wicket.batsman 
-                : (wicket?.batsman?.name || wicket?.batsman?.username || wicket?.batsman?.playerName || "Wicket");
-              const bowlerName = typeof wicket?.bowler === "string" 
-                ? wicket.bowler 
-                : (wicket?.bowler?.name || wicket?.bowler?.username || wicket?.bowler?.playerName || "");
+              const batsmanName = resolvePlayerDisplayName(wicket?.batsman, playerMap) || "Batter";
+              const bowlerName = resolvePlayerDisplayName(wicket?.bowler, playerMap);
 
               return (
-                <View key={i} className="w-1/2 mb-2">
-                  <View className="flex-row justify-between items-center pr-2">
-                    <Pressable onPress={() => redirectToPlayerProfile(wicket?.batsman)}>
-                      <ThemedText className={`text-sm ${isDark ? "text-blue-400" : "text-blue-600"}`}>
+                <View
+                  key={i}
+                  className={`w-full mb-2 p-2.5 rounded-xl border ${
+                    isDark ? "bg-gray-750/70 border-gray-700" : "bg-gray-50/90 border-gray-200"
+                  }`}
+                >
+                  <View className="flex-row justify-between items-center">
+                    <View className="flex-1 pr-2">
+                      <ThemedText className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
                         {i + 1}. {batsmanName}
                       </ThemedText>
                       {bowlerName ? (
-                        <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        <ThemedText className={`text-xs mt-0.5 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                           b {bowlerName}
                         </ThemedText>
                       ) : null}
-                    </Pressable>
-                    <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                      {wicket?.teamRuns ?? 0} ({wicket?.teamOvers ?? "0.0"})
-                    </ThemedText>
+                    </View>
+                    <View className="items-end">
+                      <ThemedText className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
+                        {wicket?.teamRuns ?? 0}
+                      </ThemedText>
+                      <ThemedText className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                        ({wicket?.teamOvers ?? "0.0"} ov)
+                      </ThemedText>
+                    </View>
                   </View>
                 </View>
               );
@@ -525,7 +607,9 @@ export default function FullScoreCard({
         onClose={() => setTrackerModalVisible(false)}
         initialTab={trackerModalTab}
         initialPlayer={selectedTrackerPlayer}
+        playerRole={trackerModalRole}
         matchId={matchId || score?._id || score?.id}
+        matchDetails={score?.matchDetails || score}
         score={score}
         onViewProfile={redirectToPlayerProfile}
       />

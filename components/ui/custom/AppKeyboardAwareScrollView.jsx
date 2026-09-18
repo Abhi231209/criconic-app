@@ -5,6 +5,8 @@ import {
   Platform,
   Keyboard,
   StyleSheet,
+  TextInput,
+  findNodeHandle,
 } from "react-native";
 
 /**
@@ -40,12 +42,13 @@ export function useKeyboardBottomInset(extraPadding = 30) {
  * - Handles iOS padding + Android soft input adjustment seamlessly.
  * - Dynamically increases bottom padding when keyboard opens so inputs near
  *   the bottom are never blocked or obscured.
+ * - Auto-scrolls the currently focused input into clear view.
  * - Supports keyboardShouldPersistTaps="handled" by default.
  */
 const AppKeyboardAwareScrollView = forwardRef(function AppKeyboardAwareScrollView(
   {
     children,
-    extraHeight = 50,
+    extraHeight = 80,
     contentContainerStyle,
     style,
     keyboardVerticalOffset = Platform.OS === "ios" ? 88 : 0,
@@ -67,6 +70,30 @@ const AppKeyboardAwareScrollView = forwardRef(function AppKeyboardAwareScrollVie
     const showSub = Keyboard.addListener(showEvent, (e) => {
       const height = e.endCoordinates?.height || 260;
       setKeyboardHeight(height);
+
+      // Auto-scroll focused input into view
+      setTimeout(() => {
+        try {
+          const focusedInput = TextInput.State?.currentlyFocusedInput?.();
+          if (focusedInput && internalScrollRef.current) {
+            const scrollNode = findNodeHandle(internalScrollRef.current);
+            if (scrollNode && typeof focusedInput.measureLayout === "function") {
+              focusedInput.measureLayout(
+                scrollNode,
+                (x, y, w, h) => {
+                  if (y !== undefined && internalScrollRef.current) {
+                    internalScrollRef.current.scrollTo({
+                      y: Math.max(0, y - 80),
+                      animated: true,
+                    });
+                  }
+                },
+                () => {}
+              );
+            }
+          }
+        } catch (_) {}
+      }, 120);
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {

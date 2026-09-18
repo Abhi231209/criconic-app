@@ -21,6 +21,10 @@ import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import debounce from "lodash/debounce";
 
+// In-memory cache for instant pre-scorer screen loading
+let cachedTeams = null;
+let cachedTournamentTeams = {};
+
 export default function SelectTeamScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -29,10 +33,15 @@ export default function SelectTeamScreen() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   
-  const [teams, setTeams] = useState([]);
-  const [tournamentTeams, setTournamentTeams] = useState([]);
+  const [teams, setTeams] = useState(() => cachedTeams || []);
+  const [tournamentTeams, setTournamentTeams] = useState(() => (tournamentId && cachedTournamentTeams[tournamentId]) || []);
   const [tournamentTitle, setTournamentTitle] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (tournamentId) {
+      return !cachedTournamentTeams[tournamentId] && !cachedTeams;
+    }
+    return !cachedTeams;
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState(tournamentId ? "tournamentTeams" : "myTeams");
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,6 +53,17 @@ export default function SelectTeamScreen() {
     const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
     const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
     const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
+    
+    // Safely extract players without them getting overwritten by an empty outer array
+    const rawPlayers =
+      (Array.isArray(t?.teamId?.players) && t.teamId.players.length > 0)
+        ? t.teamId.players
+        : (Array.isArray(t?.players) && t.players.length > 0)
+        ? t.players
+        : (Array.isArray(raw?.players) && raw.players.length > 0)
+        ? raw.players
+        : [];
+
     return {
       ...raw,
       id: teamId,
@@ -53,71 +73,128 @@ export default function SelectTeamScreen() {
       title: teamName,
       location: raw?.location || "Location not specified",
       image: rawImg ? (rawImg.startsWith("http") ? rawImg : getImageFullUrl(rawImg)) : null,
-      players: Array.isArray(raw?.players) ? raw.players : [],
+      players: rawPlayers,
       isMyTeam: isMy,
     };
   };
 
   const fetchTeams = async () => {
     try {
-      const promises = [
-        teamsApi.getMyTeams().catch(() => null),
-        teamsApi.getOpponentTeams().catch(() => null),
-      ];
-      if (tournamentId) {
-        promises.push(tournamentsApi.getTournamentById(tournamentId).catch(() => null));
-      }
-
-      const results = await Promise.all(promises);
-      const myRes = results[0];
-      const oppRes = results[1];
-      const tournRes = tournamentId ? results[2] : null;
-
-      let myData = [];
-      if (Array.isArray(myRes?.data)) {
-        myData = myRes.data.map((t) => normalizeTeam(t, true));
-      }
-
-      const rawOppList = Array.isArray(oppRes?.data?.content)
-        ? oppRes.data.content
-        : Array.isArray(oppRes?.data)
-        ? oppRes.data
-        : [];
-      const oppData = rawOppList.map((t) => normalizeTeam(t, false));
-
-      // Combine and deduplicate
-      const combined = [...myData];
-      const seenIds = new Set(myData.map((t) => t.id).filter(Boolean));
-      for (const t of oppData) {
-        if (t.id && !seenIds.has(t.id)) {
-          seenIds.add(t.id);
-          combined.push(t);
-        }
-      }
-
-      setTeams(combined);
-
-      if (tournRes) {
-        let tData =
-          tournRes?.data?.content ||
-          tournRes?.data?.tournament ||
-          tournRes?.data;
-        if (tData?.content) tData = tData.content;
-        if (tData) {
-          setTournamentTitle(tData.title || tData.name || "Tournament");
-          if (Array.isArray(tData.teams)) {
-            const parsedTeams = tData.teams.map((t) => {
-              const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
-              return normalizeTeam(innerTeam, false);
-            });
-            setTournamentTeams(parsedTeams);
+      // 1. Fetch My Teams first for instant display
+      teamsApi.getMyTeams().then((myRes) => {
+        if (Array.isArray(myRes?.data)) {
+          const myData = myRes.data.map((t) => normalizeTeam(t, true));
+          setTeams((prev) => {
+            const seen = new Set(myData.map((t) => t.id).filter(Boolean));
+            const existingOpp = prev.filter((t) => !t.isMyTeam && !seen.has(t.id));
+            const updated = [...myData, ...existingOpp];
+            cachedTeams = updated;
+            return updated;
+          });
+          if (tournamentId) {
+            setTournamentTeams((prev) =>
+              prev.map((tt) => {
+                if (!tt.players || tt.players.length === 0) {
+                  const match = myData.find((m) => String(m.id) === String(tt.id));
+                  if (match?.players?.length > 0) return { ...tt, players: match.players };
+                }
+                return tt;
+              })
+            );
           }
+          setLoading(false);
         }
+      }).catch(() => {});
+
+      // 2. Fetch Opponents in parallel
+      teamsApi.getOpponentTeams().then((oppRes) => {
+        const rawOppList = Array.isArray(oppRes?.data?.content)
+          ? oppRes.data.content
+          : Array.isArray(oppRes?.data)
+          ? oppRes.data
+          : [];
+        const oppData = rawOppList.map((t) => normalizeTeam(t, false));
+        setTeams((prev) => {
+          const seen = new Set(prev.map((t) => t.id).filter(Boolean));
+          const newOpp = oppData.filter((t) => t.id && !seen.has(t.id));
+          const updated = [...prev, ...newOpp];
+          cachedTeams = updated;
+          return updated;
+        });
+        if (tournamentId) {
+          setTournamentTeams((prev) =>
+            prev.map((tt) => {
+              if (!tt.players || tt.players.length === 0) {
+                const match = oppData.find((m) => String(m.id) === String(tt.id));
+                if (match?.players?.length > 0) return { ...tt, players: match.players };
+              }
+              return tt;
+            })
+          );
+        }
+        setLoading(false);
+      }).catch(() => {});
+
+      // 3. Fetch Tournament data if applicable
+      if (tournamentId) {
+        tournamentsApi.getTournamentById(tournamentId).then((tournRes) => {
+          let tData =
+            tournRes?.data?.content ||
+            tournRes?.data?.tournament ||
+            tournRes?.data;
+          if (tData?.content) tData = tData.content;
+          if (tData) {
+            setTournamentTitle(tData.title || tData.name || "Tournament");
+            if (Array.isArray(tData.teams)) {
+              const currentAllTeams = cachedTeams || [];
+              const parsedTeams = tData.teams.map((t) => {
+                const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
+                const normalized = normalizeTeam(innerTeam, false);
+                const tId = normalized.id;
+                
+                // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents!
+                if (!normalized.players || normalized.players.length === 0) {
+                  const matched = currentAllTeams.find((ct) => String(ct.id) === String(tId));
+                  if (matched && Array.isArray(matched.players) && matched.players.length > 0) {
+                    normalized.players = matched.players;
+                  }
+                }
+                return normalized;
+              });
+
+              setTournamentTeams(parsedTeams);
+              cachedTournamentTeams[tournamentId] = parsedTeams;
+
+              // Background-fetch details for any tournament teams still missing players
+              parsedTeams.forEach((pt) => {
+                if (!pt.players || pt.players.length === 0) {
+                  teamsApi.getTeamById(pt.id).then((teamDetailRes) => {
+                    const teamDataObj = Array.isArray(teamDetailRes?.data)
+                      ? teamDetailRes.data[0]
+                      : (teamDetailRes?.data?.data || teamDetailRes?.data?.team || teamDetailRes?.data);
+                    const pl = teamDataObj?.players;
+                    if (Array.isArray(pl) && pl.length > 0) {
+                      setTournamentTeams((prev) => {
+                        const updated = prev.map((item) =>
+                          item.id === pt.id ? { ...item, players: pl } : item
+                        );
+                        cachedTournamentTeams[tournamentId] = updated;
+                        return updated;
+                      });
+                    }
+                  }).catch(() => {});
+                }
+              });
+            }
+          }
+          setLoading(false);
+        }).catch(() => {
+          setLoading(false);
+        });
       }
     } catch (error) {
       console.warn("[SelectTeam] Failed to fetch teams:", error);
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -200,7 +277,9 @@ export default function SelectTeamScreen() {
     });
   };
 
-  // Filter teams based on active tab
+  const [quickSearchQuery, setQuickSearchQuery] = useState("");
+
+  // Filter teams based on active tab, blockedTeamId, and quickSearchQuery
   const getFilteredTeams = () => {
     let filtered = teams;
     if (activeTab === "myTeams") {
@@ -208,7 +287,52 @@ export default function SelectTeamScreen() {
     } else if (activeTab === "opponentTeams") {
       filtered = filtered.filter((t) => !t.isMyTeam);
     }
+
+    if (blockedTeamId) {
+      filtered = filtered.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+
+    if (quickSearchQuery.trim()) {
+      const q = quickSearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(
+        (t) =>
+          (t.name || t.title || "").toLowerCase().includes(q) ||
+          (t.shortName || "").toLowerCase().includes(q) ||
+          (t.location || "").toLowerCase().includes(q)
+      );
+    }
     return filtered;
+  };
+
+  const getFilteredTournamentTeams = () => {
+    let list = tournamentTeams;
+    if (blockedTeamId) {
+      list = list.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+    if (quickSearchQuery.trim()) {
+      const q = quickSearchQuery.trim().toLowerCase();
+      list = list.filter(
+        (t) =>
+          (t.name || t.title || "").toLowerCase().includes(q) ||
+          (t.shortName || "").toLowerCase().includes(q) ||
+          (t.location || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  };
+
+  const getFilteredSearchResults = () => {
+    let list = searchResults;
+    if (blockedTeamId) {
+      list = list.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+    return list;
   };
 
   const renderTabButton = (tabName, label, iconName) => (
@@ -310,12 +434,15 @@ export default function SelectTeamScreen() {
         {/* Tournament Teams Tab */}
         {activeTab === "tournamentTeams" && (
           <TeamList 
-            teams={tournamentTeams} 
+            teams={getFilteredTournamentTeams()} 
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             emptyMessage={tournamentTitle ? `No teams registered in ${tournamentTitle} yet.` : "No tournament teams found."}
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -328,6 +455,9 @@ export default function SelectTeamScreen() {
             emptyMessage="No teams available. Create one!"
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -340,6 +470,9 @@ export default function SelectTeamScreen() {
             emptyMessage="No opponent teams available."
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -351,7 +484,7 @@ export default function SelectTeamScreen() {
         {/* Search Tab */}
         {activeTab === "search" && (
           <SearchTab 
-            teams={searchResults} 
+            teams={getFilteredSearchResults()} 
             isSearching={isSearching}
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
@@ -365,12 +498,52 @@ export default function SelectTeamScreen() {
 }
 
 // Team List Component
-const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, onRefresh }) => {
+const TeamList = ({
+  teams,
+  onTeamSelect,
+  isDarkMode,
+  emptyMessage,
+  refreshing,
+  onRefresh,
+  onCreateTeam,
+  searchQuery,
+  onSearchChange,
+}) => {
   return (
     <View className="flex-1 p-4">
+      {/* Quick Search Bar */}
+      <View
+        className={`flex-row items-center px-3 py-2 rounded-xl mb-3 border ${
+          isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        } shadow-sm`}
+      >
+        <Ionicons
+          name="search"
+          size={18}
+          color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          style={{ marginRight: 8 }}
+        />
+        <TextInput
+          placeholder="Quick search teams by name or location..."
+          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+          className={`flex-1 text-sm ${isDarkMode ? "text-white" : "text-gray-900"} py-1`}
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => onSearchChange("")}>
+            <Ionicons
+              name="close-circle"
+              size={18}
+              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       <FlatList
         data={teams}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, idx) => item?.id ? String(item.id) : `team_${idx}`}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -411,10 +584,34 @@ const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, o
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <ThemedText className="text-gray-500 dark:text-gray-400">
-              {emptyMessage}
+          <View className="items-center justify-center py-12 px-4">
+            <View
+              className={`w-16 h-16 rounded-full items-center justify-center mb-3 ${
+                isDarkMode ? "bg-gray-800 border border-gray-700" : "bg-blue-50 border border-blue-100"
+              }`}
+            >
+              <Ionicons name="shield-outline" size={32} color={isDarkMode ? "#60A5FA" : "#2563EB"} />
+            </View>
+            <ThemedText className={`text-base font-bold text-center mb-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {searchQuery ? "No Matching Teams" : "No Teams Available"}
             </ThemedText>
+            <ThemedText className="text-gray-500 dark:text-gray-400 text-xs text-center mb-5 max-w-xs">
+              {searchQuery
+                ? `No teams matched "${searchQuery}". Try a different name or search globally.`
+                : emptyMessage || "Create a team now to start playing matches!"}
+            </ThemedText>
+            {onCreateTeam && !searchQuery ? (
+              <TouchableOpacity
+                onPress={onCreateTeam}
+                activeOpacity={0.85}
+                className="flex-row items-center bg-blue-600 px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/30"
+              >
+                <Ionicons name="add-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <ThemedText className="text-white text-sm font-bold">
+                  Create New Team
+                </ThemedText>
+              </TouchableOpacity>
+            ) : null}
           </View>
         }
       />
@@ -491,7 +688,7 @@ const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, 
       
       <FlatList
         data={teams}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, idx) => item?.id ? String(item.id) : `search_team_${idx}`}
         renderItem={({ item }) => (
           <TouchableOpacity
             onPress={() => onTeamSelect(item)}

@@ -22,6 +22,7 @@ export default function MatchOverview({
   inning2 = null,
   superOverSummary = "",
   superOverList = [],
+  isChasing = false,
 }) {
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
@@ -44,8 +45,8 @@ export default function MatchOverview({
   const oversText = typeof overs === "string" 
     ? overs 
     : typeof overs === "number" 
-    ? `${overs} Ov` 
-    : `${overs?.over || "0.0"} Ov`;
+    ? String(overs) 
+    : `${score?.over ?? 0} Ov`;
 
   // Safe extraction / recalculation of CRR
   const runsVal = typeof score === "object" ? score?.runs : parseInt(String(score).split("/")[0], 10);
@@ -55,10 +56,22 @@ export default function MatchOverview({
     ? computedCrr
     : ((crr !== undefined && crr !== null && typeof crr !== "object") ? String(crr) : "");
   
-  let projText = (projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object" && String(projjectedScore) !== "0" && String(projjectedScore) !== "-") 
+  const isInning2 = Boolean(
+    isChasing ||
+    score?.isChasing ||
+    score?.matchCurrentStatus === "INNINGS_II" ||
+    score?.currentInnings === 2 ||
+    score?.currentInning === 2 ||
+    score?.innings === 2 ||
+    score?.rrr ||
+    score?.target ||
+    (inning2 && inning2?.score && inning2?.score !== "-")
+  );
+
+  let projText = (!isInning2 && projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object" && String(projjectedScore) !== "0" && String(projjectedScore) !== "-") 
     ? String(projjectedScore) 
     : "";
-  if (!projText && crrText && crrText !== "0.00" && matchStatus === "Live") {
+  if (!isInning2 && !projText && crrText && crrText !== "0.00" && matchStatus === "Live") {
     const crrNum = parseFloat(crrText) || 0;
     const totalMatchOvers = Number(matchTotalOver || 20);
     if (crrNum > 0 && totalMatchOvers > 0) {

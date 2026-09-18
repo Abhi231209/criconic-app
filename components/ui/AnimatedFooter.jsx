@@ -38,6 +38,8 @@ import useAppTheme from "@/hooks/useAppTheme";
 import { useSelector } from "react-redux";
 import { request, tournamentsApi, teamsApi } from "@/utils/api";
 import CurrentUser from "@/utils/User";
+import useRequireAuth from "@/hooks/useRequireAuth";
+import analytics from "@/utils/analytics";
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;
@@ -133,9 +135,17 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const { theme, isDark } = useAppTheme();
+  const { requireAuth } = useRequireAuth(navigation);
   const [activeTab, setActiveTab] = useState(currentTab || "Home");
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const menuItemAnimations = useRef([]).current;
+
+  // Keep activeTab strictly in sync when parent screen changes or passes currentTab
+  useEffect(() => {
+    if (currentTab) {
+      setActiveTab(currentTab);
+    }
+  }, [currentTab]);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -235,21 +245,33 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
       subtitle: "Organize a cricket tournament with teams and fixtures.",
       icon: Trophy,
       color: colors.primary,
-      onPress: () => navigateToScreen(SCREENS.CreateTournament),
+      onPress: () => {
+        analytics.logAction("quick_create_click", "navigation", { create_type: "tournament" });
+        toggleCreateMenu();
+        requireAuth(() => navigateToScreen(SCREENS.CreateTournament));
+      },
     },
     {
       title: "Create Match",
       subtitle: "Schedule a single match between two teams.",
       icon: (props) => <MaterialCommunityIcons name="cricket" {...props} />,
       color: colors.primary,
-      onPress: () => navigateToScreen(SCREENS.CreateMatch),
+      onPress: () => {
+        analytics.logAction("quick_create_click", "navigation", { create_type: "match" });
+        toggleCreateMenu();
+        requireAuth(() => navigateToScreen(SCREENS.CreateMatch));
+      },
     },
     {
       title: "Create Team",
       subtitle: "Build a new cricket team with players.",
       icon: Users,
       color: colors.primary,
-      onPress: () => navigateToScreen(SCREENS.CreateTeam),
+      onPress: () => {
+        analytics.logAction("quick_create_click", "navigation", { create_type: "team" });
+        toggleCreateMenu();
+        requireAuth(() => navigateToScreen(SCREENS.CreateTeam));
+      },
     },
   ];
 
@@ -270,6 +292,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   };
 
   const handleTabPress = (tabName) => {
+    analytics.logTabChange(tabName, "bottom_footer");
     if (tabName === "Create") {
       toggleCreateMenu();
     } else {
@@ -279,18 +302,25 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
         }
         return;
       }
-      setActiveTab(tabName);
       if (showCreateMenu) {
         toggleCreateMenu();
       }
       if (tabName === "Home") {
+        setActiveTab(tabName);
         navigateToScreen(SCREENS.Home);
       } else if (tabName === "Tournament") {
+        setActiveTab(tabName);
         navigateToScreen(SCREENS.AllTournaments);
       } else if (tabName === "My Cricket") {
-        navigateToScreen(SCREENS.MyCricket);
+        requireAuth(() => {
+          setActiveTab(tabName);
+          navigateToScreen(SCREENS.MyCricket);
+        });
       } else if (tabName === "Profile") {
-        navigateToScreen(SCREENS.PlayerProfile);
+        requireAuth(() => {
+          setActiveTab(tabName);
+          navigateToScreen(SCREENS.PlayerProfile);
+        });
       }
     }
   };
@@ -324,7 +354,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
 
   const renderFooterItem = (item, index) => {
     const IconComponent = item.icon;
-    const isActive = activeTab === item.name;
+    const isActive = (currentTab || activeTab) === item.name;
     const isCreate = item.isCreate;
 
     return (
@@ -425,7 +455,9 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
           {
             opacity: fadeAnim,
             transform: [{ scale: scaleAnim }],
-            backgroundColor: colors.menuBackground,
+            backgroundColor: isDark ? "#111827" : "#FFFFFF",
+            borderColor: isDark ? "#374151" : "#E5E7EB",
+            borderWidth: 1,
           },
         ]}
       >
@@ -441,7 +473,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
             style={[
               StyleSheet.absoluteFill,
               {
-                backgroundColor: colors.menuBackdrop,
+                backgroundColor: isDark ? "rgba(17, 24, 39, 0.96)" : "rgba(255, 255, 255, 0.96)",
               },
             ]}
           />
@@ -457,7 +489,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <Sparkles size={24} color="#FFFFFF" strokeWidth={1.5} />
+                <Sparkles size={24} color={colors.primary} strokeWidth={1.5} />
               </LinearGradient>
             </View>
             <View style={styles.createMenuHeaderText}>

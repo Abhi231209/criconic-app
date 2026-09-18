@@ -262,7 +262,6 @@ export default function ChangeBowler(props) {
       const isSuccess = res?.status === 200 || res?.data?.success;
       
       if (isSuccess) {
-        Alert.alert("Success", "Player replaced successfully");
         props?.cb?.();
         route?.params?.cb?.();
         handleGoBack();

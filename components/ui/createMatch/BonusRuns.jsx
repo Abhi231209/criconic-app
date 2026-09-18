@@ -110,12 +110,10 @@ export default function BonusRuns({
       // refresh until the next ball's own score broadcast came in.
       emit("update-score", payload);
 
-      Alert.alert("Success", "Bonus runs added successfully");
       onSuccess?.();
       handleClose();
     } catch (error) {
       console.warn("Error updating bonus runs:", error);
-      Alert.alert("Notice", "Bonus runs recorded");
       handleClose();
     } finally {
       setLoading(false);

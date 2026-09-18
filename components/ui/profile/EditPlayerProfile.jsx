@@ -135,6 +135,15 @@ export default function EditPlayerProfile() {
   };
 
   const handleSave = async () => {
+    if (!formData.name?.trim()) {
+      Alert.alert("Error", "Please enter your name");
+      return;
+    }
+    if (!formData.nationality?.trim()) {
+      Alert.alert("Error", "Please enter your location or city");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const playerId = player.id || authUser?._id || authUser?.id;

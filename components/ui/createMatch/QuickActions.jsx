@@ -14,15 +14,17 @@ export default function QuickActions({
   bowler,
   batsmen,
   navigation,
+  disabled = false,
   cb = () => {},
 }) {
   const { openSheet, closeSheet } = useBottomSheet();
 
   const colorScheme = useColorScheme();
-    const isDarkMode = colorScheme === "dark";
+  const isDarkMode = colorScheme === "dark";
   return (
         <>
           <TouchableOpacity
+            disabled={disabled}
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -33,9 +35,11 @@ export default function QuickActions({
               backgroundColor: isDarkMode ? "#111827" : "#ffffff",
               borderTopWidth: 1,
               borderTopColor: isDarkMode ? "#1f2937" : "#e5e7eb",
+              opacity: disabled ? 0.45 : 1,
             }}
             activeOpacity={0.7}
             onPress={() => {
+              if (disabled) return;
               openSheet(
                 <QuickActionDetails
                   matchID={matchID}

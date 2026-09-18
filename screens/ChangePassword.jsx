@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { request } from "@/utils/api";
+import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 
 export default function ChangePassword({ navigation }) {
   const colorScheme = useColorScheme();
@@ -123,14 +124,11 @@ export default function ChangePassword({ navigation }) {
         <View style={styles.headerSpacer} />
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardAvoid}
+      <AppKeyboardAwareScrollView
+        extraHeight={80}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
           <View style={styles.headerInfo}>
             <View
               style={[
@@ -328,8 +326,7 @@ export default function ChangePassword({ navigation }) {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </AppKeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

@@ -19,6 +19,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { teamsApi } from '@/utils/api';
+import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 
 export default function EditTeam() {
   const navigation = useNavigation();
@@ -264,30 +265,30 @@ export default function EditTeam() {
 
   return (
     <SafeAreaView className={`flex-1 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        }`}>
-          <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-            <Ionicons name="arrow-back" size={24} color="#2563EB" />
-          </TouchableOpacity>
-          
-          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-            Edit Team
+      {/* Header */}
+      <View className={`px-4 py-4 border-b flex-row items-center justify-between ${
+        isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+      }`}>
+        <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
+          <Ionicons name="arrow-back" size={24} color="#2563EB" />
+        </TouchableOpacity>
+        
+        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+          Edit Team
+        </ThemedText>
+        
+        <TouchableOpacity onPress={() => setFormData(team)} className="p-2">
+          <ThemedText className="text-blue-600 text-sm font-medium">
+            Reset
           </ThemedText>
-          
-          <TouchableOpacity onPress={() => setFormData(team)} className="p-2">
-            <ThemedText className="text-blue-600 text-sm font-medium">
-              Reset
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+      </View>
 
-        <ScrollView className="flex-1 px-4 py-4" showsVerticalScrollIndicator={false}>
+      <AppKeyboardAwareScrollView
+        extraHeight={80}
+        contentContainerStyle={{ padding: 16 }}
+        showsVerticalScrollIndicator={false}
+      >
           {/* Logo Upload */}
           <ImageUpload />
 
@@ -442,8 +443,7 @@ export default function EditTeam() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </AppKeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

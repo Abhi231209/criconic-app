@@ -7,7 +7,9 @@
  */
 
 // Primary API Base URL - Change this single value to switch environments:
-export const DEFAULT_API_URL = "https://devapi.criconic.com";
+
+export const DEFAULT_API_URL =  "http://192.168.31.38:8000/"
+// "https://devapi.criconic.com";
 
 // Resolve API base URL (supports EXPO_PUBLIC_API_URL from Expo environment if provided)
 const envApiUrl =
@@ -27,7 +29,7 @@ export const apiUrl = BASE_URL;
 export const SOCKET_URL = API_URL;
 
 // Public Web Application URL (for sharing live matches, go-live links)
-export const DEFAULT_WEB_URL = "https://criconic.com";
+export const DEFAULT_WEB_URL = "https://dev.criconic.com";
 const envWebUrl =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_WEB_URL) ||
   DEFAULT_WEB_URL;
@@ -36,6 +38,19 @@ export const WEB_URL = envWebUrl.replace(/\/+$/, "");
 // Image Base URL (derives automatically from BASE_URL)
 export const IMAGE_BASE_URL = BASE_URL;
 
+// Google Analytics 4 (GA4) Configuration for Mobile App
+export const DEFAULT_GA_MEASUREMENT_ID = "G-MOBILECRIC";
+export const GA_MEASUREMENT_ID =
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_GA_MEASUREMENT_ID) ||
+  DEFAULT_GA_MEASUREMENT_ID;
+
+export const GA_API_SECRET =
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_GA_API_SECRET) || "";
+
+export const GA_DEBUG_MODE =
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_GA_DEBUG === "true") ||
+  __DEV__;
+
 const config = {
   BASE_URL,
   API_URL,
@@ -43,6 +58,9 @@ const config = {
   SOCKET_URL,
   WEB_URL,
   IMAGE_BASE_URL,
+  GA_MEASUREMENT_ID,
+  GA_API_SECRET,
+  GA_DEBUG_MODE,
 };
 
 export default config;

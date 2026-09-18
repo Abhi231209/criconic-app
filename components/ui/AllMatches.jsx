@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
-import ScoreCard from "@/components/ui/ScoreCard";
+import ScoreCard, { MATCH_CACHE } from "@/components/ui/ScoreCard";
 import { matchesApi, request } from "@/utils/api";
 import { MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
 
@@ -37,8 +37,8 @@ export default function AllMatches() {
   const fetchMatches = useCallback(async () => {
     try {
       const [idsRes, listRes] = await Promise.all([
-        request("api/matches/ids?page=1&items=100", { method: "GET", errorAlert: false }).catch(() => null),
-        matchesApi.getMatches({}, { errorAlert: false }).catch(() => null),
+        request("api/matches/ids?page=1&items=10", { method: "GET", errorAlert: false }).catch(() => null),
+        matchesApi.getMatches({ limit: 10 }, { errorAlert: false }).catch(() => null),
       ]);
 
       const extractArray = (res) => {
@@ -52,23 +52,28 @@ export default function AllMatches() {
       };
 
       const rawCombined = [
-        ...extractArray(idsRes),
         ...extractArray(listRes),
+        ...extractArray(idsRes),
       ];
 
-      // Deduplicate by match ID
-      const seen = new Set();
-      const uniqueMatches = [];
+      // Deduplicate by match ID, prioritizing rich objects with teams
+      const matchMap = new Map();
       for (const m of rawCombined) {
         if (!m) continue;
-        const id = String(m._id || m.id || m.matchId || m);
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          uniqueMatches.push(m);
+        const id = String(m._id || m.id || m.matchId || (typeof m === "string" ? m : ""));
+        if (!id) continue;
+        if (!matchMap.has(id)) {
+          matchMap.set(id, m);
+        } else {
+          const existing = matchMap.get(id);
+          const hasTeams = (obj) => Array.isArray(obj?.teams) && obj.teams.length > 0;
+          if (!hasTeams(existing) && hasTeams(m)) {
+            matchMap.set(id, m);
+          }
         }
       }
 
-      setMatches(uniqueMatches);
+      setMatches(Array.from(matchMap.values()));
     } catch (err) {
       console.warn("[AllMatches] Fetch error:", err);
     } finally {
@@ -91,8 +96,17 @@ export default function AllMatches() {
     const q = searchQuery.trim().toLowerCase();
 
     return matches.filter((item) => {
+      const matchId = String(item?._id || item?.id || item?.matchId || (typeof item === "string" ? item : ""));
+      const cached = matchId ? MATCH_CACHE.get(matchId) : null;
+      const fullItem = cached?.matchDetails || item;
+
       // Resolve status
-      const rawStatus = item?.status || item?.matchCurrentStatus || "";
+      const rawStatus =
+        fullItem?.status ||
+        fullItem?.matchCurrentStatus ||
+        item?.status ||
+        item?.matchCurrentStatus ||
+        "";
       const displayStatus = (getMatchStatusDisplay(rawStatus) || "").toLowerCase();
       const isLive =
         displayStatus === "live" ||
@@ -112,24 +126,48 @@ export default function AllMatches() {
       // Search query
       if (!q) return true;
 
+      const title = (fullItem?.title || item?.title || "").toLowerCase();
+
       const team1 = (
+        fullItem?.teams?.[0]?.title ||
+        fullItem?.teams?.[0]?.name ||
+        fullItem?.teams?.[0]?.teamName ||
+        fullItem?.team1?.name ||
+        fullItem?.teamA ||
         item?.teams?.[0]?.title ||
         item?.teams?.[0]?.name ||
+        item?.teams?.[0]?.teamName ||
         item?.team1?.name ||
         ""
       ).toLowerCase();
+
       const team2 = (
+        fullItem?.teams?.[1]?.title ||
+        fullItem?.teams?.[1]?.name ||
+        fullItem?.teams?.[1]?.teamName ||
+        fullItem?.team2?.name ||
+        fullItem?.teamB ||
         item?.teams?.[1]?.title ||
         item?.teams?.[1]?.name ||
+        item?.teams?.[1]?.teamName ||
         item?.team2?.name ||
         ""
       ).toLowerCase();
+
       const tournament = (
+        fullItem?.tournament?.title ||
+        fullItem?.tournament?.name ||
+        (typeof fullItem?.tournament === "string" ? fullItem?.tournament : "") ||
         item?.tournament?.title ||
         item?.tournament?.name ||
         (typeof item?.tournament === "string" ? item?.tournament : "")
       ).toLowerCase();
+
       const venue = (
+        fullItem?.venue ||
+        fullItem?.address ||
+        fullItem?.location ||
+        fullItem?.city ||
         item?.venue ||
         item?.address ||
         item?.location ||
@@ -137,6 +175,7 @@ export default function AllMatches() {
       ).toLowerCase();
 
       return (
+        title.includes(q) ||
         team1.includes(q) ||
         team2.includes(q) ||
         tournament.includes(q) ||

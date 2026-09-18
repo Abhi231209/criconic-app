@@ -22,6 +22,7 @@ import Header from "./Header";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
 import TabSwitch from "../custom/TabSwitch";
+import GoogleRecentOversStrip from "./GoogleRecentOversStrip";
 import MatchInfo from "./MatchInfo";
 import MatchSummary from "./MatchSummary";
 import FullScoreCard from "./FullScorecard";
@@ -1769,6 +1770,33 @@ export default function MatchScoreCard({
         matchStatusRaw !== "INNINGS_BREAK"
     );
 
+    const isMatchNotStarted = Boolean(
+        !isMatchEnded && (
+            matchStatusRaw === "MATCH_SCHEDULED" ||
+            matchStatusRaw === "MATCH_CREATED" ||
+            matchStatusRaw === "MATCH_DETAILS_ENTERED" ||
+            matchStatusRaw === "TOSS" ||
+            matchStatusRaw === "MATCH_OPENER_SELECTED" ||
+            matchStatusRaw === "SCHEDULED" ||
+            matchStatusRaw === "CREATED" ||
+            matchStatusRaw === "UPCOMING" ||
+            matchStatusRaw === "PENDING" ||
+            matchStatusRaw === "MATCH_DELAYED" ||
+            matchStatusRaw === "0" ||
+            score?.status === 0 ||
+            score?.status === "MATCH_SCHEDULED" ||
+            score?.status === "MATCH_CREATED" ||
+            score?.status === "MATCH_DETAILS_ENTERED" ||
+            score?.status === "TOSS" ||
+            (!score?.matchCurrentStatus &&
+             !score?.inning?.length &&
+             !score?.innings_1?.score?.over &&
+             !score?.innings_1?.score?.runs &&
+             !score?.batting?.score?.runs &&
+             !score?.batting?.score?.over)
+        )
+    );
+
     const isSuperOverMatch = Boolean(
         score?.isSuperOver ||
         score?.score?.isSuperOver ||
@@ -1903,6 +1931,21 @@ export default function MatchScoreCard({
     const tabs = useMemo(() => {
         const list = [];
 
+        // If match has not started, only display Info and Squad tabs
+        if (isMatchNotStarted) {
+            list.push({
+                id: "info",
+                label: "Info",
+                content: <MatchInfo score={score} headToHeadStats={headToHeadStats} teamsRecentForm={teamsRecentForm} />,
+            });
+            list.push({
+                id: "squad",
+                label: "Squad",
+                content: <CurrentSquad matchId={matchID} score={score} />,
+            });
+            return list;
+        }
+
         // When match is not ended, Live tab is at the beginning for immediate live match viewing
         if (!isMatchEnded) {
             list.push({
@@ -1956,16 +1999,20 @@ export default function MatchScoreCard({
         });
 
         return list;
-    }, [score, headToHeadStats, teamsRecentForm, isChasing, matchID, isDarkMode, isMatchEnded]);
+    }, [score, headToHeadStats, teamsRecentForm, isChasing, matchID, isDarkMode, isMatchEnded, isMatchNotStarted]);
 
     const initialTabIndex = useMemo(() => {
+        if (isMatchNotStarted) {
+            const infoIdx = tabs.findIndex(t => t.id === "info");
+            return infoIdx !== -1 ? infoIdx : 0;
+        }
         if (isMatchEnded) {
             const summaryIdx = tabs.findIndex(t => t.id === "summary");
             return summaryIdx !== -1 ? summaryIdx : 0;
         }
         const liveIdx = tabs.findIndex(t => t.id === "stats");
         return liveIdx !== -1 ? liveIdx : 0;
-    }, [isMatchEnded, tabs]);
+    }, [isMatchNotStarted, isMatchEnded, tabs]);
 
     // Defensive render if loading or score data not yet received (placed after all hooks to respect Rules of Hooks)
     const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
@@ -2042,22 +2089,32 @@ export default function MatchScoreCard({
                     <MatchOverview
                         team={score?.batting?.battingTeam || (score?.teams?.[0]?.title ?? "Team 1")}
                         score={
-                            (score?.batting?.score?.runs ?? "0") + "/" + (score?.batting?.score?.wicket ?? 0)
+                            isMatchNotStarted
+                                ? "-"
+                                : ((score?.batting?.score?.runs ?? "0") + "/" + (score?.batting?.score?.wicket ?? 0))
                         }
-                        overs={score?.batting?.score?.over ? `${score.batting.score.over} Ov` : "0.0 Ov"}
-                        crr={score?.batting?.score?.CRR}
-                        projjectedScore={score?.batting?.score?.projectedScore}
+                        overs={
+                            isMatchNotStarted
+                                ? "-"
+                                : (score?.batting?.score?.over ? `${score.batting.score.over} Ov` : "0.0 Ov")
+                        }
+                        crr={isMatchNotStarted ? "" : score?.batting?.score?.CRR}
+                        projjectedScore={isMatchNotStarted ? "" : score?.batting?.score?.projectedScore}
                         matchTotalOver={score?.totalOvers || score?.matchTotalOver || 20}
                         powerplayOvers={score?.powerplayOvers}
-                        matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : "Live")}
+                        matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : (isMatchNotStarted ? "Upcoming" : "Live"))}
                         result={isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || "")}
                         motm={isMatchEnded ? score?.mom : null}
                         isSuperOverEnded={isSuperOverEnded}
-                        inning1={inning1Overview}
-                        inning2={inning2Overview}
+                        inning1={isMatchNotStarted ? null : inning1Overview}
+                        inning2={isMatchNotStarted ? null : inning2Overview}
                         superOverSummary={superOverSummary}
                         superOverList={superOverList}
+                        isChasing={isChasing}
                     />
+
+                    {/* Google Chrome Style Unboxed Recent Overs Strip (Above Tabs) */}
+                    {!isMatchNotStarted && <GoogleRecentOversStrip score={score} isDark={isDarkMode} />}
 
                     <TabSwitch 
                         tabs={tabs} 

@@ -23,6 +23,7 @@ import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareS
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import SCREENS from '@/screens';
 import { teamsApi, upload } from '@/utils/api';
+import analytics from '@/utils/analytics';
 
 const InputField = ({ 
   label, 
@@ -166,6 +167,11 @@ export default function CreateTeam() {
       return;
     }
 
+    if (!formData.city?.trim()) {
+      Alert.alert('Error', 'Please enter and select a city/location for the team');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -194,6 +200,9 @@ export default function CreateTeam() {
       const res = await teamsApi.createTeam(teamPayload);
 
       if (res?.data?.success || res?.status === 200 || res?.data?.data?._id) {
+        analytics.logAction("create_team_success", "team", {
+          team_name: formData.teamName || "",
+        });
         const createdTeam = res.data?.data || {
           _id: res.data?._id,
           name: formData.teamName,
@@ -216,9 +225,12 @@ export default function CreateTeam() {
           ]
         );
       } else {
-        Alert.alert('Notice', res?.data?.message || 'Could not create team. Please try again.');
+        const msg = res?.data?.message || 'Could not create team. Please try again.';
+        analytics.logAction("create_team_failed", "team", { reason: msg });
+        Alert.alert('Notice', msg);
       }
     } catch (error) {
+      analytics.logAction("create_team_failed", "team", { reason: error.message || 'Unknown error' });
       Alert.alert('Error', error.message || 'Failed to create team');
     } finally {
       setIsLoading(false);
@@ -401,37 +413,46 @@ export default function CreateTeam() {
                 }`}
                 onPress={() =>
                   navigation.navigate(SCREENS.AddPlayer, {
-                    cb: (selectedPlayer) => {
-                      if (selectedPlayer) {
-                        setFormData((prev) => {
-                          const playerId =
-                            selectedPlayer.id ||
-                            selectedPlayer._id ||
-                            selectedPlayer.playerId;
-                          const exists = prev.players.some(
-                            (p) => (p.id || p._id || p.playerId) === playerId
+                    cb: (incoming) => {
+                      if (!incoming) return;
+                      const list = Array.isArray(incoming) ? incoming : [incoming];
+                      setFormData((prev) => {
+                        let updatedPlayers = [...prev.players];
+                        list.forEach((item) => {
+                          const pId =
+                            item.id ||
+                            item._id ||
+                            item.playerId ||
+                            `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+                          const pName =
+                            item.name ||
+                            item.username ||
+                            item.playerName ||
+                            item.title ||
+                            item.user?.name ||
+                            item.user?.username ||
+                            (item.mobile ? `Player (${item.mobile.slice(-4)})` : "Player");
+                          const exists = updatedPlayers.some(
+                            (p) =>
+                              (p.id || p._id || p.playerId) === pId ||
+                              (p.name && p.name.toLowerCase() === pName.toLowerCase() && pName !== "Player")
                           );
-                          if (exists) return prev;
-                          return {
-                            ...prev,
-                            players: [
-                              ...prev.players,
-                              {
-                                id: playerId,
-                                _id: playerId,
-                                name:
-                                  selectedPlayer.name ||
-                                  selectedPlayer.username ||
-                                  "Player",
-                                mobile: selectedPlayer.mobile || "",
-                                jerseyNumber:
-                                  selectedPlayer.jerseyNumber ||
-                                  prev.players.length + 1,
-                              },
-                            ],
-                          };
+                          if (!exists) {
+                            updatedPlayers.push({
+                              id: pId,
+                              _id: pId,
+                              name: pName,
+                              mobile: item.mobile || "",
+                              jerseyNumber:
+                                item.jerseyNumber || updatedPlayers.length + 1,
+                            });
+                          }
                         });
-                      }
+                        return {
+                          ...prev,
+                          players: updatedPlayers,
+                        };
+                      });
                     },
                   })
                 }

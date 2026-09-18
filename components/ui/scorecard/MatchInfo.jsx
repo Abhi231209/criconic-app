@@ -445,16 +445,6 @@ export default function MatchInfo({
       label: 'Match Referee',
       value: score.matchOfficials.referee,
     },
-    weather && {
-      icon: <Ionicons name="partly-sunny" size={20} color="#f59e0b" />,
-      label: 'Weather',
-      value: `${weather.condition}, ${weather.temperature}`,
-    },
-    pitchReport && {
-      icon: <Ionicons name="leaf" size={20} color="#10b981" />,
-      label: 'Pitch Report',
-      value: pitchReport,
-    },
   ].filter(Boolean);
 
   if (!score?.teams || score.teams.length < 2) {

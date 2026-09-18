@@ -19,8 +19,10 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
-import { matchesApi, userApi } from "@/utils/api";
+import { matchesApi, userApi, tournamentsApi } from "@/utils/api";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
+import { searchFallbackLocations } from "@/utils/locationHelper";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 import debounce from "lodash/debounce";
 
 export default function MatchDetailsScreen() {
@@ -103,21 +105,26 @@ export default function MatchDetailsScreen() {
     }
   }, [matchId]);
 
-  // Google Places Autocomplete search matching sports-arena
+  // Google Places Autocomplete search with fallback matching sports-arena
   const debouncedLocationSearch = useCallback(
     debounce(async (text) => {
       try {
         const res = await userApi.searchLocation(text);
-        const predictions =
+        let predictions =
           res?.data?.data?.predictions ||
           res?.data?.predictions ||
           res?.data?.data ||
           [];
+        if (!Array.isArray(predictions) || predictions.length === 0) {
+          predictions = searchFallbackLocations(text);
+        }
         setLocationSuggestions(Array.isArray(predictions) ? predictions : []);
         setShowLocationSuggestions(true);
       } catch (err) {
         console.warn("[MatchDetailsScreen] searchLocation error:", err);
-        setLocationSuggestions([]);
+        const fallback = searchFallbackLocations(text);
+        setLocationSuggestions(fallback);
+        setShowLocationSuggestions(true);
       } finally {
         setIsLoadingLocation(false);
       }
@@ -181,11 +188,48 @@ export default function MatchDetailsScreen() {
     }, [navigation, fetchedMatch, route.params])
   );
 
+  const calculateDefaultPowerplay = (overs) => {
+    const num = Number(overs) || 0;
+    if (num <= 3) return 0;
+    if (num <= 6) return 1;
+    if (num <= 12) return 2;
+    return Math.min(10, Math.floor(num * 0.3));
+  };
+
+  useEffect(() => {
+    const tId =
+      route.params?.tournamentId ||
+      route.params?.tournamentID ||
+      route.params?.tournament?._id ||
+      route.params?.tournament?.id;
+    if (tId) {
+      tournamentsApi
+        .getTournamentById(tId)
+        .then((res) => {
+          const t = res?.data?.data || res?.data;
+          if (t && (t.location || t.city || t.address)) {
+            setMatchDetails((prev) => ({
+              ...prev,
+              location: prev.location || t.location || t.city || t.address || "",
+              locationId: prev.locationId || t.locationId || "",
+            }));
+          }
+        })
+        .catch((e) => console.log("[MatchDetailsScreen] fetch tournament location error:", e));
+    }
+  }, [route.params]);
+
   const handleInputChange = (field, value) => {
-    setMatchDetails(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setMatchDetails((prev) => {
+      const updated = {
+        ...prev,
+        [field]: value,
+      };
+      if (field === "overs") {
+        updated.powerplay = calculateDefaultPowerplay(value);
+      }
+      return updated;
+    });
   };
 
   const handleDateChange = (event, selectedDate) => {
@@ -247,6 +291,15 @@ export default function MatchDetailsScreen() {
   };
 
   const saveMatchDetails = async (targetStatus) => {
+    if (!matchDetails.location || !matchDetails.location.trim()) {
+      showGlobalAlert({
+        title: "Location Required",
+        message: "Please enter and select a ground or location from Google Places before proceeding.",
+        type: "warning",
+      });
+      return null;
+    }
+
     setIsSubmitting(true);
     try {
       let targetMatchId = matchId;
@@ -402,6 +455,7 @@ export default function MatchDetailsScreen() {
       fromMatchDetails: true,
       returnScreen: route.params?.returnScreen,
       tournamentId: route.params?.tournamentId || route.params?.tournamentID,
+      fromTournament: Boolean(route.params?.fromTournament),
     });
   };
 
@@ -413,7 +467,8 @@ export default function MatchDetailsScreen() {
     Alert.alert("Success", "Match has been scheduled successfully!");
 
     const tId = route.params?.tournamentId || route.params?.tournamentID;
-    if (tId) {
+    const cameFromTournament = Boolean(route.params?.fromTournament);
+    if (cameFromTournament && tId) {
       navigation.navigate(SCREENS.TournamentProfile, { tournamentId: tId });
     } else if (
       route.params?.returnScreen &&
@@ -531,7 +586,7 @@ export default function MatchDetailsScreen() {
           ref={scrollViewRef}
           className="flex-1 p-4" 
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 260 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={true}
         >
           {/* Teams Preview */}
@@ -689,7 +744,7 @@ export default function MatchDetailsScreen() {
             )}
             
             <View className="flex-row flex-wrap">
-              {[5, 10, 15, 20, 25, 30].map(overs => (
+              {[1, 2, 3, 4, 5, 6, 10, 15, 20, 25, 30].map(overs => (
                 <TouchableOpacity
                   key={overs}
                   onPress={() => handleInputChange("overs", overs)}
@@ -714,7 +769,7 @@ export default function MatchDetailsScreen() {
               ))}
               
               {/* Show custom overs as an option if it's not in the preset list */}
-              {matchDetails.overs > 0 && ![5, 10, 15, 20, 25, 30].includes(matchDetails.overs) && (
+              {matchDetails.overs > 0 && ![1, 2, 3, 4, 5, 6, 10, 15, 20, 25, 30].includes(matchDetails.overs) && (
                 <TouchableOpacity
                   className={`p-3 rounded-lg mx-1 mb-2 bg-blue-500 border-blue-600 border-2`}
                 >
@@ -738,29 +793,44 @@ export default function MatchDetailsScreen() {
               Powerplay Overs
             </ThemedText>
             <View className="flex-row flex-wrap">
-              {[4, 6, 8, 10].map(powerplay => (
-                <TouchableOpacity
-                  key={powerplay}
-                  onPress={() => handleInputChange("powerplay", powerplay)}
-                  className={`p-3 rounded-lg mx-1 mb-2 ${
-                    matchDetails.powerplay === powerplay
-                      ? "bg-blue-500 border-blue-600"
-                      : isDarkMode
-                      ? "bg-gray-800 border-gray-700"
-                      : "bg-white border-gray-200"
-                  } border-2`}
-                >
-                  <ThemedText
-                    className={`font-medium ${
-                      matchDetails.powerplay === powerplay
-                        ? "text-white"
-                        : "text-gray-900 dark:text-white"
-                    }`}
-                  >
-                    {powerplay} overs
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+              {["None", 1, 2, 3, 4, 6, 8, 10]
+                .filter((p) => p === "None" || p < (matchDetails.overs || 20))
+                .map((powerplay) => {
+                  const isSelected =
+                    powerplay === "None"
+                      ? !matchDetails.powerplay || matchDetails.powerplay === 0
+                      : matchDetails.powerplay === powerplay;
+                  const label = powerplay === "None" ? "None" : `${powerplay} overs`;
+
+                  return (
+                    <TouchableOpacity
+                      key={String(powerplay)}
+                      onPress={() =>
+                        handleInputChange(
+                          "powerplay",
+                          powerplay === "None" ? 0 : powerplay
+                        )
+                      }
+                      className={`p-3 rounded-lg mx-1 mb-2 ${
+                        isSelected
+                          ? "bg-blue-500 border-blue-600"
+                          : isDarkMode
+                          ? "bg-gray-800 border-gray-700"
+                          : "bg-white border-gray-200"
+                      } border-2`}
+                    >
+                      <ThemedText
+                        className={`font-medium ${
+                          isSelected
+                            ? "text-white"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {label}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
             </View>
           </View>
 

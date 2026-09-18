@@ -10,6 +10,7 @@ import {
   useColorScheme,
   RefreshControl,
   Linking,
+  BackHandler,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
@@ -23,12 +24,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import NavBar from "@/components/ui/NavBar";
 import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
+import useRequireAuth from "@/hooks/useRequireAuth";
 
 const MATCHES_CONDITION = { items: 10 };
 
 export default function Home({}) {
+  const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const { requireAuth } = useRequireAuth(navigation);
 
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
@@ -41,12 +45,49 @@ export default function Home({}) {
 
   useFocusEffect(
     useCallback(() => {
+      // 1. Sanitize navigation stack: ensure Home is the clean root and Scorer/setup screens cannot be returned to
+      const state = navigation.getState?.();
+      if (state?.routes && state.index > 0) {
+        const preScoreScreenNames = [
+          SCREENS.ScorerScreen,
+          SCREENS.CreateMatch,
+          SCREENS.SelectTeamScreen,
+          SCREENS.SelectSquadScreen,
+          SCREENS.MatchDetailsScreen,
+          SCREENS.TossScreen,
+          SCREENS.PlayerSelectionScreen,
+        ];
+        const hasScorerOrSetupInHistory = state.routes
+          .slice(0, state.index)
+          .some((r) => preScoreScreenNames.includes(r.name));
+        if (hasScorerOrSetupInHistory && navigation.reset) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: SCREENS.Home }],
+          });
+          return;
+        }
+      }
+
+      // 2. Hardware back button handling while on Home screen
+      const onHardwareBackPress = () => {
+        return false;
+      };
+      const backSubscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        onHardwareBackPress
+      );
+
       // Throttle tab focus refreshes to avoid freezing UI or re-fetching every tab switch
       if (Date.now() - lastFocusFetch.current > 60000) {
         lastFocusFetch.current = Date.now();
         refreshMatches?.();
       }
-    }, [refreshMatches])
+
+      return () => {
+        backSubscription.remove();
+      };
+    }, [navigation, refreshMatches])
   );
 
   const {
@@ -60,7 +101,6 @@ export default function Home({}) {
   });
 
   const { width } = useWindowDimensions();
-  const navigation = useNavigation();
 
   const getConfig = async () => {
     const res = await getConfigDetails();
@@ -157,7 +197,7 @@ export default function Home({}) {
             >
               {/* Create Match Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateMatch))}
                 activeOpacity={0.8}
                 className="overflow-hidden rounded-xl"
               >
@@ -176,7 +216,7 @@ export default function Home({}) {
 
               {/* Add Team Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateTeam)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateTeam))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -207,7 +247,7 @@ export default function Home({}) {
 
               {/* Add Tournament Chip */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.CreateTournament)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.CreateTournament))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -238,7 +278,7 @@ export default function Home({}) {
 
               {/* My Matches Shortcut */}
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.MyCricket)}
+                onPress={() => requireAuth(() => navigation.navigate(SCREENS.MyCricket))}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
                   isDarkMode
@@ -397,7 +437,7 @@ export default function Home({}) {
           <SectionHeader title="Live Cricket Arena" />
           <TouchableOpacity
             activeOpacity={0.88}
-            onPress={() => navigation.navigate(SCREENS.MyCricket)}
+            onPress={() => requireAuth(() => navigation.navigate(SCREENS.MyCricket))}
             className="rounded-2xl overflow-hidden border border-slate-700/30 mb-5"
             style={{
               shadowColor: "#000",

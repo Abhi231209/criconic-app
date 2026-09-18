@@ -165,7 +165,7 @@ export default function SelectSquadScreen() {
 
   useEffect(() => {
     const teamId = team?._id || team?.id || team?.teamId;
-    if (teamId && (!teamSquad || teamSquad.length === 0)) {
+    if (teamId) {
       teamsApi
         .getTeamById(teamId)
         .then((res) => {
@@ -189,7 +189,7 @@ export default function SelectSquadScreen() {
           console.warn("[SelectSquadScreen] Error fetching team players:", err)
         );
     }
-  }, [team]);
+  }, [team?._id, team?.id, team?.teamId]);
 
   const playersWithImages = teamSquad.map((player, idx) => {
     const rawId = player?.id?._id || player?.id || player?._id;
