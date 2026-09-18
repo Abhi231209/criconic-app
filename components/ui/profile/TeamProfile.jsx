@@ -12,8 +12,12 @@ import {
   RefreshControl,
   Modal,
   Share,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSelector } from "react-redux";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -26,6 +30,7 @@ import { request } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 export default function TeamProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
@@ -87,6 +92,10 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
   const [squadPlayers, setSquadPlayers] = useState([]);
   const [loadingSquad, setLoadingSquad] = useState(false);
+  const [editNumberModalVisible, setEditNumberModalVisible] = useState(false);
+  const [selectedPlayerForNumber, setSelectedPlayerForNumber] = useState(null);
+  const [inputPlayerNumber, setInputPlayerNumber] = useState("");
+  const [savingPlayerNumber, setSavingPlayerNumber] = useState(false);
 
   // Helper sanitizers to avoid rendering objects as React children
   const toDisplayText = (value, fallback = "") => {
@@ -196,6 +205,14 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
       })
       .finally(() => setLoading(false));
   }, [teamId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (teamId) {
+        fetchTeamData();
+      }
+    }, [fetchTeamData, teamId])
+  );
 
   useEffect(() => {
     if (!teamId) return;
@@ -514,6 +531,122 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     }
   };
 
+  // Dedicated check for Team Owner privileges (creator, captain, organizer, admin)
+  const isTeamOwner = useMemo(() => {
+    const userRole = authUser?.role ?? User.role;
+    if (userRole === 1 || userRole === 2 || userRole === 3 || (User.isAdmin && User.isAdmin())) {
+      return true;
+    }
+
+    const raw = (teamData?.teamId && typeof teamData.teamId === "object")
+      ? { ...teamData.teamId, ...teamData }
+      : (teamData || {});
+
+    const createdByStr = String(raw?.createdBy?._id || raw?.createdBy || team?.createdBy || "");
+    if (currentUserId && createdByStr && createdByStr === currentUserId) return true;
+
+    const rawOrganizers = raw?.organizer || team?.organizer || [];
+    const orgList = Array.isArray(rawOrganizers) ? rawOrganizers : [rawOrganizers];
+    for (const org of orgList) {
+      const orgId = String(org?._id || org?.id || org || "");
+      if (currentUserId && orgId === currentUserId) return true;
+    }
+
+    const captainId = String(raw?.captain?._id || raw?.captain || "");
+    if (currentUserId && captainId && captainId === currentUserId) return true;
+
+    // If no createdBy is assigned to the team and user can edit, treat as owner
+    if (!createdByStr && canEdit) return true;
+
+    return false;
+  }, [currentUserId, teamData, team, authUser, canEdit]);
+
+  const handleOpenEditNumberModal = (player) => {
+    setSelectedPlayerForNumber(player);
+    setInputPlayerNumber(player?.mobile ? String(player.mobile) : "");
+    setEditNumberModalVisible(true);
+  };
+
+  const handleSavePlayerNumber = async () => {
+    if (!selectedPlayerForNumber) return;
+    const targetPlayerId =
+      selectedPlayerForNumber.id ||
+      selectedPlayerForNumber._id ||
+      selectedPlayerForNumber.playerId;
+
+    if (!targetPlayerId || String(targetPlayerId).startsWith("p_")) {
+      showGlobalAlert({
+        title: "Notice",
+        message: "This player record cannot be updated directly.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const cleanNumber = inputPlayerNumber.trim();
+    if (!/^[6-9]\d{9}$/.test(cleanNumber)) {
+      showGlobalAlert({
+        title: "Invalid Mobile Number",
+        message: "Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.",
+        type: "warning",
+      });
+      return;
+    }
+
+    setSavingPlayerNumber(true);
+    try {
+      const res = await request(`api/users/edit/${targetPlayerId}`, {
+        method: "POST",
+        data: {
+          dataToChange: {
+            mobile: Number(cleanNumber),
+          },
+        },
+      });
+
+      if (res?.data?.success) {
+        showGlobalAlert({
+          title: "Success",
+          message: `Phone number updated successfully for ${toDisplayText(selectedPlayerForNumber.name, "player")}!`,
+          type: "success",
+        });
+
+        // Update squad state locally immediately so UI reflects change without lag
+        setSquadPlayers((prev) =>
+          prev.map((p) => {
+            const pId = p.id || p._id || p.playerId;
+            if (String(pId) === String(targetPlayerId)) {
+              return { ...p, mobile: cleanNumber };
+            }
+            return p;
+          })
+        );
+
+        setEditNumberModalVisible(false);
+        setSelectedPlayerForNumber(null);
+        setInputPlayerNumber("");
+
+        // Also refresh the team data to ensure consistency
+        fetchTeamData();
+      } else {
+        showGlobalAlert({
+          title: "Update Failed",
+          message: res?.data?.message || "Could not update phone number. Please try again.",
+          type: "error",
+        });
+      }
+    } catch (err) {
+      console.error("Error saving player number:", err);
+      showGlobalAlert({
+        title: "Error",
+        message: "An unexpected error occurred while saving player number.",
+        type: "error",
+      });
+    } finally {
+      setSavingPlayerNumber(false);
+    }
+  };
+
   // Squad details fetched from user profile API
   useEffect(() => {
     const rawPlayers = Array.isArray(teamData?.players) ? teamData.players : [];
@@ -581,7 +714,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
         role: p.playerRole || p.role || null,
         battingStyle: p.battingStyle || null,
         bowlingStyle: p.bowlingStyle || null,
-        mobile: null,
+        mobile: p.mobile || null,
       }))
     : [];
 
@@ -866,7 +999,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             </TouchableOpacity>
             {canEdit && (
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
+                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, isOwner: isTeamOwner, team: teamData, cb: fetchTeamData })}
                 className="bg-blue-600 px-4 py-2 rounded-full flex-row items-center"
               >
                 <Ionicons name="person-add-outline" size={16} color="#FFFFFF" />
@@ -882,27 +1015,29 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <View className="flex-row justify-between items-center mb-3">
-              <ThemedText className={`text-sm font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-                {squad.length} {squad.length === 1 ? "Player" : "Players"}
-              </ThemedText>
-              <View className="flex-row items-center gap-2">
-                <TouchableOpacity
-                  onPress={() => setShowTeamQr(true)}
-                  className="flex-row items-center bg-indigo-600 px-3 py-1.5 rounded-full"
-                >
-                  <Ionicons name="qr-code-outline" size={13} color="#FFFFFF" />
-                  <ThemedText className="text-white text-xs font-semibold ml-1.5">Team QR</ThemedText>
-                </TouchableOpacity>
-                {canEdit && (
+            <View className="mb-3">
+              <View className="flex-row justify-between items-center">
+                <ThemedText className={`text-sm font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                  {squad.length} {squad.length === 1 ? "Player" : "Players"}
+                </ThemedText>
+                <View className="flex-row items-center gap-2">
                   <TouchableOpacity
-                    onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
-                    className="flex-row items-center bg-blue-600 px-3 py-1.5 rounded-full"
+                    onPress={() => setShowTeamQr(true)}
+                    className="flex-row items-center bg-indigo-600 px-3 py-1.5 rounded-full"
                   >
-                    <Ionicons name="person-add-outline" size={13} color="#FFFFFF" />
-                    <ThemedText className="text-white text-xs font-semibold ml-1.5">Add Player</ThemedText>
+                    <Ionicons name="qr-code-outline" size={13} color="#FFFFFF" />
+                    <ThemedText className="text-white text-xs font-semibold ml-1.5">Team QR</ThemedText>
                   </TouchableOpacity>
-                )}
+                  {canEdit && (
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, isOwner: isTeamOwner, team: teamData, cb: fetchTeamData })}
+                      className="flex-row items-center bg-blue-600 px-3 py-1.5 rounded-full"
+                    >
+                      <Ionicons name="person-add-outline" size={13} color="#FFFFFF" />
+                      <ThemedText className="text-white text-xs font-semibold ml-1.5">Add Player</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
           }
@@ -957,6 +1092,51 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                       <ThemedText numberOfLines={1} className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
                         {[item.battingStyle && `🏏 ${item.battingStyle}`, item.bowlingStyle && `⚾ ${item.bowlingStyle}`].filter(Boolean).join("  •  ")}
                       </ThemedText>
+                    )}
+
+                    {/* Phone Number / Add Number section */}
+                    {item.mobile ? (
+                      <View className="flex-row items-center mt-1">
+                        <Ionicons name="call" size={11} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                        <ThemedText className={`text-[11px] ml-1 font-medium ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                          +91 {String(item.mobile)}
+                        </ThemedText>
+                        {isTeamOwner && (
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => handleOpenEditNumberModal(item)}
+                            className="ml-1.5 p-0.5"
+                          >
+                            <Ionicons name="pencil" size={11} color={isDarkMode ? "#60A5FA" : "#2563EB"} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ) : (
+                      <View className="mt-1">
+                        {isTeamOwner ? (
+                          <TouchableOpacity
+                            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                            onPress={() => handleOpenEditNumberModal(item)}
+                            className={`flex-row items-center self-start px-2 py-0.5 rounded-full border ${
+                              isDarkMode
+                                ? "bg-amber-950/40 border-amber-600/50"
+                                : "bg-amber-50 border-amber-300"
+                            }`}
+                          >
+                            <Ionicons name="add-circle" size={12} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+                            <ThemedText className={`text-[11px] ml-1 font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
+                              + Add Phone Number
+                            </ThemedText>
+                          </TouchableOpacity>
+                        ) : (
+                          <View className="flex-row items-center">
+                            <Ionicons name="call-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                            <ThemedText className={`text-[11px] ml-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                              No phone number
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
                     )}
                   </View>
 
@@ -1929,6 +2109,149 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Add / Edit Player Mobile Number Modal (Team Owner Only) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={editNumberModalVisible}
+        onRequestClose={() => {
+          if (!savingPlayerNumber) setEditNumberModalVisible(false);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1 justify-center items-center bg-black/60 px-5"
+        >
+          <View
+            className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
+              isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"
+            }`}
+          >
+            {/* Header */}
+            <View className="items-center mb-4">
+              <View className="w-14 h-14 rounded-2xl bg-amber-500/15 items-center justify-center mb-3">
+                <Ionicons name="call" size={26} color="#D97706" />
+              </View>
+              <ThemedText className="text-lg font-bold text-center">
+                {selectedPlayerForNumber?.mobile ? "Edit Player Number" : "Add Player Number"}
+              </ThemedText>
+              <ThemedText
+                className={`text-xs mt-1 text-center ${
+                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Player:{" "}
+                <ThemedText className="font-semibold text-blue-500">
+                  {toDisplayText(selectedPlayerForNumber?.name, "Player")}
+                </ThemedText>
+              </ThemedText>
+            </View>
+
+            {/* Mobile Number Input */}
+            <View className="mb-5">
+              <ThemedText
+                className={`text-xs font-semibold mb-1.5 ${
+                  isDarkMode ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
+                10-Digit Mobile Number
+              </ThemedText>
+              <View
+                className={`flex-row items-center border rounded-xl px-3 h-12 ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-gray-50 border-gray-200"
+                }`}
+              >
+                <ThemedText
+                  className={`text-sm font-semibold mr-2 ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  🇮🇳 +91
+                </ThemedText>
+                <TextInput
+                  placeholder="Enter 10-digit number"
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  value={inputPlayerNumber}
+                  onChangeText={(text) =>
+                    setInputPlayerNumber(text.replace(/[^0-9]/g, "").slice(0, 10))
+                  }
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  className={`flex-1 text-sm font-semibold ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                  editable={!savingPlayerNumber}
+                  autoFocus
+                />
+                {inputPlayerNumber.length > 0 && (
+                  <TouchableOpacity onPress={() => setInputPlayerNumber("")}>
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <ThemedText
+                className={`text-[11px] mt-1.5 ${
+                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Connecting a phone number allows the player to claim and log into this profile.
+              </ThemedText>
+            </View>
+
+            {/* Action Buttons */}
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => {
+                  if (!savingPlayerNumber) {
+                    setEditNumberModalVisible(false);
+                    setSelectedPlayerForNumber(null);
+                    setInputPlayerNumber("");
+                  }
+                }}
+                disabled={savingPlayerNumber}
+                className={`flex-1 py-3 rounded-xl border items-center justify-center ${
+                  isDarkMode ? "border-gray-700 bg-gray-800" : "border-gray-200 bg-gray-100"
+                }`}
+              >
+                <ThemedText
+                  className={`font-semibold text-sm ${
+                    isDarkMode ? "text-gray-300" : "text-gray-700"
+                  }`}
+                >
+                  Cancel
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSavePlayerNumber}
+                disabled={savingPlayerNumber || inputPlayerNumber.trim().length !== 10}
+                className={`flex-1 py-3 rounded-xl items-center justify-center ${
+                  inputPlayerNumber.trim().length === 10 && !savingPlayerNumber
+                    ? "bg-blue-600"
+                    : isDarkMode
+                    ? "bg-gray-800 opacity-50"
+                    : "bg-blue-300"
+                }`}
+              >
+                {savingPlayerNumber ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <ThemedText className="font-semibold text-sm text-white">
+                    Save Number
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

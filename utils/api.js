@@ -333,10 +333,32 @@ export const authApi = {
 
 
 export const teamsApi = {
-  getMyTeams: (options = {}) =>
-    request("api/users/withTeam", { method: "GET", errorAlert: false, ...options }),
-  getOpponentTeams: (options = {}) =>
-    request("api/teams/getOpponentTeam", { method: "GET", errorAlert: false, ...options }),
+  getMyTeams: (options = {}) => {
+    const state = store?.getState?.();
+    const uid =
+      state?.auth?.user?._id ||
+      state?.auth?.user?.id ||
+      state?.auth?.user?.userId ||
+      User.id ||
+      User.user?._id ||
+      User.user?.id;
+    const endpoint = uid ? `api/users/withTeam/${uid}` : "api/users/withTeam";
+    return request(endpoint, { method: "GET", errorAlert: false, ...options });
+  },
+  getOpponentTeams: (options = {}) => {
+    const state = store?.getState?.();
+    const uid =
+      state?.auth?.user?._id ||
+      state?.auth?.user?.id ||
+      state?.auth?.user?.userId ||
+      User.id ||
+      User.user?._id ||
+      User.user?.id;
+    const endpoint = uid
+      ? `api/teams/getOpponentTeam/${uid}?playerId=${uid}`
+      : "api/teams/getOpponentTeam";
+    return request(endpoint, { method: "GET", errorAlert: false, ...options });
+  },
   getAllTeams: (options = {}) =>
     request("api/teams", { method: "GET", errorAlert: false, ...options }),
   getTeamById: (id, options = {}) =>

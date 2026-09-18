@@ -12,19 +12,68 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useSelector } from "react-redux";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import SwipeableTabs from "../custom/SwipeableTab";
-import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
+import { teamsApi, searchApi, tournamentsApi, matchesApi, request } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
+import User from "@/utils/User";
 import debounce from "lodash/debounce";
 import { showGlobalAlert } from "@/components/ui/custom/AppAlertModal";
 
 // In-memory cache for instant pre-scorer screen loading
 let cachedTeams = null;
 let cachedTournamentTeams = {};
+
+const extractTeamList = (res) => {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+
+  const raw = res?.data || res;
+  const content = raw?.content || raw;
+
+  const fromContentTeams = Array.isArray(content?.teams) ? content.teams : [];
+  const fromPlayerDetailTeams = Array.isArray(content?.playerDetail?.teams)
+    ? content.playerDetail.teams
+    : [];
+  const fromRawTeams = Array.isArray(raw?.teams) ? raw.teams : [];
+  const fromData = Array.isArray(raw?.data) ? raw.data : [];
+  const fromContent = Array.isArray(content) ? content : [];
+
+  const combined = [
+    ...fromContentTeams,
+    ...fromPlayerDetailTeams,
+    ...fromRawTeams,
+    ...fromData,
+    ...fromContent,
+  ];
+
+  if (combined.length > 0) {
+    const seen = new Set();
+    const unique = [];
+    for (const t of combined) {
+      if (!t) continue;
+      const actual =
+        t?.team?.[0] ||
+        (t?.teamId && typeof t.teamId === "object" ? t.teamId : null) ||
+        t;
+      const id = String(actual?._id || actual?.id || actual?.teamId || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        unique.push(actual);
+      } else if (!id) {
+        unique.push(actual);
+      }
+    }
+    return unique;
+  }
+
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
 
 export default function SelectTeamScreen() {
   const navigation = useNavigation();
@@ -33,6 +82,19 @@ export default function SelectTeamScreen() {
   const blockedTeamId = otherTeamId || selectedOpponentTeamId;
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+
+  const authUser = useSelector((state) => state.auth?.user);
+  const currentUserId = String(
+    authUser?._id ||
+    authUser?.id ||
+    authUser?.userId ||
+    authUser?.user?._id ||
+    authUser?.user?.id ||
+    User.id ||
+    User.user?._id ||
+    User.user?.id ||
+    ""
+  );
   
   const [teams, setTeams] = useState(() => cachedTeams || []);
   const [tournamentTeams, setTournamentTeams] = useState(() => (tournamentId && cachedTournamentTeams[tournamentId]) || []);
@@ -44,7 +106,9 @@ export default function SelectTeamScreen() {
     return !cachedTeams;
   });
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState(tournamentId ? "tournamentTeams" : "myTeams");
+  const [activeTab, setActiveTab] = useState(
+    tournamentId ? "tournamentTeams" : teamType === "teamB" ? "opponentTeams" : "myTeams"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -53,7 +117,10 @@ export default function SelectTeamScreen() {
   const [loadingMoreOpp, setLoadingMoreOpp] = useState(false);
 
   const normalizeTeam = (t, isMy = false) => {
-    const raw = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
+    const raw =
+      t?.teamId && typeof t.teamId === "object"
+        ? { ...t.teamId, ...t }
+        : t?.team?.[0] || t;
     const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
     const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
     const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
@@ -68,6 +135,30 @@ export default function SelectTeamScreen() {
         ? raw.players
         : [];
 
+    const createdByStr = String(raw?.createdBy?._id || raw?.createdBy || "");
+    const captainStr = String(raw?.captain?._id || raw?.captain || "");
+
+    const isOrganizer = Array.isArray(raw?.organizer)
+      ? raw.organizer.some((o) => {
+          const oId = String(o?._id || o?.id || o || "");
+          return Boolean(oId && currentUserId && oId === currentUserId);
+        })
+      : typeof raw?.organizer === "object"
+      ? Boolean(currentUserId && String(raw.organizer?._id || raw.organizer?.id || "") === currentUserId)
+      : Boolean(currentUserId && String(raw?.organizer || "") === currentUserId);
+
+    const isPlayer = Array.isArray(rawPlayers)
+      ? rawPlayers.some((p) => {
+          const pId = String(p?.id || p?._id || p?.playerId || "");
+          return Boolean(pId && currentUserId && pId === currentUserId);
+        })
+      : false;
+
+    const isOwner = Boolean(
+      currentUserId &&
+      (createdByStr === currentUserId || captainStr === currentUserId || isOrganizer || isPlayer)
+    );
+
     return {
       ...raw,
       id: teamId,
@@ -78,66 +169,107 @@ export default function SelectTeamScreen() {
       location: raw?.location || "Location not specified",
       image: rawImg ? (rawImg.startsWith("http") ? rawImg : getImageFullUrl(rawImg)) : null,
       players: rawPlayers,
-      isMyTeam: isMy,
+      isMyTeam: Boolean(isMy || isOwner),
     };
   };
 
   const fetchTeams = async () => {
     try {
-      // 1. Fetch My Teams first for instant display
-      teamsApi.getMyTeams().then((myRes) => {
-        if (Array.isArray(myRes?.data)) {
-          const myData = myRes.data.map((t) => normalizeTeam(t, true));
-          setTeams((prev) => {
-            const seen = new Set(myData.map((t) => t.id).filter(Boolean));
-            const existingOpp = prev.filter((t) => !t.isMyTeam && !seen.has(t.id));
-            const updated = [...myData, ...existingOpp];
-            cachedTeams = updated;
-            return updated;
-          });
-          if (tournamentId) {
-            setTournamentTeams((prev) =>
-              prev.map((tt) => {
-                if (!tt.players || tt.players.length === 0) {
-                  const match = myData.find((m) => String(m.id) === String(tt.id));
-                  if (match?.players?.length > 0) return { ...tt, players: match.players };
-                }
-                return tt;
-              })
-            );
-          }
-          setLoading(false);
-        }
-      }).catch(() => {});
+      const myTeamsEndpoint = currentUserId
+        ? `api/users/withTeam/${currentUserId}`
+        : "api/users/withTeam";
 
-      // 2. Fetch Opponents in parallel
-      teamsApi.getOpponentTeams().then((oppRes) => {
-        const rawOppList = Array.isArray(oppRes?.data?.content)
-          ? oppRes.data.content
-          : Array.isArray(oppRes?.data)
-          ? oppRes.data
-          : [];
-        const oppData = rawOppList.map((t) => normalizeTeam(t, false));
-        setTeams((prev) => {
-          const seen = new Set(prev.map((t) => t.id).filter(Boolean));
-          const newOpp = oppData.filter((t) => t.id && !seen.has(t.id));
-          const updated = [...prev, ...newOpp];
-          cachedTeams = updated;
-          return updated;
-        });
-        if (tournamentId) {
-          setTournamentTeams((prev) =>
-            prev.map((tt) => {
-              if (!tt.players || tt.players.length === 0) {
-                const match = oppData.find((m) => String(m.id) === String(tt.id));
-                if (match?.players?.length > 0) return { ...tt, players: match.players };
-              }
-              return tt;
-            })
-          );
+      const [myRes1, myRes2, allTeamsRes, oppRes, matchesRes] = await Promise.all([
+        teamsApi.getMyTeams().catch(() => null),
+        request(myTeamsEndpoint, { method: "GET", errorAlert: false }).catch(() => null),
+        teamsApi.getAllTeams().catch(() => null),
+        teamsApi.getOpponentTeams().catch(() => null),
+        currentUserId
+          ? matchesApi.getMatches({ self: 1, limit: 50 }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      // 1. Process explicit user teams
+      const rawUserTeams = [
+        ...extractTeamList(myRes1),
+        ...extractTeamList(myRes2),
+      ];
+
+      const userTeamsMap = new Map();
+      rawUserTeams.forEach((t) => {
+        const norm = normalizeTeam(t, true);
+        if (norm.id) {
+          userTeamsMap.set(norm.id, norm);
         }
-        setLoading(false);
-      }).catch(() => {});
+      });
+
+      // 2. Process all teams - check if user is creator/organizer/captain/player,
+      // and keep a dictionary to enrich opponent teams found from matches
+      const rawAllTeams = extractTeamList(allTeamsRes);
+      const allTeamsMap = new Map();
+      rawAllTeams.forEach((t) => {
+        const norm = normalizeTeam(t, false);
+        if (norm.id) {
+          allTeamsMap.set(norm.id, t);
+          if (norm.isMyTeam) {
+            // User owns/belongs to this team!
+            userTeamsMap.set(norm.id, { ...norm, isMyTeam: true });
+          }
+        }
+      });
+
+      // 3. Process opponent teams directly from getOpponentTeams API
+      const rawOppTeams = extractTeamList(oppRes);
+      const oppTeamsMap = new Map();
+      rawOppTeams.forEach((t) => {
+        const norm = normalizeTeam(t, false);
+        // Only include if it's NOT the user's team
+        if (norm.id && !userTeamsMap.has(norm.id)) {
+          oppTeamsMap.set(norm.id, norm);
+        }
+      });
+
+      // 4. Also inspect user matches for any opponent teams played against
+      const userMatches = Array.isArray(matchesRes?.data?.matches)
+        ? matchesRes.data.matches
+        : Array.isArray(matchesRes?.matches)
+        ? matchesRes.matches
+        : [];
+
+      userMatches.forEach((m) => {
+        if (!Array.isArray(m?.teams)) return;
+        m.teams.forEach((tm) => {
+          const tId = String(tm?.teamId?._id || tm?.teamId?.id || tm?.teamId || "");
+          if (!tId) return;
+          if (!userTeamsMap.has(tId) && !oppTeamsMap.has(tId)) {
+            const rawOpp = allTeamsMap.get(tId) || (typeof tm.teamId === "object" ? tm.teamId : tm);
+            const norm = normalizeTeam(rawOpp, false);
+            if (norm.id && !userTeamsMap.has(norm.id)) {
+              oppTeamsMap.set(norm.id, norm);
+            }
+          }
+        });
+      });
+
+      const finalUserTeams = Array.from(userTeamsMap.values());
+      const finalOppTeams = Array.from(oppTeamsMap.values());
+      const combined = [...finalUserTeams, ...finalOppTeams];
+
+      cachedTeams = combined;
+      setTeams(combined);
+      setLoading(false);
+
+      if (tournamentId) {
+        setTournamentTeams((prev) =>
+          prev.map((tt) => {
+            if (!tt.players || tt.players.length === 0) {
+              const match = combined.find((m) => String(m.id) === String(tt.id));
+              if (match?.players?.length > 0) return { ...tt, players: match.players };
+            }
+            return tt;
+          })
+        );
+      }
 
       // 3. Fetch Tournament data if applicable
       if (tournamentId) {
@@ -205,7 +337,13 @@ export default function SelectTeamScreen() {
 
   useEffect(() => {
     fetchTeams();
-  }, []);
+  }, [currentUserId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTeams();
+    }, [currentUserId])
+  );
 
   const debouncedTeamSearch = useCallback(
     debounce(async (query) => {
@@ -506,10 +644,12 @@ export default function SelectTeamScreen() {
             teams={getFilteredTeams()} 
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
-            emptyMessage="No opponent teams available."
+            emptyMessage="No opponent teams found. Teams you play against in matches will appear here."
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            onCreateTeam={handleCreateTeam}
+            onCreateTeam={null}
+            emptyActionLabel="Search All Teams"
+            onEmptyAction={() => setActiveTab("search")}
             searchQuery={quickSearchQuery}
             onSearchChange={setQuickSearchQuery}
             onEndReached={loadMoreOpponents}
@@ -551,6 +691,8 @@ const TeamList = ({
   onSearchChange,
   onEndReached,
   loadingMore,
+  emptyActionLabel,
+  onEmptyAction,
 }) => {
   return (
     <View className="flex-1 p-4">
@@ -654,7 +796,18 @@ const TeamList = ({
                 ? `No teams matched "${searchQuery}". Try a different name or search globally.`
                 : emptyMessage || "Create a team now to start playing matches!"}
             </ThemedText>
-            {onCreateTeam && !searchQuery ? (
+            {onEmptyAction && emptyActionLabel && !searchQuery ? (
+              <TouchableOpacity
+                onPress={onEmptyAction}
+                activeOpacity={0.85}
+                className="flex-row items-center bg-blue-600 px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/30"
+              >
+                <Ionicons name="search" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <ThemedText className="text-white text-sm font-bold">
+                  {emptyActionLabel}
+                </ThemedText>
+              </TouchableOpacity>
+            ) : onCreateTeam && !searchQuery ? (
               <TouchableOpacity
                 onPress={onCreateTeam}
                 activeOpacity={0.85}
