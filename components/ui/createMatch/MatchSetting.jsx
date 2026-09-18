@@ -284,7 +284,10 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     }
     setMatchConfigs((prev) => ({
       ...prev,
-      [settingKey]: { ...(prev[settingKey] || {}), active: typeof value === "boolean" ? value : !!value?.active },
+      [settingKey]:
+        typeof value === "boolean"
+          ? { ...(prev[settingKey] || {}), active: value }
+          : { ...(prev[settingKey] || {}), ...value },
     }));
   };
 
@@ -736,6 +739,9 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         )}
       </View>
 
+      {/* Needs both innings' data — offering it before the second innings
+          has started just leads to a broken/empty chart. */}
+      {(score?.inning?.length || 0) >= 2 && (
       <SettingRow
         title="Comparison Graph"
         description="Run rate comparison chart overlay"
@@ -743,6 +749,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         onToggle={(v) => emitDisplaySetting(MatchSettingEnum.SHOW_COMPARISON_GRAPH, v)}
         isDarkMode={isDarkMode}
       />
+      )}
     </View>
   );
 

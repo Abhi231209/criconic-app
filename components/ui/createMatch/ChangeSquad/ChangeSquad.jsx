@@ -7,18 +7,15 @@ import {
   ScrollView,
   Alert,
   useColorScheme,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
   BackHandler,
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, Plus, X, Check, ArrowLeft, Users, UserCheck } from "lucide-react-native";
+import { Search, Plus, Check, ArrowLeft, Users, UserCheck } from "lucide-react-native";
 import * as lodash from "lodash";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
-import { request, teamsApi } from "@/utils/api";
+import { request } from "@/utils/api";
 import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
 
@@ -200,114 +197,6 @@ const TabButton = ({ title, isActive, onPress, isDarkMode }) => (
   </TouchableOpacity>
 );
 
-const AddPlayerModal = ({ visible, onClose, teamID, onPlayerAdded, isDarkMode }) => {
-  const [playerName, setPlayerName] = useState("");
-  const [playerRole, setPlayerRole] = useState("");
-  const [adding, setAdding] = useState(false);
-
-  const handleAddPlayer = async () => {
-    if (!playerName.trim()) {
-      Alert.alert("Error", "Please enter player name");
-      return;
-    }
-
-    try {
-      setAdding(true);
-      if (teamsApi?.addPlayerToTeam) {
-        await teamsApi.addPlayerToTeam(teamID, {
-          name: playerName.trim(),
-          role: playerRole.trim() || "Player",
-        });
-      } else {
-        await request(`api/teams/${teamID}/players`, {
-          method: "POST",
-          data: { name: playerName.trim(), role: playerRole.trim() || "Player" },
-          errorAlert: false,
-        });
-      }
-
-      Alert.alert("Success", "Player added successfully");
-      setPlayerName("");
-      setPlayerRole("");
-      onPlayerAdded?.();
-      onClose?.();
-    } catch (error) {
-      console.warn("[ChangeSquad] Failed to add player:", error);
-      Alert.alert("Error", "Failed to add player");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[
-          styles.modalContainer,
-          isDarkMode ? styles.darkContainer : styles.lightContainer
-        ]}
-      >
-        <View style={styles.modalHeader}>
-          <ThemedText style={[
-            styles.modalTitle,
-            isDarkMode ? styles.darkText : styles.lightText
-          ]}>
-            Add New Player
-          </ThemedText>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <X size={24} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.modalContent}>
-          <TextInput
-            style={[
-              styles.input,
-              isDarkMode ? styles.darkInput : styles.lightInput,
-              isDarkMode ? styles.darkText : styles.lightText
-            ]}
-            placeholder="Player Name"
-            placeholderTextColor={isDarkMode ? COLORS.dark.textSecondary : COLORS.light.textSecondary}
-            value={playerName}
-            onChangeText={setPlayerName}
-          />
-          
-          <TextInput
-            style={[
-              styles.input,
-              isDarkMode ? styles.darkInput : styles.lightInput,
-              isDarkMode ? styles.darkText : styles.lightText
-            ]}
-            placeholder="Player Role (e.g., Batsman, Bowler)"
-            placeholderTextColor={isDarkMode ? COLORS.dark.textSecondary : COLORS.light.textSecondary}
-            value={playerRole}
-            onChangeText={setPlayerRole}
-          />
-
-          <TouchableOpacity
-            style={[styles.addPlayerButton, (!playerName.trim() || adding) && styles.disabledButton]}
-            onPress={handleAddPlayer}
-            disabled={!playerName.trim() || adding}
-            activeOpacity={0.8}
-          >
-            {adding ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <ThemedText style={styles.addPlayerButtonText}>Add Player</ThemedText>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-};
-
 export default function ChangeSquad(props) {
   const route = useRoute();
   const navigation = useNavigation();
@@ -361,7 +250,6 @@ export default function ChangeSquad(props) {
   const [filteredPlayers, setFilteredPlayers] = useState([]);
   const [playerToRemove, setPlayerToRemove] = useState({});
   const [playerToAdd, setPlayerToAdd] = useState({});
-  const [addPlayerModalVisible, setAddPlayerModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -676,7 +564,7 @@ export default function ChangeSquad(props) {
                   styles.addButtonLarge,
                   isDarkMode ? styles.darkAddButton : styles.lightAddButton
                 ]}
-                onPress={() => setAddPlayerModalVisible(true)}
+                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
                 activeOpacity={0.7}
               >
                 <Plus size={18} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
@@ -862,7 +750,7 @@ export default function ChangeSquad(props) {
               
               <TouchableOpacity
                 style={styles.addPlayerCta}
-                onPress={() => setAddPlayerModalVisible(true)}
+                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
                 activeOpacity={0.8}
               >
                 <Plus size={22} color="#FFFFFF" />
@@ -893,14 +781,6 @@ export default function ChangeSquad(props) {
         </View>
       )}
 
-      {/* Add Player Modal */}
-      <AddPlayerModal
-        visible={addPlayerModalVisible}
-        onClose={() => setAddPlayerModalVisible(false)}
-        teamID={teamId}
-        onPlayerAdded={fetchTeamData}
-        isDarkMode={isDarkMode}
-      />
     </SafeAreaView>
   );
 }

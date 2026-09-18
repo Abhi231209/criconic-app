@@ -152,7 +152,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     return num.toFixed(2);
   };
 
-  useEffect(() => {
+  const fetchTeamData = useCallback(() => {
     if (!teamId) return;
     setLoading(true);
 
@@ -181,6 +181,11 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           .catch(() => {});
       })
       .finally(() => setLoading(false));
+  }, [teamId]);
+
+  useEffect(() => {
+    if (!teamId) return;
+    fetchTeamData();
 
     // 2. Fetch team stats
     setLoadingStats(true);
@@ -839,7 +844,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             </TouchableOpacity>
             {canEdit && (
               <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamId })}
+                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
                 className="bg-blue-600 px-4 py-2 rounded-full flex-row items-center"
               >
                 <Ionicons name="person-add-outline" size={16} color="#FFFFFF" />
@@ -869,7 +874,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                 </TouchableOpacity>
                 {canEdit && (
                   <TouchableOpacity
-                    onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamId })}
+                    onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
                     className="flex-row items-center bg-blue-600 px-3 py-1.5 rounded-full"
                   >
                     <Ionicons name="person-add-outline" size={13} color="#FFFFFF" />

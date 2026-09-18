@@ -191,6 +191,9 @@ export default function WagonPitchViewerModal({
   // Shots matching the selected batsman, before the dots/singles/fours/sixes filter is applied
   const batsmanFilteredShots = useMemo(() => {
     return allDeliveries.filter((d) => {
+      // No shot is credited to the batsman on a wide — exclude it even if
+      // stray wagon wheel data ended up attached to one.
+      if (d.ballType === "wide") return false;
       const ww = d.wagonWheel || (d.angle !== undefined && d.zone !== undefined ? d : null);
       if (!ww) return false;
       if (selectedBatsmanId !== "all") {

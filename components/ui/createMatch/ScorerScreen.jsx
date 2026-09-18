@@ -1441,9 +1441,12 @@ export default function ScorerScreen() {
     // Note: Wicket handling is triggered by OutOptions via onWicket() with proper strike & batsman options
   };
 
-  // Smart scoring interceptor: prompts BallTrackerModal when either check is ON
+  // Smart scoring interceptor: prompts BallTrackerModal when either check is
+  // ON. Skipped on a wide — no shot is credited to the batsman, so there's
+  // nothing to plot on the wagon wheel (the pitch map is still relevant).
   const scoreBall = (params) => {
-    if (isWagonWheelChecked || isPitchMapChecked) {
+    const isWide = params?.ballType === "wide";
+    if ((isWagonWheelChecked && !isWide) || isPitchMapChecked) {
       setPendingBallParams(params);
       setShowBallTrackerModal(true);
     } else {
@@ -2860,7 +2863,22 @@ export default function ScorerScreen() {
                     (t) => String(getTeamId(t)) === String(committeeWinnerTeam)
                   );
                   const winnerTitle = getTeamTitle(winnerTeamObj, "Winning Team");
-                  handleEndMatchCommittee(committeeWinnerTeam, `${winnerTitle} win declare by committee`);
+                  Alert.alert(
+                    "End the Match?",
+                    "This will end the match now. This action cannot be undone.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "End Match",
+                        style: "destructive",
+                        onPress: () =>
+                          handleEndMatchCommittee(
+                            committeeWinnerTeam,
+                            `${winnerTitle} win declare by committee`
+                          ),
+                      },
+                    ]
+                  );
                 }}
                 style={{
                   paddingVertical: 12,
@@ -2924,7 +2942,9 @@ export default function ScorerScreen() {
             "Striker",
           bowlerName: score?.bowler?.name || "Bowler",
         }}
-        isWagonWheelEnabled={isWagonWheelChecked}
+        isWagonWheelEnabled={
+          isWagonWheelChecked && pendingBallParams?.ballType !== "wide"
+        }
         isPitchMapEnabled={isPitchMapChecked}
       />
 

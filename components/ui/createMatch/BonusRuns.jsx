@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import ThemedText from "../custom/ThemedText";
 import { X } from "lucide-react-native";
-import { request } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
 import { useSelector } from "react-redux";
 import { COLORS } from "@/theme/colors";
@@ -103,15 +102,13 @@ export default function BonusRuns({
         },
       };
 
-      // 1. Emit real-time socket event
+      // Scored the same way as every other ball: over the socket only.
+      // A parallel REST call used to run alongside this (belt-and-braces),
+      // but that endpoint applies the same mutation again without
+      // broadcasting the result — so bonus runs could get double-counted,
+      // and if the socket call ever failed silently the total wouldn't
+      // refresh until the next ball's own score broadcast came in.
       emit("update-score", payload);
-
-      // 2. Safe REST call with errorAlert disabled
-      request(`api/matches/${matchID}/score`, {
-        method: "PUT",
-        data: payload,
-        errorAlert: false,
-      }).catch(() => {});
 
       Alert.alert("Success", "Bonus runs added successfully");
       onSuccess?.();
