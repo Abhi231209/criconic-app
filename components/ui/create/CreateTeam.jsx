@@ -537,27 +537,40 @@ export default function CreateTeam() {
               </View>
             )}
           </View>
+        </AppKeyboardAwareScrollView>
 
-          {/* Submit Button */}
+        {/* Sticky Bottom Create Button */}
+        <View
+          className={`px-4 py-3 border-t ${
+            isDarkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
+          }`}
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: isDarkMode ? 0.3 : 0.08,
+            shadowRadius: 4,
+            elevation: 5,
+          }}
+        >
           <TouchableOpacity
             onPress={handleSubmit}
             disabled={isLoading}
-            className="mb-8"
+            activeOpacity={0.85}
           >
             <LinearGradient
               colors={['#2563EB', '#1D4ED8']}
-              className="rounded-lg py-4 px-6 items-center"
+              className="rounded-xl py-3.5 px-6 items-center justify-center flex-row"
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
               {isLoading ? (
-                <ThemedText className="text-white text-lg font-semibold">Creating Team...</ThemedText>
+                <ThemedText className="text-white text-base font-bold">Creating Team...</ThemedText>
               ) : (
-                <ThemedText className="text-white text-lg font-semibold">Create Team</ThemedText>
+                <ThemedText className="text-white text-base font-bold">Create Team</ThemedText>
               )}
             </LinearGradient>
           </TouchableOpacity>
-        </AppKeyboardAwareScrollView>
+        </View>
     </SafeAreaView>
   );
 }
