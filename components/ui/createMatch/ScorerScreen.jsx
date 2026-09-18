@@ -2876,7 +2876,17 @@ export default function ScorerScreen() {
               <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: isDarkMode ? "#111827" : "#f1f5f9" }}>
                 <ThemedText style={{ fontSize: 12, color: isDarkMode ? "#9ca3af" : "#64748b" }}>Current Score:</ThemedText>
                 <ThemedText style={{ fontSize: 15, fontWeight: "bold", marginTop: 2 }}>
-                  {`${score?.bowling?.teamName || "Team A"} ${score?.lastInningScore || 0}/${score?.lastInningWickets || 0} in ${score?.totalOvers || 0} overs`}
+                  {(() => {
+                    const isSuperOver = Boolean(
+                      score?.isSuperOver ||
+                      score?.status === MATCH_STATUS.SUPER_OVER ||
+                      score?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER
+                    );
+                    const oversText = isSuperOver
+                      ? "in the Super Over"
+                      : `in ${score?.totalOvers || 0} overs`;
+                    return `${score?.bowling?.teamName || "Team A"} ${score?.lastInningScore || 0}/${score?.lastInningWickets || 0} ${oversText}`;
+                  })()}
                 </ThemedText>
               </View>
 
@@ -2884,7 +2894,18 @@ export default function ScorerScreen() {
               <View style={{ marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: isDarkMode ? "#111827" : "#f1f5f9" }}>
                 <ThemedText style={{ fontSize: 12, color: isDarkMode ? "#9ca3af" : "#64748b" }}>Chasing Status:</ThemedText>
                 <ThemedText style={{ fontSize: 15, fontWeight: "bold", marginTop: 2 }}>
-                  {`${score?.batting?.teamName || "Team B"} needs ${Math.max(0, (score?.lastInningScore || 0) - (score?.batting?.score?.runs || 0))} runs in ${calculateOversLeft(score?.totalOvers || 0, score?.batting?.score?.over || 0)} overs`}
+                  {(() => {
+                    const isSuperOver = Boolean(
+                      score?.isSuperOver ||
+                      score?.status === MATCH_STATUS.SUPER_OVER ||
+                      score?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER
+                    );
+                    const runsNeeded = Math.max(0, (score?.lastInningScore || 0) - (score?.batting?.score?.runs || 0));
+                    const oversText = isSuperOver
+                      ? "in the Super Over"
+                      : `in ${calculateOversLeft(score?.totalOvers || 0, score?.batting?.score?.over || 0)} overs`;
+                    return `${score?.batting?.teamName || "Team B"} needs ${runsNeeded} runs ${oversText}`;
+                  })()}
                 </ThemedText>
               </View>
 
