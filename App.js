@@ -3,7 +3,7 @@ import "react-native-reanimated";
 import "./global.css";
 
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, useColorScheme } from "react-native";
+import { StyleSheet, Text, View, useColorScheme, KeyboardAvoidingView, Platform } from "react-native";
 import { useFonts } from "expo-font";
 import {
   DarkerGrotesque_400Regular,
@@ -42,7 +42,12 @@ function AppContent() {
       <BottomSheetModalProvider>
         <BottomSheetProvider>
           <SocketProvider>
-            <AppNavigator />
+            <KeyboardAvoidingView
+              style={styles.keyboardAvoiding}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
+              <AppNavigator />
+            </KeyboardAvoidingView>
             <StatusBar style={isDark ? "light" : "dark"} />
           </SocketProvider>
         </BottomSheetProvider>
@@ -128,5 +133,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
 });
