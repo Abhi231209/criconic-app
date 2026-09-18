@@ -334,7 +334,7 @@ export const authApi = {
 
 export const teamsApi = {
   getMyTeams: (options = {}) =>
-    request("api/teams?self=1", { method: "GET", errorAlert: false, ...options }),
+    request("api/users/withTeam", { method: "GET", errorAlert: false, ...options }),
   getOpponentTeams: (options = {}) =>
     request("api/teams/getOpponentTeam", { method: "GET", errorAlert: false, ...options }),
   getAllTeams: (options = {}) =>

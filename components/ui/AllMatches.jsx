@@ -33,12 +33,21 @@ export default function AllMatches() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchMatches = useCallback(async () => {
+  const fetchMatches = useCallback(async (pageNum = 1, shouldAppend = false) => {
     try {
+      if (pageNum === 1 && !shouldAppend) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
       const [idsRes, listRes] = await Promise.all([
-        request("api/matches/ids?page=1&items=10", { method: "GET", errorAlert: false }).catch(() => null),
-        matchesApi.getMatches({ limit: 10 }, { errorAlert: false }).catch(() => null),
+        request(`api/matches/ids?page=${pageNum}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
+        matchesApi.getMatches({ page: pageNum, limit: 12 }, { errorAlert: false }).catch(() => null),
       ]);
 
       const extractArray = (res) => {
@@ -73,23 +82,48 @@ export default function AllMatches() {
         }
       }
 
-      setMatches(Array.from(matchMap.values()));
+      const fetchedList = Array.from(matchMap.values());
+      if (shouldAppend) {
+        setMatches((prev) => {
+          const prevMap = new Map(prev.map((item) => [String(item._id || item.id || item.matchId || item), item]));
+          fetchedList.forEach((m) => {
+            const id = String(m._id || m.id || m.matchId || m);
+            if (!prevMap.has(id)) {
+              prevMap.set(id, m);
+            }
+          });
+          return Array.from(prevMap.values());
+        });
+      } else {
+        setMatches(fetchedList);
+      }
+
+      setPage(pageNum);
+      setHasMore(fetchedList.length >= 6);
     } catch (err) {
       console.warn("[AllMatches] Fetch error:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchMatches();
+    fetchMatches(1, false);
   }, [fetchMatches]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchMatches();
+    setHasMore(true);
+    fetchMatches(1, false);
   }, [fetchMatches]);
+
+  const loadMore = useCallback(() => {
+    if (!loading && !loadingMore && hasMore) {
+      fetchMatches(page + 1, true);
+    }
+  }, [fetchMatches, loading, loadingMore, hasMore, page]);
 
   // Filter & Search
   const filteredMatches = useMemo(() => {
@@ -359,7 +393,17 @@ export default function AllMatches() {
               </ThemedText>
             </View>
           }
-          ListFooterComponent={<View style={{ height: 32 }} />}
+          ListFooterComponent={
+            loadingMore ? (
+              <View className="py-4 items-center justify-center">
+                <ActivityIndicator size="small" color="#2563EB" />
+              </View>
+            ) : (
+              <View style={{ height: 32 }} />
+            )
+          }
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
         />
       )}
     </SafeAreaView>

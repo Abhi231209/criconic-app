@@ -37,148 +37,298 @@ export default function MyCricket() {
   const [recentMatches, setRecentMatches] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [matchPage, setMatchPage] = useState(1);
+  const [hasMoreMatches, setHasMoreMatches] = useState(true);
+  const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
+
+  const isUserMatch = (m, uId) => {
+    if (!uId) return false;
+    const uidStr = String(uId);
+    if (String(m?.createdBy || m?.userId || m?.user?._id || m?.user?.id || m?.user || "") === uidStr) return true;
+    if (Array.isArray(m?.teams)) {
+      for (const t of m.teams) {
+        if (String(t?.createdBy || t?.captain || t?.userId || "") === uidStr) return true;
+        if (Array.isArray(t?.players)) {
+          for (const p of t.players) {
+            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || p?.user || "");
+            if (pid === uidStr) return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const isUserTournament = (t, uId) => {
+    if (!uId) return true;
+    const uidStr = String(uId);
+    if (String(t?.createdBy || t?.userId || t?.user?._id || t?.user?.id || t?.organizerId || "") === uidStr) return true;
+    if (Array.isArray(t?.teams)) {
+      for (const tm of t.teams) {
+        if (String(tm?.createdBy || tm?.captain || tm?.userId || "") === uidStr) return true;
+        if (Array.isArray(tm?.players)) {
+          for (const p of tm.players) {
+            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || "");
+            if (pid === uidStr) return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const deriveTournamentStatus = (t) => {
+    const rawStatus = String(t?.status || "").toLowerCase().trim();
+    if (rawStatus === "cancelled" || rawStatus === "abandoned") return "Cancelled";
+    if (rawStatus === "completed" || rawStatus === "finished") return "Completed";
+
+    const rawStart = t?.date?.start || t?.startDate;
+    const rawEnd = t?.date?.end || t?.endDate;
+    const start = rawStart ? new Date(rawStart) : null;
+    const end = rawEnd ? new Date(rawEnd) : null;
+    const now = new Date();
+
+    if (end && !isNaN(end.getTime())) {
+      const endOfDay = new Date(end.getTime());
+      endOfDay.setHours(23, 59, 59, 999);
+      if (now > endOfDay) return "Completed";
+    }
+    if (start && !isNaN(start.getTime())) {
+      const startOfDay = new Date(start.getTime());
+      startOfDay.setHours(0, 0, 0, 0);
+      if (now < startOfDay) return "Upcoming";
+      return "Ongoing";
+    }
+
+    if (rawStatus === "upcoming") return "Upcoming";
+    if (rawStatus === "ongoing") return "Ongoing";
+    return "Ongoing";
+  };
+
+  const mapMatchItem = (m) => ({
+    id: String(m._id || m.id || m.matchId),
+    matchId: String(m._id || m.id || m.matchId),
+    team1:
+      m?.teams?.[0]?.title ||
+      m?.teams?.[0]?.name ||
+      m?.teams?.[0]?.teamName ||
+      "Team 1",
+    team2:
+      m?.teams?.[1]?.title ||
+      m?.teams?.[1]?.name ||
+      m?.teams?.[1]?.teamName ||
+      "Team 2",
+    score: m.title || "Match",
+    result: m.status || "Scheduled",
+    status: m.status || "SCHEDULED",
+    date: m.startDate
+      ? new Date(m.startDate).toLocaleDateString()
+      : "Recent",
+    raw: m,
+  });
+
+  const extractArray = (res) => {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.content?.teams)) return res.content.teams;
+    if (Array.isArray(res?.content)) return res.content;
+    if (Array.isArray(res?.data?.content?.teams)) return res.data.content.teams;
+    if (Array.isArray(res?.data?.content)) return res.data.content;
+    if (Array.isArray(res?.data?.teams)) return res.data.teams;
+    if (Array.isArray(res?.data?.matches)) return res.data.matches;
+    if (Array.isArray(res?.data?.tournaments)) return res.data.tournaments;
+    if (Array.isArray(res?.data)) return res.data;
+    return [];
+  };
 
   const fetchData = async (isManual = false) => {
     if (isManual || (!recentMatches.length && !tournaments.length && !teams.length)) {
       setLoading(true);
     }
     try {
-      // 1. Fetch user matches and platform matches (matching sports-arena Matches.jsx)
+      setMatchPage(1);
+      setHasMoreMatches(true);
+
+      // User-based match queries only
       const matchPromises = [];
-      // Always fetch latest platform matches so newly created matches appear immediately
-      matchPromises.push(
-        request("api/matches/ids?page=1&items=50", { method: "GET", errorAlert: false }).catch(() => null)
-      );
-      matchPromises.push(
-        matchesApi.getMatches({ self: 1, ...(userId ? { userId } : {}) }, { errorAlert: false }).catch(() => null)
-      );
       if (userId) {
         matchPromises.push(
-          matchesApi.getMatches({ playerId: userId }, { errorAlert: false }).catch(() => null)
+          matchesApi.getMatches({ self: 1, userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
         matchPromises.push(
-          request(`api/matches/ids?playerId=${userId}`, { method: "GET", errorAlert: false }).catch(() => null)
+          matchesApi.getMatches({ playerId: userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
+        );
+        matchPromises.push(
+          request(`api/matches/ids?playerId=${userId}&page=1&items=12`, { method: "GET", errorAlert: false }).catch(() => null)
+        );
+      } else {
+        matchPromises.push(
+          matchesApi.getMatches({ self: 1, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
       }
 
-      const [matchesResList, tourRes, teamsRes] = await Promise.all([
-        Promise.all(matchPromises),
+      // User-based tournaments only (matching web PreviewPage: api/tournaments/withUser)
+      const tourPromises = [
         tournamentsApi.getMyTournaments({ errorAlert: false }).catch(() => null),
+        request("api/tournaments/withUser", { method: "GET", errorAlert: false }).catch(() => null),
+      ];
+
+      // User-based teams only (matching web TeamPreview.jsx: api/users/withTeam)
+      const teamPromises = [
+        request("api/users/withTeam", { method: "GET", errorAlert: false }).catch(() => null),
         teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
+      ];
+
+      const [matchesResList, tourResList, teamsResList] = await Promise.all([
+        Promise.all(matchPromises),
+        Promise.all(tourPromises),
+        Promise.all(teamPromises),
       ]);
 
-      // Process matches
-      const extractArray = (res) => {
-        if (!res) return [];
-        if (Array.isArray(res)) return res;
-        if (Array.isArray(res?.content)) return res.content;
-        if (Array.isArray(res?.data?.content)) return res.data.content;
-        if (Array.isArray(res?.data?.matches)) return res.data.matches;
-        if (Array.isArray(res?.data)) return res.data;
-        return [];
-      };
-
-      const rawCombined = matchesResList.flatMap(extractArray);
-
-      // Deduplicate by match ID
-      const seenIds = new Set();
+      // Process user matches
+      const rawMatchesCombined = matchesResList.flatMap(extractArray);
+      const seenMatchIds = new Set();
       const uniqueMatches = [];
-      for (const m of rawCombined) {
+      for (const m of rawMatchesCombined) {
         const id = String(m?._id || m?.id || m?.matchId || "");
-        if (id && !seenIds.has(id)) {
-          seenIds.add(id);
+        if (id && !seenMatchIds.has(id)) {
+          seenMatchIds.add(id);
           uniqueMatches.push(m);
         }
       }
 
-      setRecentMatches(
-        uniqueMatches.map((m) => ({
-          id: String(m._id || m.id || m.matchId),
-          matchId: String(m._id || m.id || m.matchId),
-          team1:
-            m?.teams?.[0]?.title ||
-            m?.teams?.[0]?.name ||
-            m?.teams?.[0]?.teamName ||
-            "Team 1",
-          team2:
-            m?.teams?.[1]?.title ||
-            m?.teams?.[1]?.name ||
-            m?.teams?.[1]?.teamName ||
-            "Team 2",
-          score: m.title || "Match",
-          result: m.status || "Scheduled",
-          status: m.status || "SCHEDULED",
-          date: m.startDate
-            ? new Date(m.startDate).toLocaleDateString()
-            : "Recent",
-          raw: m,
-        }))
-      );
+      const userMatches = userId
+        ? uniqueMatches.filter((m) => isUserMatch(m, userId))
+        : uniqueMatches;
 
-      // Process tournaments
-      const tourList = tourRes?.data?.content || tourRes?.data || [];
-      if (Array.isArray(tourList)) {
-        setTournaments(
-          tourList.map((t) => ({
+      setRecentMatches(userMatches.map(mapMatchItem));
+      setHasMoreMatches(userMatches.length >= 6);
+
+      // Process user tournaments
+      const rawTourList = tourResList.flatMap(extractArray);
+      const seenTourIds = new Set();
+      const uniqueTournaments = [];
+      for (const t of rawTourList) {
+        const id = String(t?._id || t?.id || t?.slug || "");
+        if (id && !seenTourIds.has(id)) {
+          seenTourIds.add(id);
+          uniqueTournaments.push(t);
+        }
+      }
+
+      const userTournaments = uniqueTournaments.filter((t) => isUserTournament(t, userId));
+
+      setTournaments(
+        userTournaments.map((t) => {
+          const rawEntryFee = t?.entryFee;
+          const entryFee = (rawEntryFee !== undefined && rawEntryFee !== null && rawEntryFee !== "" && Number(rawEntryFee) !== 0 && rawEntryFee !== "0")
+            ? (String(rawEntryFee).startsWith("₹") ? String(rawEntryFee) : `₹${rawEntryFee}`)
+            : null;
+
+          return {
             id: String(t._id || t.id || t.slug),
             name: t.title || t.name || "Tournament",
             teams: Array.isArray(t.teams) ? t.teams.length : t.maxTeams || 0,
             matches: Array.isArray(t.matches) ? t.matches.length : 0,
-            status: t.status || "Ongoing",
-            prize: t.prizeMoney ? `₹${t.prizeMoney}` : null,
+            status: deriveTournamentStatus(t),
+            prize: t.prizeMoney ? (String(t.prizeMoney).startsWith("₹") ? String(t.prizeMoney) : `₹${t.prizeMoney}`) : null,
+            entryFee,
             raw: t,
-          }))
-        );
+          };
+        })
+      );
+
+      // Process user teams with live match & win statistics from backend
+      const rawTeamList = teamsResList.flatMap(extractArray);
+      const seenTeamIds = new Set();
+      const uniqueTeams = [];
+      for (const tm of rawTeamList) {
+        const raw = tm?.team?.[0] || tm;
+        const id = String(raw?._id || raw?.id || "");
+        if (id && !seenTeamIds.has(id)) {
+          seenTeamIds.add(id);
+          uniqueTeams.push(raw);
+        }
       }
 
-      // Process teams with live match & win statistics from backend
-      const rawTeamList = teamsRes?.data || [];
-      if (Array.isArray(rawTeamList)) {
-        const teamsWithStats = await Promise.all(
-          rawTeamList.map(async (tm) => {
-            const raw = tm?.team?.[0] || tm;
-            const id = String(raw._id || raw.id);
-            let matches = Array.isArray(raw.matches) ? raw.matches.length : (raw.matches || raw.stat?.totalMatches || 0);
-            let wins = raw.wins || raw.stat?.matchesWon || 0;
-            try {
-              const statRes = await request(`api/teams/getTeamStat/${id}`, {
-                method: "GET",
-                errorAlert: false,
-              });
-              if (statRes?.data?.stats) {
-                const sMatches = Number(statRes.data.stats.matches);
-                const sWon = Number(statRes.data.stats.won);
-                if (sMatches === 285 && sWon === 135) {
-                  matches = 95;
-                  wins = 21;
-                } else {
-                  matches = statRes.data.stats.matches ?? matches;
-                  wins = statRes.data.stats.won ?? wins;
-                }
+      const teamsWithStats = await Promise.all(
+        uniqueTeams.map(async (raw) => {
+          const id = String(raw._id || raw.id);
+          let matches = Array.isArray(raw.matches) ? raw.matches.length : (raw.matches || raw.stat?.totalMatches || 0);
+          let wins = raw.wins || raw.stat?.matchesWon || 0;
+          try {
+            const statRes = await request(`api/teams/getTeamStat/${id}`, {
+              method: "GET",
+              errorAlert: false,
+            });
+            if (statRes?.data?.stats) {
+              const sMatches = Number(statRes.data.stats.matches);
+              const sWon = Number(statRes.data.stats.won);
+              if (sMatches === 285 && sWon === 135) {
+                matches = 95;
+                wins = 21;
+              } else {
+                matches = statRes.data.stats.matches ?? matches;
+                wins = statRes.data.stats.won ?? wins;
               }
-            } catch (e) {}
-            return {
-              id,
-              name: raw.title || raw.name || "Team",
-              shortName:
-                raw.shortName ||
-                (raw.title ? raw.title.slice(0, 3).toUpperCase() : "TM"),
-              logo: raw.teamLogo || null,
-              location: raw.location || null,
-              players: Array.isArray(raw.players) ? raw.players.length : 0,
-              matches,
-              wins,
-              raw,
-            };
-          })
-        );
-        setTeams(teamsWithStats);
-      }
+            }
+          } catch (e) {}
+          return {
+            id,
+            name: raw.title || raw.name || "Team",
+            shortName:
+              raw.shortName ||
+              (raw.title ? raw.title.slice(0, 3).toUpperCase() : "TM"),
+            logo: raw.teamLogo || null,
+            location: raw.location || null,
+            players: Array.isArray(raw.players) ? raw.players.length : 0,
+            matches,
+            wins,
+            raw,
+          };
+        })
+      );
+      setTeams(teamsWithStats);
     } catch (error) {
       console.warn("[MyCricket] Failed to fetch data:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadMoreMatches = async () => {
+    if (loading || loadingMoreMatches || !hasMoreMatches || !userId) return;
+    try {
+      setLoadingMoreMatches(true);
+      const nextPage = matchPage + 1;
+      const resList = await Promise.all([
+        matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+        matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+        request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
+      ]);
+      const rawCombined = resList.flatMap(extractArray);
+      const userMatches = rawCombined.filter((m) => isUserMatch(m, userId));
+      if (userMatches.length > 0) {
+        setRecentMatches((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          const newItems = userMatches
+            .filter((m) => {
+              const id = String(m?._id || m?.id || m?.matchId || "");
+              return id && !seen.has(id);
+            })
+            .map(mapMatchItem);
+          return [...prev, ...newItems];
+        });
+        setMatchPage(nextPage);
+        setHasMoreMatches(userMatches.length >= 6);
+      } else {
+        setHasMoreMatches(false);
+      }
+    } catch (e) {
+      console.warn("[MyCricket] Failed to load more matches:", e);
+    } finally {
+      setLoadingMoreMatches(false);
     }
   };
 
@@ -305,6 +455,23 @@ export default function MyCricket() {
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={5}
+      onEndReached={loadMoreMatches}
+      onEndReachedThreshold={0.5}
+      ListFooterComponent={
+        loadingMoreMatches ? (
+          <View className="py-4 items-center">
+            <ActivityIndicator size="small" color="#2563EB" />
+          </View>
+        ) : null
+      }
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#2563EB"]}
+          tintColor="#2563EB"
+        />
+      }
     />
   );
 
@@ -313,6 +480,14 @@ export default function MyCricket() {
       showsVerticalScrollIndicator={false}
       className="px-4"
       contentContainerStyle={{ alignItems: "center", paddingBottom: 80 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#2563EB"]}
+          tintColor="#2563EB"
+        />
+      }
     >
       {/* Header row with Create Tournament action */}
       <View className="flex-row justify-between items-center w-full max-w-md mb-4 mt-2">
@@ -346,26 +521,26 @@ export default function MyCricket() {
         >
           <View className="flex-row justify-between items-start mb-2">
             <ThemedText
-              className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
+              className={`text-lg font-bold flex-1 mr-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}
             >
               {tournament.name}
             </ThemedText>
             <View
               className={`px-3 py-1 rounded-full ${
                 tournament.status === "Ongoing"
-                  ? "bg-green-100"
+                  ? isDarkMode ? "bg-green-900/40" : "bg-green-100"
                   : tournament.status === "Completed"
-                    ? "bg-gray-100"
-                    : "bg-blue-100"
+                    ? isDarkMode ? "bg-gray-700" : "bg-gray-100"
+                    : isDarkMode ? "bg-blue-900/40" : "bg-blue-100"
               }`}
             >
               <ThemedText
-                className={`text-xs font-medium ${
+                className={`text-xs font-semibold ${
                   tournament.status === "Ongoing"
-                    ? "text-green-800"
+                    ? isDarkMode ? "text-green-400" : "text-green-800"
                     : tournament.status === "Completed"
-                      ? "text-gray-800"
-                      : "text-blue-800"
+                      ? isDarkMode ? "text-gray-300" : "text-gray-800"
+                      : isDarkMode ? "text-blue-400" : "text-blue-800"
                 }`}
               >
                 {tournament.status}
@@ -400,24 +575,29 @@ export default function MyCricket() {
             </View>
           </View>
 
-          {/* Prize Money - Only show if available */}
-          {tournament.prize ? (
-            <View className="flex-row justify-between items-center mb-2">
+          {/* Prize Money & Entry Fee - Only show when available */}
+          <View className="flex-row justify-between items-center mb-2">
+            {tournament.prize ? (
               <ThemedText
                 className={`text-sm font-medium ${isDarkMode ? "text-yellow-400" : "text-yellow-600"}`}
               >
                 🏆 {tournament.prize}
               </ThemedText>
-            </View>
-          ) : (
-            <View className="mb-2">
+            ) : (
               <ThemedText
                 className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}
               >
                 No prize money
               </ThemedText>
-            </View>
-          )}
+            )}
+            {tournament.entryFee ? (
+              <View className={`px-2.5 py-0.5 rounded-full ${isDarkMode ? "bg-amber-900/40" : "bg-amber-100"}`}>
+                <ThemedText className={`text-xs font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
+                  Entry: {tournament.entryFee}
+                </ThemedText>
+              </View>
+            ) : null}
+          </View>
 
           <View className="flex-row justify-between items-center">
             <ThemedText
@@ -477,6 +657,14 @@ export default function MyCricket() {
       showsVerticalScrollIndicator={false}
       className="px-4"
       contentContainerStyle={{ alignItems: "center", paddingBottom: 80 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#2563EB"]}
+          tintColor="#2563EB"
+        />
+      }
     >
       {/* Header row with Create Team action */}
       <View className="flex-row justify-between items-center w-full max-w-md mb-4 mt-2">
@@ -684,21 +872,9 @@ export default function MyCricket() {
 
       {/* Content */}
       <View className="flex-1">
-        <ScrollView
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#2563EB"]}
-              tintColor={isDarkMode ? "#2563EB" : "#2563EB"}
-            />
-          }
-          contentContainerStyle={{ flexGrow: 1 }}
-        >
-          {activeTab === "matches" && renderMatchesTab()}
-          {activeTab === "tournaments" && renderTournamentsTab()}
-          {activeTab === "teams" && renderTeamsTab()}
-        </ScrollView>
+        {activeTab === "matches" && renderMatchesTab()}
+        {activeTab === "tournaments" && renderTournamentsTab()}
+        {activeTab === "teams" && renderTeamsTab()}
       </View>
 
       <AnimatedFooter currentTab="My Cricket" />

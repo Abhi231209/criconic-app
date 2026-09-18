@@ -20,6 +20,7 @@ import SwipeableTabs from "../custom/SwipeableTab";
 import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import debounce from "lodash/debounce";
+import { showGlobalAlert } from "@/components/ui/custom/AppAlertModal";
 
 // In-memory cache for instant pre-scorer screen loading
 let cachedTeams = null;
@@ -47,6 +48,9 @@ export default function SelectTeamScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [oppPage, setOppPage] = useState(1);
+  const [hasMoreOpp, setHasMoreOpp] = useState(true);
+  const [loadingMoreOpp, setLoadingMoreOpp] = useState(false);
 
   const normalizeTeam = (t, isMy = false) => {
     const raw = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
@@ -240,8 +244,42 @@ export default function SelectTeamScreen() {
     debouncedTeamSearch(text);
   };
 
+  const loadMoreOpponents = async () => {
+    if (loading || loadingMoreOpp || !hasMoreOpp || isSearching || searchQuery) return;
+    try {
+      setLoadingMoreOpp(true);
+      const nextP = oppPage + 1;
+      const oppRes = await teamsApi.getOpponentTeams({ params: { page: nextP, limit: 15 } });
+      const rawOppList = Array.isArray(oppRes?.data?.content)
+        ? oppRes.data.content
+        : Array.isArray(oppRes?.data)
+        ? oppRes.data
+        : [];
+      if (rawOppList.length > 0) {
+        const oppData = rawOppList.map((t) => normalizeTeam(t, false));
+        setTeams((prev) => {
+          const seen = new Set(prev.map((t) => t.id).filter(Boolean));
+          const newOpp = oppData.filter((t) => t.id && !seen.has(t.id));
+          const updated = [...prev, ...newOpp];
+          cachedTeams = updated;
+          return updated;
+        });
+        setOppPage(nextP);
+        setHasMoreOpp(rawOppList.length >= 15);
+      } else {
+        setHasMoreOpp(false);
+      }
+    } catch (e) {
+      console.warn("[SelectTeam] Failed to load more opponents:", e);
+    } finally {
+      setLoadingMoreOpp(false);
+    }
+  };
+
   const handleRefresh = () => {
     setRefreshing(true);
+    setOppPage(1);
+    setHasMoreOpp(true);
     fetchTeams();
   };
 
@@ -252,10 +290,11 @@ export default function SelectTeamScreen() {
       selectedId &&
       String(blockedTeamId) === String(selectedId)
     ) {
-      Alert.alert(
-        "Invalid Selection",
-        "Team A and Team B cannot be the same team. Please choose a different opponent."
-      );
+      showGlobalAlert({
+        title: "Invalid Selection",
+        message: "Team A and Team B cannot be the same team. Please choose a different opponent.",
+        type: "warning",
+      });
       return;
     }
 
@@ -473,6 +512,8 @@ export default function SelectTeamScreen() {
             onCreateTeam={handleCreateTeam}
             searchQuery={quickSearchQuery}
             onSearchChange={setQuickSearchQuery}
+            onEndReached={loadMoreOpponents}
+            loadingMore={loadingMoreOpp}
           />
         )}
 
@@ -508,6 +549,8 @@ const TeamList = ({
   onCreateTeam,
   searchQuery,
   onSearchChange,
+  onEndReached,
+  loadingMore,
 }) => {
   return (
     <View className="flex-1 p-4">
@@ -544,6 +587,17 @@ const TeamList = ({
       <FlatList
         data={teams}
         keyExtractor={(item, idx) => item?.id ? String(item.id) : `team_${idx}`}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="py-3 items-center justify-center">
+              <ActivityIndicator size="small" color="#2563EB" />
+            </View>
+          ) : (
+            <View style={{ height: 20 }} />
+          )
+        }
         refreshControl={
           onRefresh ? (
             <RefreshControl

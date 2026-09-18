@@ -20,6 +20,7 @@ import ThemedText from '@/components/ui/custom/ThemedText';
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { teamsApi } from '@/utils/api';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
+import { showGlobalAlert } from '@/components/ui/custom/AppAlertModal';
 
 export default function EditTeam() {
   const navigation = useNavigation();
@@ -89,7 +90,11 @@ export default function EditTeam() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photos to upload a logo.');
+      showGlobalAlert({
+        title: 'Permission required',
+        message: 'Please allow access to your photos to upload a logo.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -108,7 +113,11 @@ export default function EditTeam() {
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow camera access to take a photo.');
+      showGlobalAlert({
+        title: 'Permission required',
+        message: 'Please allow camera access to take a photo.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -125,17 +134,29 @@ export default function EditTeam() {
 
   const handleSubmit = async () => {
     if (!formData.name.trim()) {
-      Alert.alert('Error', 'Please enter a team name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a team name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.shortName.trim()) {
-      Alert.alert('Error', 'Please enter a short name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a short name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.location.trim()) {
-      Alert.alert('Error', 'Please enter location');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter location',
+        type: 'warning',
+      });
       return;
     }
 
@@ -154,32 +175,24 @@ export default function EditTeam() {
         });
       }
 
-      // HARDCODED MOCK UPDATE TIMEOUT - COMMENTED OUT (API ONLY)
-      /*
-      setTimeout(() => {
-        setIsLoading(false);
-        Alert.alert(
-          'Success',
-          'Team updated successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
-      }, 1500);
-      */
-
-      Alert.alert('Success', 'Team updated successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      showGlobalAlert({
+        title: 'Success',
+        message: 'Team updated successfully!',
+        type: 'success',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      });
     } catch (err) {
       console.error('Update team error:', err);
-      Alert.alert('Error', err?.response?.data?.message || err.message || 'Failed to update team');
+      showGlobalAlert({
+        title: 'Error',
+        message: err?.response?.data?.message || err.message || 'Failed to update team',
+        type: 'error',
+      });
     } finally {
       setIsLoading(false);
     }

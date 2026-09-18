@@ -51,6 +51,7 @@ const InputField = ({
   multiline = false,
   numberOfLines = 1,
   keyboardType = 'default',
+  maxLength,
 }) => {
   const isDarkMode = useColorScheme() === 'dark';
   return (
@@ -71,6 +72,7 @@ const InputField = ({
         multiline={multiline}
         numberOfLines={numberOfLines}
         keyboardType={keyboardType}
+        maxLength={maxLength}
         style={{ minHeight: multiline ? 80 : 48 }}
       />
     </View>
@@ -274,10 +276,11 @@ export default function CreateTournament() {
       return;
     }
 
-    if (!formData.organizerPhone.trim()) {
+    const cleanPhone = (formData.organizerPhone || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
       showGlobalAlert({
         title: 'Error',
-        message: 'Please enter organizer phone number',
+        message: 'Please enter a valid 10-digit organizer phone number',
         type: 'warning',
       });
       return;
@@ -556,9 +559,13 @@ export default function CreateTournament() {
           <InputField
             label="Organizer Phone *"
             value={formData.organizerPhone}
-            onChange={(text) => setFormData({ ...formData, organizerPhone: text })}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
+            onChange={(text) => {
+              const clean = text.replace(/[^0-9]/g, '').slice(0, 10);
+              setFormData({ ...formData, organizerPhone: clean });
+            }}
+            placeholder="Enter 10-digit phone number"
+            keyboardType="numeric"
+            maxLength={10}
           />
 
           {/* Description */}

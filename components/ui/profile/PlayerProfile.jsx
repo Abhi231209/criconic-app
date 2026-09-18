@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -83,6 +83,56 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
   const targetId = routePlayerId || (authUser?._id || authUser?.id);
 
+  // Helper to ensure a match actually belongs to this player
+  const isMatchForPlayer = useCallback((match, pId) => {
+    if (!match || !pId) return false;
+    if (typeof match === "string") return true; // ID string will be verified when detailed data is fetched
+    const pIdStr = String(pId);
+
+    // 1. Check teams & player rosters
+    if (Array.isArray(match?.teams)) {
+      for (const team of match.teams) {
+        if (Array.isArray(team?.players)) {
+          for (const p of team.players) {
+            const id = String(p?.id || p?._id || p?.playerId || p?.userId || "");
+            if (id === pIdStr) return true;
+          }
+        }
+        if (Array.isArray(team?.squad)) {
+          for (const p of team.squad) {
+            const id = String(p?.id || p?._id || p?.playerId || p?.userId || "");
+            if (id === pIdStr) return true;
+          }
+        }
+      }
+    }
+
+    // 2. Check batsman / bowler records in match scoreCard
+    if (Array.isArray(match?.scoreCard)) {
+      for (const inn of match.scoreCard) {
+        if (Array.isArray(inn?.batsman)) {
+          for (const b of inn.batsman) {
+            const id = String(b?.playerId || b?.id || b?._id || "");
+            if (id === pIdStr) return true;
+          }
+        }
+        if (Array.isArray(inn?.bowler)) {
+          for (const bw of inn.bowler) {
+            const id = String(bw?.playerId || bw?.id || bw?._id || "");
+            if (id === pIdStr) return true;
+          }
+        }
+      }
+    }
+
+    // If match object has no team or scorecard details populated, allow it (from playerId query)
+    if ((!match?.teams || match.teams.length === 0) && (!match?.scoreCard || match.scoreCard.length === 0)) {
+      return true;
+    }
+
+    return false;
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     if (!targetId || String(targetId) === "1") return;
@@ -124,17 +174,16 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       })
       .catch(() => {});
 
-    // 3. Fetch Player Matches
+    // 3. Fetch Player Matches - strictly player-scoped (matching web app apiUrl: api/matches/ids?page=1&items=30&playerId=...)
     setLoadingMatches(true);
     const fetchMatches = async () => {
       try {
         const promises = [
-          request(`api/matches/ids?playerId=${targetId}&page=1&items=50`, { method: "GET", errorAlert: false }).catch(() => null),
-          matchesApi.getMatches({ playerId: targetId }, { errorAlert: false }).catch(() => null),
-          matchesApi.getMatches({ userId: targetId }, { errorAlert: false }).catch(() => null),
+          request(`api/matches/ids?playerId=${targetId}&page=1&items=30`, { method: "GET", errorAlert: false }).catch(() => null),
+          matchesApi.getMatches({ playerId: targetId, page: 1, limit: 30 }, { errorAlert: false }).catch(() => null),
         ];
 
-        const [idsRes, matchesRes, userMatchesRes] = await Promise.all(promises);
+        const [idsRes, matchesRes] = await Promise.all(promises);
 
         const extractMatches = (res) => {
           if (!res) return [];
@@ -150,13 +199,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         const rawList = [
           ...extractMatches(idsRes),
           ...extractMatches(matchesRes),
-          ...extractMatches(userMatchesRes),
-        ];
+        ].filter((m) => isMatchForPlayer(m, targetId));
 
-        if (route?.params?.match) {
+        // Only include route match if player is confirmed to have played/participated in it
+        if (route?.params?.match && isMatchForPlayer(route.params.match, targetId)) {
           rawList.unshift(route.params.match);
-        } else if (route?.params?.matchId) {
-          rawList.unshift(route.params.matchId);
         }
 
         const matchMap = new Map();
@@ -195,7 +242,9 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
                 if (r.status === "fulfilled" && r.value?.data) {
                   const mData = r.value.data;
                   const mId = mData._id || mData.id || idsToFetch[idx];
-                  if (mId) detailsMap[String(mId)] = mData;
+                  if (mId && isMatchForPlayer(mData, targetId)) {
+                    detailsMap[String(mId)] = mData;
+                  }
                 }
               });
               setDetailedMatchesMap((prev) => ({ ...prev, ...detailsMap }));
@@ -214,7 +263,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     return () => {
       isMounted = false;
     };
-  }, [targetId, routePlayerId, authUser?._id, authUser?.id, route?.params?.matchId]);
+  }, [targetId, routePlayerId, authUser?._id, authUser?.id, route?.params?.matchId, isMatchForPlayer]);
 
   const target = {
     ...(sanitizedRoutePlayer || {}),
@@ -1123,7 +1172,13 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           <ActivityIndicator size="small" color="#3B82F6" />
         </View>
       ) : playerMatches.length > 0 ? (
-        playerMatches.map((m, idx) => {
+        playerMatches
+          .filter((m) => {
+            const matchId = typeof m === "string" ? m : (m?._id || m?.id || m?.matchId);
+            const matchObj = typeof m === "object" ? m : (detailedMatchesMap[String(matchId)] || null);
+            return !matchObj || isMatchForPlayer(matchObj, targetId);
+          })
+          .map((m, idx) => {
           const matchId = typeof m === "string" ? m : (m?._id || m?.id || m?.matchId);
           const matchObj = typeof m === "object" ? m : (detailedMatchesMap[String(matchId)] || null);
           return (

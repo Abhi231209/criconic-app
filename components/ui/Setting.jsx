@@ -89,7 +89,14 @@ export default function Settings() {
           analytics.logLogout();
           dispatch(logoutAction());
           User.logout();
-          navigation.navigate(SCREENS.LoginScreen);
+          if (navigation.reset) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: SCREENS.LoginScreen }],
+            });
+          } else {
+            navigation.navigate(SCREENS.LoginScreen);
+          }
         }
       },
     });

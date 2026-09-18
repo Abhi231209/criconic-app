@@ -16,6 +16,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { BASE_URL as API_URL } from "@/config";
+import { showGlobalAlert } from "@/components/ui/custom/AppAlertModal";
 
 const STEP_MOBILE = "mobile";
 const STEP_OTP = "otp";
@@ -33,21 +34,42 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   const sendOtp = async () => {
-    if (!mobile.trim()) {
-      Alert.alert("Required", "Enter your registered mobile number.");
+    const cleanedMobile = mobile.replace(/\D/g, "");
+    if (!cleanedMobile) {
+      showGlobalAlert({
+        title: "Required",
+        message: "Enter your registered 10-digit mobile number.",
+        type: "warning",
+      });
+      return;
+    }
+    if (cleanedMobile.length !== 10) {
+      showGlobalAlert({
+        title: "Invalid Mobile",
+        message: "Mobile number must be exactly 10 digits.",
+        type: "warning",
+      });
       return;
     }
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, { mobile: mobile.trim() });
+      const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, { mobile: cleanedMobile });
       if (res.data?.success !== false) {
         setValidationId(res.data?.validationId || res.data?._id || "");
         setStep(STEP_OTP);
       } else {
-        Alert.alert("Error", res.data?.message || "Could not send OTP.");
+        showGlobalAlert({
+          title: "Error",
+          message: res.data?.message || "Could not send OTP.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Could not send OTP.");
+      showGlobalAlert({
+        title: "Error",
+        message: err.response?.data?.message || "Could not send OTP.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -55,23 +77,35 @@ export default function ForgotPasswordScreen() {
 
   const verifyOtp = async () => {
     if (!otp.trim()) {
-      Alert.alert("Required", "Enter the OTP sent to your mobile.");
+      showGlobalAlert({
+        title: "Required",
+        message: "Enter the OTP sent to your mobile.",
+        type: "warning",
+      });
       return;
     }
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}api/otpVerification/validateOtp`, {
-        mobile: mobile.trim(),
+        mobile: mobile.replace(/\D/g, ""),
         otp: otp.trim(),
         validationId,
       });
       if (res.data?.success !== false) {
         setStep(STEP_PASSWORD);
       } else {
-        Alert.alert("Invalid OTP", res.data?.message || "OTP does not match.");
+        showGlobalAlert({
+          title: "Invalid OTP",
+          message: res.data?.message || "OTP does not match.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Invalid OTP", err.response?.data?.message || "OTP verification failed.");
+      showGlobalAlert({
+        title: "Invalid OTP",
+        message: err.response?.data?.message || "OTP verification failed.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -79,30 +113,51 @@ export default function ForgotPasswordScreen() {
 
   const resetPassword = async () => {
     if (!password.trim() || password.length < 6) {
-      Alert.alert("Weak password", "Password must be at least 6 characters.");
+      showGlobalAlert({
+        title: "Weak password",
+        message: "Password must be at least 6 characters.",
+        type: "warning",
+      });
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert("Mismatch", "Passwords do not match.");
+      showGlobalAlert({
+        title: "Mismatch",
+        message: "Passwords do not match.",
+        type: "warning",
+      });
       return;
     }
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}api/users/forgotPassword`, {
-        mobile: mobile.trim(),
+        mobile: mobile.replace(/\D/g, ""),
         password,
         otp: otp.trim(),
         validationId,
       });
       if (res.data?.success) {
-        Alert.alert("Done", "Password reset successfully.", [
-          { text: "Sign in", onPress: () => navigation.goBack() },
-        ]);
+        showGlobalAlert({
+          title: "Done",
+          message: "Password reset successfully.",
+          type: "success",
+          buttons: [
+            { text: "Sign in", onPress: () => navigation.goBack() },
+          ],
+        });
       } else {
-        Alert.alert("Error", res.data?.message || "Password reset failed.");
+        showGlobalAlert({
+          title: "Error",
+          message: res.data?.message || "Password reset failed.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Password reset failed.");
+      showGlobalAlert({
+        title: "Error",
+        message: err.response?.data?.message || "Password reset failed.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -146,9 +201,10 @@ export default function ForgotPasswordScreen() {
                 </ThemedText>
                 <TextInput
                   value={mobile}
-                  onChangeText={setMobile}
-                  placeholder="Enter mobile number"
+                  onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="Enter 10-digit mobile number"
                   keyboardType="phone-pad"
+                  maxLength={10}
                   style={{ fontSize: 16, color: "#111" }}
                 />
               </View>

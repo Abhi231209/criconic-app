@@ -306,9 +306,17 @@ export default function SignUpScreen() {
       const res = await authApi.signup(payload);
 
       if (res?.data?.success || res?.status === 200 || res?.status === 201) {
-        const registeredUser = res?.data?.user;
+        const registeredUser = res?.data?.user || res?.data?.content;
         const uid = registeredUser?._id || registeredUser?.id;
         analytics.logSignUp("phone_otp", uid);
+
+        // Build guaranteed user object from registration details
+        let finalUser = {
+          username: trimmedName,
+          name: trimmedName,
+          mobile: trimmedMobile,
+          ...(registeredUser || {}),
+        };
 
         // Auto sign-in after registration
         try {
@@ -316,27 +324,30 @@ export default function SignUpScreen() {
             mobile: trimmedMobile,
             password: trimmedPass,
           });
-          const user = loginRes?.data?.user || registeredUser;
-          if (user) {
-            dispatch(loginAction(user));
-            User.login(user);
+          if (loginRes?.data?.user) {
+            finalUser = {
+              ...finalUser,
+              ...loginRes.data.user,
+            };
           }
-          showGlobalAlert({
-            title: "Success",
-            message: "Account created successfully! Welcome to Criconic.",
-            type: "success",
-            confirmText: "Continue",
-            onConfirm: () => navigation.replace(SCREENS.Home),
-          });
-        } catch {
-          showGlobalAlert({
-            title: "Account Created",
-            message: "Registration successful! Please sign in with your credentials.",
-            type: "success",
-            confirmText: "Sign In",
-            onConfirm: () => navigation.navigate(SCREENS.LoginScreen),
-          });
+        } catch (loginErr) {
+          console.warn("[SignUp] Auto-login warning:", loginErr);
         }
+
+        // Commit active user session in Redux and User singleton
+        dispatch(loginAction(finalUser));
+        User.login(finalUser);
+
+        // Transition directly to CompleteProfile screen
+        if (typeof navigation.replace === "function") {
+          try {
+            navigation.replace(SCREENS.CompleteProfile, { user: finalUser });
+            return;
+          } catch (navErr) {
+            console.warn("[SignUp] navigation.replace fallback to navigate:", navErr);
+          }
+        }
+        navigation.navigate(SCREENS.CompleteProfile, { user: finalUser });
       } else {
         const errorMsg =
           res?.data?.message ||

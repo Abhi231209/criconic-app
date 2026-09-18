@@ -23,7 +23,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 
@@ -37,6 +37,7 @@ const { height } = Dimensions.get("window");
 
 const LoginScreen = () => {
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const dispatch = useDispatch();
 
   const authUser = useSelector((state) => state?.auth?.user);
@@ -50,21 +51,40 @@ const LoginScreen = () => {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
-  // Auto-redirect if already logged in
+  // Auto-redirect if already logged in AND LoginScreen is the active focused screen
   useEffect(() => {
+    if (!isFocused) return;
     if (User.isLogin() || authUser?._id || authUser?.id) {
-      console.log(
-        "🔐 [LoginScreen] User already logged in, redirecting to Home"
-      );
-      navigation.replace(SCREENS.Home);
+      const user = authUser || User.user;
+      const isProfileIncomplete =
+        !user?.role ||
+        user.role === "Player" ||
+        user.role === "player" ||
+        (!user?.batStyle && !user?.battingStyle);
+
+      if (isProfileIncomplete) {
+        navigation.replace(SCREENS.CompleteProfile, { user });
+      } else {
+        navigation.replace(SCREENS.Home);
+      }
     }
-  }, [authUser, navigation]);
+  }, [authUser, navigation, isFocused]);
 
   const handleLogin = async () => {
-    if (!mobile.trim()) {
+    const cleanedMobile = mobile.replace(/\D/g, "");
+    if (!cleanedMobile) {
       showGlobalAlert({
         title: "Mobile Number Required",
         message: "Please enter your 10-digit mobile number.",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (cleanedMobile.length !== 10) {
+      showGlobalAlert({
+        title: "Invalid Mobile Number",
+        message: "Mobile number must be exactly 10 digits.",
         type: "warning",
       });
       return;
@@ -120,7 +140,17 @@ const LoginScreen = () => {
         dispatch(loginAction(user));
         User.login(user);
 
-        navigation.replace(SCREENS.Home);
+        const isProfileIncomplete =
+          !user?.role ||
+          user.role === "Player" ||
+          user.role === "player" ||
+          (!user?.batStyle && !user?.battingStyle);
+
+        if (isProfileIncomplete) {
+          navigation.replace(SCREENS.CompleteProfile, { user });
+        } else {
+          navigation.replace(SCREENS.Home);
+        }
       } else {
         const message =
           res?.data?.message ||
@@ -327,7 +357,7 @@ const LoginScreen = () => {
                   isDarkMode ? "text-white" : "text-slate-900"
                 }`}
                 value={mobile}
-                onChangeText={setMobile}
+                onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
                 onFocus={() => setFocusedField("mobile")}
                 onBlur={() => setFocusedField(null)}
                 placeholder="Enter 10-digit mobile number"

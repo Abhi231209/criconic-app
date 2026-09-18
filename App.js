@@ -21,6 +21,7 @@ import { config } from "@gluestack-ui/config";
 import { GluestackUIProvider } from "@gluestack-ui/themed";
 import { Provider } from "react-redux";
 import { persistor, store } from "./redux/store";
+import { PersistGate } from "redux-persist/integration/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useEffect, useRef } from "react";
 import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from "@react-navigation/native";
@@ -153,15 +154,17 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Provider store={store}>
-        <QueryClientProvider client={queryClient}>
-          <GluestackUIProvider config={config}>
-            <SafeAreaProvider>
-              <ThemeProvider>
-                <AppContent />
-              </ThemeProvider>
-            </SafeAreaProvider>
-          </GluestackUIProvider>
-        </QueryClientProvider>
+        <PersistGate loading={null} persistor={persistor}>
+          <QueryClientProvider client={queryClient}>
+            <GluestackUIProvider config={config}>
+              <SafeAreaProvider>
+                <ThemeProvider>
+                  <AppContent />
+                </ThemeProvider>
+              </SafeAreaProvider>
+            </GluestackUIProvider>
+          </QueryClientProvider>
+        </PersistGate>
       </Provider>
     </GestureHandlerRootView>
   );

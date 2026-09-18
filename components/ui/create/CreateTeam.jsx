@@ -24,6 +24,7 @@ import LocationSearch from '@/components/ui/custom/LocationSearch';
 import SCREENS from '@/screens';
 import { teamsApi, upload } from '@/utils/api';
 import analytics from '@/utils/analytics';
+import { showGlobalAlert } from '@/contexts/AlertContext';
 
 const InputField = ({ 
   label, 
@@ -140,7 +141,11 @@ export default function CreateTeam() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photos to upload a logo.');
+      showGlobalAlert({
+        title: 'Permission Required',
+        message: 'Please allow access to your photos to upload a logo.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -158,17 +163,49 @@ export default function CreateTeam() {
 
   const handleSubmit = async () => {
     if (!formData.teamName.trim()) {
-      Alert.alert('Error', 'Please enter a team name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a team name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.shortName.trim()) {
-      Alert.alert('Error', 'Please enter a short name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a short name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.city?.trim()) {
-      Alert.alert('Error', 'Please enter and select a city/location for the team');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter and select a city/location for the team',
+        type: 'warning',
+      });
+      return;
+    }
+
+    const cleanCaptainPhone = (formData.captainPhone || '').replace(/[^0-9]/g, '');
+    if (cleanCaptainPhone && cleanCaptainPhone.length !== 10) {
+      showGlobalAlert({
+        title: 'Invalid Phone',
+        message: 'Captain phone must be a valid 10-digit number if provided.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    const cleanCoachPhone = (formData.coachPhone || '').replace(/[^0-9]/g, '');
+    if (cleanCoachPhone && cleanCoachPhone.length !== 10) {
+      showGlobalAlert({
+        title: 'Invalid Phone',
+        message: 'Coach phone must be a valid 10-digit number if provided.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -188,8 +225,9 @@ export default function CreateTeam() {
         ...(formData.cityLocationId ? { locationId: formData.cityLocationId } : {}),
         teamType: formData.teamType,
         captainName: formData.captainName.trim(),
-        captainPhone: formData.captainPhone.trim(),
+        captainPhone: cleanCaptainPhone,
         coachName: formData.coachName.trim(),
+        coachPhone: cleanCoachPhone,
         homeGround: formData.homeGround.trim(),
         establishedYear: formData.establishedYear,
         jerseyColor: formData.jerseyColor,
@@ -214,24 +252,29 @@ export default function CreateTeam() {
           route.params.onTeamCreated(createdTeam);
         }
 
-        Alert.alert(
-          'Success',
-          res?.data?.message || 'Team created successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        showGlobalAlert({
+          title: 'Success',
+          message: res?.data?.message || 'Team created successfully!',
+          type: 'success',
+          confirmText: 'OK',
+          onConfirm: () => navigation.goBack(),
+        });
       } else {
         const msg = res?.data?.message || 'Could not create team. Please try again.';
         analytics.logAction("create_team_failed", "team", { reason: msg });
-        Alert.alert('Notice', msg);
+        showGlobalAlert({
+          title: 'Notice',
+          message: msg,
+          type: 'warning',
+        });
       }
     } catch (error) {
       analytics.logAction("create_team_failed", "team", { reason: error.message || 'Unknown error' });
-      Alert.alert('Error', error.message || 'Failed to create team');
+      showGlobalAlert({
+        title: 'Error',
+        message: error.message || 'Failed to create team',
+        type: 'error',
+      });
     } finally {
       setIsLoading(false);
     }

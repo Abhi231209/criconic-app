@@ -437,7 +437,7 @@ export default function Home({}) {
           <SectionHeader title="Live Cricket Arena" />
           <TouchableOpacity
             activeOpacity={0.88}
-            onPress={() => requireAuth(() => navigation.navigate(SCREENS.MyCricket))}
+            onPress={() => navigation.navigate(SCREENS.AllMatches)}
             className="rounded-2xl overflow-hidden border border-slate-700/30 mb-5"
             style={{
               shadowColor: "#000",

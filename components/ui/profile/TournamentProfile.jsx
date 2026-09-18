@@ -560,16 +560,16 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       (Array.isArray(tournamentData?.teams) ? tournamentData.teams.length : null) ||
       teamsList.length ||
       0,
-    status: tournamentData?.status || "upcoming",
+    status: calculateTournamentStatus(tournamentData || passedTournament?.raw || passedTournament),
     format: tournamentData?.format || tournamentData?.category || "Standard",
     prizeMoney: tournamentData?.prizeMoney
       ? (String(tournamentData.prizeMoney).startsWith("₹") ? String(tournamentData.prizeMoney) : `₹${tournamentData.prizeMoney}`)
       : tournamentData?.prize
       ? (String(tournamentData.prize).startsWith("₹") ? String(tournamentData.prize) : `₹${tournamentData.prize}`)
       : "Not Specified",
-    entryFee: tournamentData?.entryFee !== undefined && tournamentData?.entryFee !== null && tournamentData?.entryFee !== ""
-      ? (Number(tournamentData.entryFee) === 0 ? "Free" : (String(tournamentData.entryFee).startsWith("₹") ? String(tournamentData.entryFee) : `₹${tournamentData.entryFee}`))
-      : "Free",
+    entryFee: tournamentData?.entryFee !== undefined && tournamentData?.entryFee !== null && tournamentData?.entryFee !== "" && Number(tournamentData.entryFee) !== 0 && tournamentData?.entryFee !== "0"
+      ? (String(tournamentData.entryFee).startsWith("₹") ? String(tournamentData.entryFee) : `₹${tournamentData.entryFee}`)
+      : null,
     ballType: tournamentData?.ballType
       ? String(tournamentData.ballType).toUpperCase()
       : "Standard",
@@ -1194,30 +1194,28 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           </View>
 
           {/* Entry Fee */}
-          <View className="flex-row justify-between items-center py-2">
-            <View className="flex-row items-center">
-              <Ionicons 
-                name="pricetag-outline" 
-                size={16} 
-                color={isDarkMode ? "#9CA3AF" : "#6B7280"} 
-                style={{marginRight: 8}}
-              />
+          {tournament.entryFee ? (
+            <View className="flex-row justify-between items-center py-2">
+              <View className="flex-row items-center">
+                <Ionicons 
+                  name="pricetag-outline" 
+                  size={16} 
+                  color={isDarkMode ? "#9CA3AF" : "#6B7280"} 
+                  style={{marginRight: 8}}
+                />
+                <ThemedText
+                  className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+                >
+                  Entry Fee
+                </ThemedText>
+              </View>
               <ThemedText
-                className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+                className={`font-bold ${isDarkMode ? "text-blue-400" : "text-blue-600"}`}
               >
-                Entry Fee
+                {tournament.entryFee}
               </ThemedText>
             </View>
-            <ThemedText
-              className={`font-bold ${
-                tournament.entryFee === "Free"
-                  ? (isDarkMode ? "text-green-400" : "text-green-600")
-                  : (isDarkMode ? "text-blue-400" : "text-blue-600")
-              }`}
-            >
-              {tournament.entryFee}
-            </ThemedText>
-          </View>
+          ) : null}
 
           <View className="flex-row justify-between items-center py-2">
             <View className="flex-row items-center">
@@ -2112,7 +2110,15 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
 
           {/* Status Badge in Banner Bottom Right */}
           <View className="flex-row justify-end">
-            <View className="px-2.5 py-1 rounded-full bg-blue-600/90 border border-blue-400/40 flex-row items-center">
+            <View
+              className={`px-2.5 py-1 rounded-full border flex-row items-center ${
+                tournament.status === "ongoing"
+                  ? "bg-emerald-600/90 border-emerald-400/40"
+                  : tournament.status === "completed"
+                  ? "bg-slate-700/90 border-slate-500/40"
+                  : "bg-blue-600/90 border-blue-400/40"
+              }`}
+            >
               <View className="w-1.5 h-1.5 rounded-full bg-white mr-1.5" />
               <ThemedText className="text-[11px] font-bold text-white uppercase">
                 {tournament.status || "Upcoming"}

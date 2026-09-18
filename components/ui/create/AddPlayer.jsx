@@ -20,6 +20,7 @@ import QRCode from "react-native-qrcode-svg";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import { searchApi, teamsApi } from "@/utils/api";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
+import { showGlobalAlert } from "@/components/ui/custom/AppAlertModal";
 
 export default function AddPlayer({showHeader = true}) {
   const navigation = useNavigation();
@@ -428,8 +429,31 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
 
   const navigation = useNavigation();
   const handleAddMore = () => {
-    if (!mobile.trim() || !username.trim()) {
-      Alert.alert("Error", "Please fill all required fields");
+    const cleanMobile = mobile.replace(/\D/g, "");
+    if (!username.trim()) {
+      showGlobalAlert({
+        title: "Required",
+        message: "Please enter player name",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (!cleanMobile) {
+      showGlobalAlert({
+        title: "Required",
+        message: "Please enter player mobile number",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
+      showGlobalAlert({
+        title: "Invalid Mobile Number",
+        message: "Mobile number must be a valid 10-digit number starting with 6, 7, 8, or 9.",
+        type: "warning",
+      });
       return;
     }
 
@@ -439,7 +463,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
       _id: pId,
       name: username.trim(),
       username: username.trim(),
-      mobile: mobile.trim(),
+      mobile: cleanMobile,
       email: email.trim(),
       location: location.trim(),
     };
@@ -458,16 +482,33 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
   };
 
   const handleSave = async () => {
-    if (!mobile.trim() && !username.trim() && addedPlayers.length === 0) {
-      Alert.alert("Error", "Please enter at least one player's name and mobile number");
+    const cleanCurrentMobile = mobile.replace(/\D/g, "");
+    if (!cleanCurrentMobile && !username.trim() && addedPlayers.length === 0) {
+      showGlobalAlert({
+        title: "Error",
+        message: "Please enter at least one player's name and mobile number",
+        type: "warning",
+      });
       return;
     }
 
     // Add current form data if filled
     let playersToAdd = [...addedPlayers];
-    if (mobile.trim() || username.trim()) {
-      if (!mobile.trim() || !username.trim()) {
-        Alert.alert("Error", "Please fill both player name and mobile number");
+    if (cleanCurrentMobile || username.trim()) {
+      if (!username.trim()) {
+        showGlobalAlert({
+          title: "Required",
+          message: "Please enter player name",
+          type: "warning",
+        });
+        return;
+      }
+      if (!cleanCurrentMobile || !/^[6-9]\d{9}$/.test(cleanCurrentMobile)) {
+        showGlobalAlert({
+          title: "Invalid Mobile Number",
+          message: "Mobile number must be a valid 10-digit number starting with 6, 7, 8, or 9.",
+          type: "warning",
+        });
         return;
       }
       const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -476,7 +517,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
         _id: pId,
         name: username.trim(),
         username: username.trim(),
-        mobile: mobile.trim(),
+        mobile: cleanCurrentMobile,
         email: email.trim(),
         location: location.trim(),
       });
@@ -490,21 +531,51 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
           players: playersToAdd,
         });
         if (res?.data?.success || res?.status === 200 || res?.status === 201) {
-          Alert.alert("Success", "Players added successfully");
-          setShowAddMobile(false);
-          cb?.();
-          navigation.goBack();
+          showGlobalAlert({
+            title: "Success",
+            message: "Players added successfully",
+            type: "success",
+            buttons: [
+              {
+                text: "OK",
+                onPress: () => {
+                  setShowAddMobile(false);
+                  cb?.();
+                  navigation.goBack();
+                },
+              },
+            ],
+          });
         } else {
-          Alert.alert("Notice", res?.data?.message || "Failed to add players");
+          showGlobalAlert({
+            title: "Notice",
+            message: res?.data?.message || "Failed to add players",
+            type: "warning",
+          });
         }
       } else {
-        Alert.alert("Success", "Players added successfully");
-        setShowAddMobile(false);
-        cb?.(playersToAdd);
-        navigation.goBack();
+        showGlobalAlert({
+          title: "Success",
+          message: "Players added successfully",
+          type: "success",
+          buttons: [
+            {
+              text: "OK",
+              onPress: () => {
+                setShowAddMobile(false);
+                cb?.(playersToAdd);
+                navigation.goBack();
+              },
+            },
+          ],
+        });
       }
     } catch (error) {
-      Alert.alert("Error", error?.message || "Failed to add players");
+      showGlobalAlert({
+        title: "Error",
+        message: error?.message || "Failed to add players",
+        type: "error",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -557,10 +628,11 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
                 : "border-gray-300 text-gray-900"
             }`}
             value={mobile}
-            onChangeText={setMobile}
-            placeholder="Enter phone number"
+            onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
+            placeholder="Enter 10-digit phone number"
             placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
             keyboardType="phone-pad"
+            maxLength={10}
           />
         </View>
 

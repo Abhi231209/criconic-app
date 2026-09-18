@@ -76,14 +76,27 @@ export default function RegisterScreen() {
           { mobile: mobile.trim(), password },
           { withCredentials: true }
         );
+        let user = {
+          username: name.trim(),
+          name: name.trim(),
+          mobile: mobile.trim(),
+        };
         if (loginRes.data?.success) {
+          if (loginRes.data?.user) {
+            user = { ...user, ...loginRes.data.user };
+          }
           dispatch(login(loginRes.data));
-          navigation.replace(SCREENS.MainDrawer);
         } else {
-          Alert.alert("Registered!", "Account created. Please sign in.", [
-            { text: "Sign in", onPress: () => navigation.navigate(SCREENS.LoginScreen) },
-          ]);
+          dispatch(login({ user }));
         }
+        User.login(user);
+        if (typeof navigation.replace === "function") {
+          try {
+            navigation.replace(SCREENS.CompleteProfile, { user });
+            return;
+          } catch (e) {}
+        }
+        navigation.navigate(SCREENS.CompleteProfile, { user });
       } else {
         Alert.alert("Error", res.data?.message || "Registration failed.");
       }
