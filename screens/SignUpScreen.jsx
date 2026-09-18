@@ -69,6 +69,18 @@ export default function SignUpScreen() {
 
   const timerRef = useRef(null);
 
+  const handleResetPhone = () => {
+    setIsPhoneValidated(false);
+    setIsOtpGenerated(false);
+    setIsOtpBypass(false);
+    setOtp("");
+    setValidationId("");
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      setTimerCount(0);
+    }
+  };
+
   // Reset verification state when mobile changes
   useEffect(() => {
     setIsOtpGenerated(false);
@@ -336,6 +348,8 @@ export default function SignUpScreen() {
           title: "Registration Failed",
           message: errorMsg,
           type: "error",
+          confirmText: "Change Number",
+          onConfirm: () => handleResetPhone(),
         });
       }
     } catch (err) {
@@ -346,9 +360,11 @@ export default function SignUpScreen() {
           : err.message || "An unexpected error occurred.");
       analytics.logAction("sign_up_failed", "authentication", { reason: errorMsg });
       showGlobalAlert({
-        title: "Error",
+        title: "Registration Error",
         message: errorMsg,
         type: "error",
+        confirmText: "Change Number",
+        onConfirm: () => handleResetPhone(),
       });
     } finally {
       setIsLoading(false);
@@ -454,9 +470,18 @@ export default function SignUpScreen() {
               {isPhoneValidated ? (
                 <View className="flex-row items-center">
                   <CheckCircle2 size={14} color="#10B981" />
-                  <ThemedText className="text-xs font-bold text-emerald-500 ml-1">
+                  <ThemedText className="text-xs font-bold text-emerald-500 ml-1 mr-2">
                     Verified
                   </ThemedText>
+                  <TouchableOpacity
+                    onPress={handleResetPhone}
+                    activeOpacity={0.7}
+                    className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30"
+                  >
+                    <ThemedText className="text-[11px] font-semibold text-blue-500">
+                      Change
+                    </ThemedText>
+                  </TouchableOpacity>
                 </View>
               ) : null}
             </View>
@@ -476,7 +501,17 @@ export default function SignUpScreen() {
                 maxLength={10}
                 editable={!isPhoneValidated}
               />
-              {!isPhoneValidated && (
+              {isPhoneValidated ? (
+                <TouchableOpacity
+                  onPress={handleResetPhone}
+                  activeOpacity={0.7}
+                  className="px-2.5 py-1 rounded-lg bg-blue-500/15 border border-blue-500/30"
+                >
+                  <ThemedText className="text-xs font-bold text-blue-500">
+                    Change
+                  </ThemedText>
+                </TouchableOpacity>
+              ) : (
                 <TouchableOpacity
                   onPress={handleGenerateOtp}
                   disabled={isGeneratingOtp || mobile.length !== 10 || timerCount > 0}

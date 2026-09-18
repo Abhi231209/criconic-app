@@ -277,7 +277,9 @@ export default function SelectTeamScreen() {
     });
   };
 
-  // Filter teams based on active tab
+  const [quickSearchQuery, setQuickSearchQuery] = useState("");
+
+  // Filter teams based on active tab, blockedTeamId, and quickSearchQuery
   const getFilteredTeams = () => {
     let filtered = teams;
     if (activeTab === "myTeams") {
@@ -285,7 +287,52 @@ export default function SelectTeamScreen() {
     } else if (activeTab === "opponentTeams") {
       filtered = filtered.filter((t) => !t.isMyTeam);
     }
+
+    if (blockedTeamId) {
+      filtered = filtered.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+
+    if (quickSearchQuery.trim()) {
+      const q = quickSearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(
+        (t) =>
+          (t.name || t.title || "").toLowerCase().includes(q) ||
+          (t.shortName || "").toLowerCase().includes(q) ||
+          (t.location || "").toLowerCase().includes(q)
+      );
+    }
     return filtered;
+  };
+
+  const getFilteredTournamentTeams = () => {
+    let list = tournamentTeams;
+    if (blockedTeamId) {
+      list = list.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+    if (quickSearchQuery.trim()) {
+      const q = quickSearchQuery.trim().toLowerCase();
+      list = list.filter(
+        (t) =>
+          (t.name || t.title || "").toLowerCase().includes(q) ||
+          (t.shortName || "").toLowerCase().includes(q) ||
+          (t.location || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  };
+
+  const getFilteredSearchResults = () => {
+    let list = searchResults;
+    if (blockedTeamId) {
+      list = list.filter(
+        (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
+      );
+    }
+    return list;
   };
 
   const renderTabButton = (tabName, label, iconName) => (
@@ -387,12 +434,15 @@ export default function SelectTeamScreen() {
         {/* Tournament Teams Tab */}
         {activeTab === "tournamentTeams" && (
           <TeamList 
-            teams={tournamentTeams} 
+            teams={getFilteredTournamentTeams()} 
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             emptyMessage={tournamentTitle ? `No teams registered in ${tournamentTitle} yet.` : "No tournament teams found."}
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -405,6 +455,9 @@ export default function SelectTeamScreen() {
             emptyMessage="No teams available. Create one!"
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -417,6 +470,9 @@ export default function SelectTeamScreen() {
             emptyMessage="No opponent teams available."
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            onCreateTeam={handleCreateTeam}
+            searchQuery={quickSearchQuery}
+            onSearchChange={setQuickSearchQuery}
           />
         )}
 
@@ -428,7 +484,7 @@ export default function SelectTeamScreen() {
         {/* Search Tab */}
         {activeTab === "search" && (
           <SearchTab 
-            teams={searchResults} 
+            teams={getFilteredSearchResults()} 
             isSearching={isSearching}
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
@@ -442,12 +498,52 @@ export default function SelectTeamScreen() {
 }
 
 // Team List Component
-const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, onRefresh }) => {
+const TeamList = ({
+  teams,
+  onTeamSelect,
+  isDarkMode,
+  emptyMessage,
+  refreshing,
+  onRefresh,
+  onCreateTeam,
+  searchQuery,
+  onSearchChange,
+}) => {
   return (
     <View className="flex-1 p-4">
+      {/* Quick Search Bar */}
+      <View
+        className={`flex-row items-center px-3 py-2 rounded-xl mb-3 border ${
+          isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        } shadow-sm`}
+      >
+        <Ionicons
+          name="search"
+          size={18}
+          color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          style={{ marginRight: 8 }}
+        />
+        <TextInput
+          placeholder="Quick search teams by name or location..."
+          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+          value={searchQuery}
+          onChangeText={onSearchChange}
+          className={`flex-1 text-sm ${isDarkMode ? "text-white" : "text-gray-900"} py-1`}
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => onSearchChange("")}>
+            <Ionicons
+              name="close-circle"
+              size={18}
+              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       <FlatList
         data={teams}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, idx) => item?.id ? String(item.id) : `team_${idx}`}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -488,10 +584,34 @@ const TeamList = ({ teams, onTeamSelect, isDarkMode, emptyMessage, refreshing, o
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <ThemedText className="text-gray-500 dark:text-gray-400">
-              {emptyMessage}
+          <View className="items-center justify-center py-12 px-4">
+            <View
+              className={`w-16 h-16 rounded-full items-center justify-center mb-3 ${
+                isDarkMode ? "bg-gray-800 border border-gray-700" : "bg-blue-50 border border-blue-100"
+              }`}
+            >
+              <Ionicons name="shield-outline" size={32} color={isDarkMode ? "#60A5FA" : "#2563EB"} />
+            </View>
+            <ThemedText className={`text-base font-bold text-center mb-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {searchQuery ? "No Matching Teams" : "No Teams Available"}
             </ThemedText>
+            <ThemedText className="text-gray-500 dark:text-gray-400 text-xs text-center mb-5 max-w-xs">
+              {searchQuery
+                ? `No teams matched "${searchQuery}". Try a different name or search globally.`
+                : emptyMessage || "Create a team now to start playing matches!"}
+            </ThemedText>
+            {onCreateTeam && !searchQuery ? (
+              <TouchableOpacity
+                onPress={onCreateTeam}
+                activeOpacity={0.85}
+                className="flex-row items-center bg-blue-600 px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/30"
+              >
+                <Ionicons name="add-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <ThemedText className="text-white text-sm font-bold">
+                  Create New Team
+                </ThemedText>
+              </TouchableOpacity>
+            ) : null}
           </View>
         }
       />
@@ -568,7 +688,7 @@ const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, 
       
       <FlatList
         data={teams}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, idx) => item?.id ? String(item.id) : `search_team_${idx}`}
         renderItem={({ item }) => (
           <TouchableOpacity
             onPress={() => onTeamSelect(item)}

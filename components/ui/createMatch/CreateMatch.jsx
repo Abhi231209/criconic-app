@@ -168,6 +168,19 @@ export default function CreateMatch() {
     useCallback(() => {
       isLeavingRef.current = false;
 
+      // Consume newly created tournament returned from CreateTournament
+      if (route.params?.newTournament) {
+        const nt = route.params.newTournament;
+        if (route.params) route.params.newTournament = null;
+        const newId = String(nt._id || nt.id || nt.slug || "");
+        setSelectedTournament(nt);
+        setTournamentId(newId);
+        setAuthorizedTournaments((prev) => {
+          const exists = prev.some((t) => String(t._id || t.id || t.slug) === newId);
+          return exists ? prev : [nt, ...prev];
+        });
+      }
+
       // Consume squad selection result from SelectSquadScreen (written via squadSelectionStore)
       if (squadSelectionStore.pending) {
         const { selectedTeam, selectedSquad, teamType } = squadSelectionStore.pending;
@@ -821,6 +834,28 @@ export default function CreateMatch() {
               )}
             </TouchableOpacity>
 
+            {/* Option 3: Create New Tournament */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowTypeModal(false);
+                isLeavingRef.current = true;
+                navigation.navigate(SCREENS.CreateTournament, {
+                  returnScreen: SCREENS.CreateMatch,
+                });
+              }}
+              activeOpacity={0.8}
+              className={`p-3.5 rounded-xl border mb-3 flex-row items-center justify-center ${
+                isDarkMode
+                  ? "border-blue-500/30 bg-blue-500/10"
+                  : "border-blue-200 bg-blue-50/60"
+              }`}
+            >
+              <Ionicons name="add-circle" size={20} color="#2563EB" style={{ marginRight: 8 }} />
+              <ThemedText className="font-bold text-sm text-blue-600 dark:text-blue-400">
+                + Create New Tournament
+              </ThemedText>
+            </TouchableOpacity>
+
             {/* Close / Dismiss */}
             <TouchableOpacity
               onPress={() => setShowTypeModal(false)}
@@ -876,7 +911,7 @@ export default function CreateMatch() {
 
             {/* Search Input Bar */}
             <View
-              className={`flex-row items-center px-3 py-2 rounded-xl mb-3 border ${
+              className={`flex-row items-center px-3 py-2 rounded-xl mb-2.5 border ${
                 isDarkMode ? "bg-gray-700/60 border-gray-600" : "bg-gray-100 border-gray-200"
               }`}
             >
@@ -905,6 +940,25 @@ export default function CreateMatch() {
                 </TouchableOpacity>
               ) : null}
             </View>
+
+            {/* Create Tournament Button in Picker */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowTournamentPickerModal(false);
+                setTournamentSearchQuery("");
+                isLeavingRef.current = true;
+                navigation.navigate(SCREENS.CreateTournament, {
+                  returnScreen: SCREENS.CreateMatch,
+                });
+              }}
+              activeOpacity={0.85}
+              className="flex-row items-center justify-center py-2.5 px-4 rounded-xl mb-3 bg-blue-600/10 dark:bg-blue-500/20 border border-blue-500/30"
+            >
+              <Ionicons name="add-circle" size={18} color="#2563EB" style={{ marginRight: 6 }} />
+              <ThemedText className="text-blue-600 dark:text-blue-400 font-bold text-xs">
+                + Create New Tournament
+              </ThemedText>
+            </TouchableOpacity>
 
             {/* Virtualized FlatList for High Performance */}
             <FlatList
@@ -994,11 +1048,30 @@ export default function CreateMatch() {
                         color={isDarkMode ? "#6B7280" : "#9CA3AF"}
                         style={{ marginBottom: 8 }}
                       />
-                      <ThemedText className="text-gray-500 dark:text-gray-400 text-sm">
+                      <ThemedText className="text-gray-500 dark:text-gray-400 text-sm text-center">
                         {tournamentSearchQuery
                           ? `No tournaments found matching "${tournamentSearchQuery}"`
                           : "No tournaments available"}
                       </ThemedText>
+                      {!tournamentSearchQuery && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setShowTournamentPickerModal(false);
+                            setTournamentSearchQuery("");
+                            isLeavingRef.current = true;
+                            navigation.navigate(SCREENS.CreateTournament, {
+                              returnScreen: SCREENS.CreateMatch,
+                            });
+                          }}
+                          activeOpacity={0.85}
+                          className="mt-4 flex-row items-center bg-blue-600 px-4 py-2.5 rounded-xl shadow-sm"
+                        >
+                          <Ionicons name="add-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <ThemedText className="text-white text-xs font-bold">
+                            Create New Tournament
+                          </ThemedText>
+                        </TouchableOpacity>
+                      )}
                     </>
                   )}
                 </View>

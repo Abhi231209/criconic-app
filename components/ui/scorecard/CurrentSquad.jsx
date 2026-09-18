@@ -123,8 +123,8 @@ export default function CurrentSquad({ matchId, score }) {
     const map = new Map();
 
     const recordBatting = (p) => {
-      if (!p) return;
-      const rawId = p.id?._id || p.id?.id || p.id || p._id || p.playerId || p.userId;
+      if (!p || typeof p !== "object") return;
+      const rawId = p.playerId || p.id?._id || p.id?.id || p.id || p._id || p.userId || p.player_id || (typeof p === "string" ? p : null);
       const idKey = (rawId && typeof rawId === "object" ? String(rawId._id || rawId.id || "") : String(rawId || "")).trim();
       const nameKey = (p.username || p.name || p.playerName || p.id?.username || p.id?.name || "").toString().trim().toLowerCase();
       if (!idKey && !nameKey) return;
@@ -135,17 +135,19 @@ export default function CurrentSquad({ matchId, score }) {
       const balls = Number(p.ballsFaced ?? p.balls ?? p.ball ?? p.ballsPlayed ?? 0);
       const fours = Number(p.fours ?? p.four ?? 0);
       const sixes = Number(p.sixes ?? p.six ?? 0);
-      const strikeRate = p.sr ?? p.strikeRate ?? (balls > 0 ? ((runs / balls) * 100).toFixed(1) : "0.00");
+      const totalBalls = Math.max(balls, existing.balls || 0);
+      const totalRuns = balls >= (existing.balls || 0) ? runs : Math.max(runs, existing.runs || 0);
+      const strikeRate = p.sr ?? p.strikeRate ?? (totalBalls > 0 ? ((totalRuns / totalBalls) * 100).toFixed(1) : "0.00");
       const photo = p.profileImg || p.profileImage || p.photo || p.image || p.avatar || p.id?.profileImg || p.id?.image || null;
 
       const stat = {
         ...existing,
         didBat: true,
-        runs: balls >= (existing.balls || 0) ? runs : (existing.runs ?? runs),
-        balls: Math.max(balls, existing.balls || 0),
+        runs: totalRuns,
+        balls: totalBalls,
         fours: Math.max(fours, existing.fours || 0),
         sixes: Math.max(sixes, existing.sixes || 0),
-        strikeRate: balls >= (existing.balls || 0) ? strikeRate : (existing.strikeRate ?? strikeRate),
+        strikeRate,
         isOut: p.isOut ?? (p.notOut !== undefined ? !p.notOut : existing.isOut),
         dismissal: p.dismissal || p.dismissalInfo || p.howOut || existing.dismissal,
         profileImg: photo || existing.profileImg,
@@ -163,32 +165,35 @@ export default function CurrentSquad({ matchId, score }) {
     };
 
     const recordBowling = (p) => {
-      if (!p) return;
-      const rawId = p.id?._id || p.id?.id || p.id || p._id || p.playerId || p.userId;
+      if (!p || typeof p !== "object") return;
+      const rawId = p.playerId || p.id?._id || p.id?.id || p.id || p._id || p.userId || p.player_id || (typeof p === "string" ? p : null);
       const idKey = (rawId && typeof rawId === "object" ? String(rawId._id || rawId.id || "") : String(rawId || "")).trim();
       const nameKey = (p.username || p.name || p.playerName || p.id?.username || p.id?.name || "").toString().trim().toLowerCase();
       if (!idKey && !nameKey) return;
 
       const existing = (idKey && map.get(idKey)) || (nameKey && map.get(nameKey)) || {};
 
-      const balls = parseBalls(p.over ?? p.overs, p.balls);
+      const balls = parseBalls(p.over ?? p.overs ?? p.oversBowled, p.balls ?? p.ballsBowled);
       const existingBalls = existing.bowlingBalls || 0;
-      const overs = p.over ?? p.overs ?? (balls > 0 ? `${Math.floor(balls / 6)}.${balls % 6}` : "0.0");
-      const maidens = Number(p.maiden ?? p.maidens ?? 0);
-      const concededRuns = Number(p.runsGiven ?? p.runsConceded ?? p.concededRuns ?? p.runs ?? 0);
-      const wickets = Number(p.wicketsTaken ?? p.wickets ?? p.wicket ?? 0);
-      const economy = p.eco ?? p.economy ?? p.econ ?? (overs && parseFloat(overs) > 0 ? (concededRuns / parseFloat(overs)).toFixed(2) : "0.00");
+      const totalBalls = Math.max(balls, existingBalls);
+      const overs = p.over ?? p.overs ?? p.oversBowled ?? (totalBalls > 0 ? `${Math.floor(totalBalls / 6)}.${totalBalls % 6}` : "0.0");
+      const maidens = Math.max(Number(p.maiden ?? p.maidens ?? p.maidenOvers ?? 0), existing.maidens || 0);
+      const concededRuns = balls >= existingBalls
+        ? Number(p.runsGiven ?? p.runsConceded ?? p.concededRuns ?? p.runs ?? 0)
+        : Math.max(Number(p.runsGiven ?? p.runsConceded ?? p.concededRuns ?? p.runs ?? 0), existing.concededRuns || 0);
+      const wickets = Math.max(Number(p.wicketsTaken ?? p.wickets ?? p.wicket ?? 0), existing.wickets || 0);
+      const economy = p.eco ?? p.economy ?? p.econ ?? (totalBalls > 0 ? ((concededRuns / totalBalls) * 6).toFixed(2) : "0.00");
       const photo = p.profileImg || p.profileImage || p.photo || p.image || p.avatar || p.id?.profileImg || p.id?.image || null;
 
       const stat = {
         ...existing,
         didBowl: true,
-        overs: balls >= existingBalls ? overs : (existing.overs || overs),
-        bowlingBalls: Math.max(balls, existingBalls),
-        maidens: Math.max(maidens, existing.maidens || 0),
-        concededRuns: balls >= existingBalls ? concededRuns : Math.max(concededRuns, existing.concededRuns || 0),
-        wickets: Math.max(wickets, existing.wickets || 0),
-        economy: balls >= existingBalls ? economy : (existing.economy || economy),
+        overs,
+        bowlingBalls: totalBalls,
+        maidens,
+        concededRuns,
+        wickets,
+        economy,
         profileImg: photo || existing.profileImg,
       };
 
@@ -196,29 +201,48 @@ export default function CurrentSquad({ matchId, score }) {
       if (nameKey) map.set(nameKey, stat);
     };
 
-    if (Array.isArray(score?.inning)) {
-      score.inning.forEach((inn) => {
-        const batsmen = [
-          ...(Array.isArray(inn?.playedBatsman) ? inn.playedBatsman : []),
-          ...(Array.isArray(inn?.batsman) ? inn.batsman : []),
-          ...(Array.isArray(inn?.batting?.batsmen) ? inn.batting.batsmen : []),
-          ...(Array.isArray(inn?.outBatsman) ? inn.outBatsman : []),
-        ];
-        batsmen.forEach(recordBatting);
+    // Extract all possible innings from score object and score.score
+    const allInningsList = [];
+    if (Array.isArray(score?.inning)) allInningsList.push(...score.inning);
+    if (Array.isArray(score?.innings)) allInningsList.push(...score.innings);
+    if (Array.isArray(score?.score?.inning)) allInningsList.push(...score.score.inning);
+    if (score?.innings_1) allInningsList.push(score.innings_1);
+    if (score?.innings_2) allInningsList.push(score.innings_2);
+    if (score?.innings_3) allInningsList.push(score.innings_3);
+    if (score?.innings_4) allInningsList.push(score.innings_4);
+    if (score?.score?.innings_1) allInningsList.push(score.score.innings_1);
+    if (score?.score?.innings_2) allInningsList.push(score.score.innings_2);
+    if (score?.score?.innings_3) allInningsList.push(score.score.innings_3);
+    if (score?.score?.innings_4) allInningsList.push(score.score.innings_4);
 
-        const bowlers = [
-          ...(Array.isArray(inn?.bowling?.allBowlers) ? inn.bowling.allBowlers : []),
-          ...(Array.isArray(inn?.bowling?.bowlers) ? inn.bowling.bowlers : []),
-          ...(Array.isArray(inn?.bowlers) ? inn.bowlers : []),
-          ...(Array.isArray(inn?.bowling?.lastTwoBowlers) ? inn.bowling.lastTwoBowlers : []),
-          ...(inn?.bowler ? [inn.bowler] : []),
-        ];
-        bowlers.forEach(recordBowling);
-      });
-    }
+    allInningsList.filter(Boolean).forEach((inn) => {
+      const batsmen = [
+        ...(Array.isArray(inn?.playedBatsman) ? inn.playedBatsman : []),
+        ...(Array.isArray(inn?.batsman) ? inn.batsman : []),
+        ...(Array.isArray(inn?.batting?.batsmen) ? inn.batting.batsmen : []),
+        ...(Array.isArray(inn?.outBatsman) ? inn.outBatsman : []),
+        ...(Array.isArray(inn?.batsmanUpcoming) ? inn.batsmanUpcoming : []),
+        ...(inn?.batsman && typeof inn.batsman === "object" && !Array.isArray(inn.batsman) ? [inn.batsman] : []),
+      ];
+      batsmen.forEach(recordBatting);
 
+      const bowlers = [
+        ...(Array.isArray(inn?.bowling?.allBowlers) ? inn.bowling.allBowlers : []),
+        ...(Array.isArray(inn?.bowling?.bowlers) ? inn.bowling.bowlers : []),
+        ...(Array.isArray(inn?.bowlers) ? inn.bowlers : []),
+        ...(Array.isArray(inn?.bowler) ? inn.bowler : (inn?.bowler && typeof inn.bowler === "object" ? [inn.bowler] : [])),
+        ...(Array.isArray(inn?.bowling?.lastTwoBowlers) ? inn.bowling.lastTwoBowlers : []),
+        ...(inn?.bowling?.currentBowler ? [inn.bowling.currentBowler] : []),
+        ...(inn?.currentBowler ? [inn.currentBowler] : []),
+      ];
+      bowlers.forEach(recordBowling);
+    });
+
+    // Also check top-level batsman and bowler data
     if (Array.isArray(score?.batsman)) {
       score.batsman.forEach(recordBatting);
+    } else if (score?.batsman && typeof score.batsman === "object") {
+      recordBatting(score.batsman);
     }
     if (Array.isArray(score?.outBatsman)) {
       score.outBatsman.forEach(recordBatting);
@@ -228,6 +252,12 @@ export default function CurrentSquad({ matchId, score }) {
     }
     if (Array.isArray(score?.bowlers)) {
       score.bowlers.forEach(recordBowling);
+    }
+    if (Array.isArray(score?.score?.batsman)) {
+      score.score.batsman.forEach(recordBatting);
+    }
+    if (score?.score?.bowler) {
+      recordBowling(score.score.bowler);
     }
 
     return map;
@@ -258,19 +288,19 @@ export default function CurrentSquad({ matchId, score }) {
   };
 
   const buildPlayerStats = (p, idx, isTeam1) => {
-    const rawId = p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || p?.userId;
+    const rawId = p?.playerId || p?.id?._id || p?.id?.id || p?.id || p?._id || p?.userId || (typeof p === "string" ? p : null);
     const name = p?.username || p?.name || p?.playerName || p?.id?.username || p?.id?.name || `Player ${idx + 1}`;
     const id = (rawId && typeof rawId === "object" ? String(rawId._id || rawId.id || "") : String(rawId || (p?.name || p?.username ? `${p.name || p.username}_${idx}` : (isTeam1 ? `t1_${idx}` : `t2_${idx}`))));
     
     // Look up in match stats map
-    const idKey = id.toString();
+    const idKey = id.toString().trim();
     const nameKey = name.trim().toLowerCase();
     const matchStat = (idKey && playerMatchStatsMap.get(idKey)) || (nameKey && playerMatchStatsMap.get(nameKey)) || null;
 
     // Look up in team squad players fetched from api/teams/${teamId}
     const teamPlayers = isTeam1 ? team1Players : team2Players;
     const teamPlayer = (teamPlayers || []).find((tp) => {
-      const tpRawId = tp?._id || tp?.id || tp?.playerId || tp?.id?._id || tp?.id?.id;
+      const tpRawId = tp?.playerId || tp?._id || tp?.id || tp?.id?._id || tp?.id?.id;
       const tpId = (tpRawId && typeof tpRawId === "object" ? String(tpRawId._id || tpRawId.id || "") : String(tpRawId || "")).trim();
       const tpName = (tp?.name || tp?.username || tp?.playerName || tp?.id?.name || tp?.id?.username || "").toString().trim().toLowerCase();
       return (idKey && tpId && tpId === idKey) || (nameKey && tpName && tpName === nameKey);
@@ -280,14 +310,28 @@ export default function CurrentSquad({ matchId, score }) {
     const batLb = isTeam1 ? team1BattingLeaderboard : team2BattingLeaderboard;
     const bowlLb = isTeam1 ? team1BowlingLeaderboard : team2BowlingLeaderboard;
 
-    const lbBat = (batLb || []).find(item => 
-      (idKey && String(item.id || item._id) === idKey) ||
-      (item.name && item.name.trim().toLowerCase() === nameKey)
-    );
-    const lbBowl = (bowlLb || []).find(item => 
-      (idKey && String(item.id || item._id) === idKey) ||
-      (item.name && item.name.trim().toLowerCase() === nameKey)
-    );
+    const getLbPlayerId = (item) => {
+      if (!item) return "";
+      const raw = item.playerId || item.id || item._id;
+      return (typeof raw === "object" ? String(raw?._id || raw?.id || "") : String(raw || "")).trim();
+    };
+    const getLbPlayerName = (item) => {
+      if (!item) return "";
+      const nm = item.playerName || item.name || item.username;
+      return String(nm || "").trim().toLowerCase();
+    };
+
+    const lbBat = (batLb || []).find(item => {
+      const pId = getLbPlayerId(item);
+      const pName = getLbPlayerName(item);
+      return (idKey && pId && pId === idKey) || (nameKey && pName && pName === nameKey);
+    });
+
+    const lbBowl = (bowlLb || []).find(item => {
+      const pId = getLbPlayerId(item);
+      const pName = getLbPlayerName(item);
+      return (idKey && pId && pId === idKey) || (nameKey && pName && pName === nameKey);
+    });
 
     const photo =
       p?.profileImg ||
@@ -309,24 +353,38 @@ export default function CurrentSquad({ matchId, score }) {
       teamPlayer?.id?.profileImage ||
       teamPlayer?.id?.image ||
       lbBat?.profileImg ||
-      lbBat?.profileImage ||
-      lbBat?.image ||
-      lbBat?.photo ||
+      lbBat?.profilePic ||
       lbBowl?.profileImg ||
-      lbBowl?.profileImage ||
-      lbBowl?.image ||
-      lbBowl?.photo ||
+      lbBowl?.profilePic ||
       matchStat?.profileImg ||
-      matchStat?.profileImage ||
-      matchStat?.image ||
       null;
 
-    const matches = p?.matches || teamPlayer?.matches || lbBat?.matches || lbBowl?.matches || (matchStat?.didBat || matchStat?.didBowl ? 1 : 0);
-    const runs = p?.runs ?? teamPlayer?.runs ?? lbBat?.runs ?? (matchStat?.didBat ? matchStat.runs : 0);
-    const wickets = p?.wickets ?? teamPlayer?.wickets ?? lbBowl?.wickets ?? (matchStat?.didBowl ? matchStat.wickets : 0);
-    const strikeRate = p?.strikeRate ?? teamPlayer?.strikeRate ?? lbBat?.strikeRate ?? (matchStat?.strikeRate || 0);
-    const economy = p?.economy ?? teamPlayer?.economy ?? lbBowl?.economy ?? (matchStat?.economy || 0);
-    const average = p?.average ?? teamPlayer?.average ?? lbBat?.average ?? 0;
+    // Career / Overall Team Stats
+    const lbMatches = Number(lbBat?.innings || lbBowl?.matchesPlayed || lbBat?.matches || lbBowl?.matches || 0);
+    const careerMatches = p?.matches || teamPlayer?.matches || lbMatches;
+    const matches = careerMatches > 0 
+      ? careerMatches 
+      : ((matchStat?.didBat || matchStat?.didBowl) ? 1 : 0);
+
+    const careerRuns = lbBat?.runs ?? lbBat?.totalRuns ?? p?.runs ?? teamPlayer?.runs;
+    const runs = (careerRuns !== undefined && careerRuns !== null && Number(careerRuns) > 0)
+      ? Number(careerRuns)
+      : (matchStat?.didBat ? Number(matchStat.runs || 0) : 0);
+
+    const careerWickets = lbBowl?.wickets ?? lbBowl?.wicketsTaken ?? lbBowl?.totalWickets ?? p?.wickets ?? teamPlayer?.wickets;
+    const wickets = (careerWickets !== undefined && careerWickets !== null && Number(careerWickets) > 0)
+      ? Number(careerWickets)
+      : (matchStat?.didBowl ? Number(matchStat.wickets || 0) : 0);
+
+    const strikeRate = (careerRuns && Number(careerRuns) > 0 && lbBat?.strikeRate)
+      ? lbBat.strikeRate
+      : (matchStat?.didBat ? matchStat.strikeRate : (p?.strikeRate || teamPlayer?.strikeRate || "0.00"));
+
+    const economy = (careerWickets && Number(careerWickets) > 0 && (lbBowl?.economyRate || lbBowl?.economy))
+      ? (lbBowl.economyRate || lbBowl.economy)
+      : (matchStat?.didBowl ? matchStat.economy : (p?.economy || teamPlayer?.economy || "0.00"));
+
+    const average = lbBat?.average ?? p?.average ?? teamPlayer?.average ?? 0;
 
     const role = p?.role || teamPlayer?.role || teamPlayer?.position || (matchStat?.didBowl && matchStat?.didBat ? "All-rounder" : matchStat?.didBowl ? "Bowler" : matchStat?.didBat ? "Batsman" : "Player");
     const isCaptain = Boolean(p?.isCaptain || teamPlayer?.isCaptain);
@@ -513,25 +571,25 @@ export default function CurrentSquad({ matchId, score }) {
       {player.matchStat && (
         (player.matchStat.didBat && (player.matchStat.balls > 0 || player.matchStat.runs > 0 || player.matchStat.isOut !== undefined)) ||
         (player.matchStat.didBowl && (player.matchStat.bowlingBalls > 0 || parseFloat(player.matchStat.overs) > 0 || player.matchStat.wickets > 0 || player.matchStat.concededRuns > 0))
-      ) && (
+      ) ? (
         <View className={`mt-3 p-2.5 rounded-lg ${isDark ? "bg-blue-950/40 border border-blue-800/40" : "bg-blue-50 border border-blue-200"}`}>
           <ThemedText className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? "text-blue-400" : "text-blue-600"}`}>
             Match Performance
           </ThemedText>
           <View className="flex-row flex-wrap gap-x-3 gap-y-1">
-            {player.matchStat.didBat && (player.matchStat.balls > 0 || player.matchStat.runs > 0 || player.matchStat.isOut !== undefined) && (
+            {player.matchStat.didBat && (player.matchStat.balls > 0 || player.matchStat.runs > 0 || player.matchStat.isOut !== undefined) ? (
               <ThemedText className={`text-xs font-semibold ${isDark ? "text-blue-200" : "text-blue-900"}`}>
                 🏏 {player.matchStat.runs} ({player.matchStat.balls}b){player.matchStat.fours > 0 ? ` ${player.matchStat.fours}x4` : ""}{player.matchStat.sixes > 0 ? ` ${player.matchStat.sixes}x6` : ""}
               </ThemedText>
-            )}
-            {player.matchStat.didBowl && (player.matchStat.bowlingBalls > 0 || parseFloat(player.matchStat.overs) > 0 || player.matchStat.wickets > 0 || player.matchStat.concededRuns > 0) && (
+            ) : null}
+            {player.matchStat.didBowl && (player.matchStat.bowlingBalls > 0 || parseFloat(player.matchStat.overs) > 0 || player.matchStat.wickets > 0 || player.matchStat.concededRuns > 0) ? (
               <ThemedText className={`text-xs font-semibold ${isDark ? "text-blue-200" : "text-blue-900"}`}>
                 🎯 {player.matchStat.wickets}/{player.matchStat.concededRuns} ({player.matchStat.overs} ov)
               </ThemedText>
-            )}
+            ) : null}
           </View>
         </View>
-      )}
+      ) : null}
       
       <View className={`h-px my-3 ${isDark ? "bg-gray-700/60" : "bg-gray-200"}`} />
       

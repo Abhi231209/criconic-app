@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSelector } from 'react-redux';
 import User from '@/utils/User';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,6 +26,7 @@ import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareS
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { tournamentsApi, upload } from '@/utils/api';
 import analytics from '@/utils/analytics';
+import { showGlobalAlert } from '@/contexts/AlertContext';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -136,6 +137,8 @@ const ImageUpload = ({ label, image, onPress, type, aspect = 'square' }) => {
 
 export default function CreateTournament() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const returnScreen = route.params?.returnScreen;
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
 
@@ -159,21 +162,20 @@ export default function CreateTournament() {
 
   const [formData, setFormData] = useState({
     tournamentName: '',
-    tournamentType: 'knockout',
-    startDate: new Date(),
-    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    tournamentType: 'KNOCK_OUT',
+    ballType: 'LEATHER',
     venue: '',
-    maxTeams: 8,
+    organizerName: defaultOrgName,
+    organizerPhone: defaultOrgPhone,
+    startDate: new Date(),
+    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days later
+    coverImage: null,
+    logo: null,
+    teams: 8,
     description: '',
     rules: '',
     prizeMoney: '',
     entryFee: '',
-    isPublic: true,
-    logo: null,
-    coverImage: null,
-    organizerName: defaultOrgName,
-    organizerPhone: defaultOrgPhone,
-    ballType: 'leather',
   });
 
   useEffect(() => {
@@ -189,17 +191,15 @@ export default function CreateTournament() {
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const tournamentTypes = [
-    { label: 'Knockout', value: 'knockout' },
-    { label: 'Round Robin', value: 'roundRobin' },
-    { label: 'League', value: 'league' },
-    { label: 'Friendly', value: 'friendly' },
+  const tournamentTypeOptions = [
+    { label: 'Knockout', value: 'KNOCK_OUT' },
+    { label: 'League', value: 'LEAGUE' },
   ];
 
-  const ballTypes = [
-    { label: 'Leather Ball', value: 'leather' },
-    { label: 'Tennis Ball', value: 'tennis' },
-    { label: 'Composite Ball', value: 'composite' },
+  const ballTypeOptions = [
+    { label: 'Leather Ball', value: 'LEATHER' },
+    { label: 'Tennis Ball', value: 'TENNIS' },
+    { label: 'Other', value: 'OTHER' },
   ];
 
   const teamOptions = [4, 8, 16, 32, 64].map(number => ({
@@ -210,7 +210,11 @@ export default function CreateTournament() {
   const pickImage = async (type) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photos to upload images.');
+      showGlobalAlert({
+        title: 'Permission Required',
+        message: 'Please allow access to your photos to upload images.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -242,37 +246,49 @@ export default function CreateTournament() {
     }
   };
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   const handleSubmit = async () => {
     if (!formData.tournamentName.trim()) {
-      Alert.alert('Error', 'Please enter a tournament name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a tournament name',
+        type: 'warning',
+      });
       return;
     }
 
     if (formData.startDate > formData.endDate) {
-      Alert.alert('Error', 'End date cannot be before start date');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'End date cannot be before start date',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.organizerName.trim()) {
-      Alert.alert('Error', 'Please enter organizer name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter organizer name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.organizerPhone.trim()) {
-      Alert.alert('Error', 'Please enter organizer phone number');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter organizer phone number',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.venue?.trim()) {
-      Alert.alert('Error', 'Please enter and select a tournament venue/location');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter and select a tournament venue/location',
+        type: 'warning',
+      });
       return;
     }
 
@@ -327,24 +343,40 @@ export default function CreateTournament() {
       };
 
       const res = await tournamentsApi.createTournament(payload);
+      const createdTournament = res?.data?.tournament || res?.data || payload;
       if (res?.data?.success || res?.status === 201 || res?.data?.tournament) {
         analytics.logAction("create_tournament_success", "tournament", {
           tournament_name: formData.tournamentName || "",
         });
-        Alert.alert('Success', 'Tournament created successfully!', [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
+        showGlobalAlert({
+          title: 'Success',
+          message: 'Tournament created successfully!',
+          type: 'success',
+          confirmText: 'Continue',
+          onConfirm: () => {
+            if (returnScreen) {
+              navigation.navigate(returnScreen, { newTournament: createdTournament });
+            } else {
+              navigation.goBack();
+            }
           },
-        ]);
+        });
       } else {
         const msg = res?.data?.message || 'Failed to create tournament';
         analytics.logAction("create_tournament_failed", "tournament", { reason: msg });
-        Alert.alert('Notice', msg);
+        showGlobalAlert({
+          title: 'Notice',
+          message: msg,
+          type: 'warning',
+        });
       }
     } catch (error) {
       analytics.logAction("create_tournament_failed", "tournament", { reason: error?.message || 'Unknown error' });
-      Alert.alert('Error', error?.message || 'Something went wrong');
+      showGlobalAlert({
+        title: 'Error',
+        message: error?.message || 'Something went wrong',
+        type: 'error',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -409,7 +441,7 @@ export default function CreateTournament() {
                 Tournament Type
               </ThemedText>
               <Dropdown
-                options={tournamentTypes}
+                options={tournamentTypeOptions}
                 selectedValue={formData.tournamentType}
                 onValueChange={(value) => setFormData({ ...formData, tournamentType: value })}
                 placeholder="Select tournament type"
@@ -422,7 +454,7 @@ export default function CreateTournament() {
                 Ball Type
               </ThemedText>
               <Dropdown
-                options={ballTypes}
+                options={ballTypeOptions}
                 selectedValue={formData.ballType}
                 onValueChange={(value) => setFormData({ ...formData, ballType: value })}
                 placeholder="Select ball type"
