@@ -40,6 +40,13 @@ import { THEME_STRIP_PREVIEWS } from "../themeConfig/DesktopOverlayPreview";
 function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
   const themeKey = (theme?.componentKey || theme?.id || '').toLowerCase();
   const isIpl = themeKey.includes('ipl');
+  // Prefer the theme's own uploaded preview image from the DB; only fall
+  // back to a bundled local asset for legacy themes that don't have one.
+  const imageSource = theme?.previewImage
+    ? { uri: theme.previewImage }
+    : isIpl
+    ? THEME_STRIP_PREVIEWS.ipl
+    : THEME_STRIP_PREVIEWS.fox;
 
   return (
     <View style={previewStyles.card}>
@@ -50,7 +57,7 @@ function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
         contentContainerStyle={{ minWidth: '100%' }}
       >
         <Image
-          source={isIpl ? THEME_STRIP_PREVIEWS.ipl : THEME_STRIP_PREVIEWS.fox}
+          source={imageSource}
           style={previewStyles.image}
           resizeMode="cover"
         />
