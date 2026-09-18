@@ -35,6 +35,9 @@ import { useNavigation } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
 import ThemedText from "./custom/ThemedText";
 import useAppTheme from "@/hooks/useAppTheme";
+import { useSelector } from "react-redux";
+import { request, tournamentsApi, teamsApi } from "@/utils/api";
+import CurrentUser from "@/utils/User";
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;
@@ -141,6 +144,58 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const colors = theme;
+
+  const authUser = useSelector((state) => state.auth?.user);
+  const userId = CurrentUser.id || authUser?._id || authUser?.id;
+  const [quickStats, setQuickStats] = useState({
+    tournaments: 0,
+    matches: 0,
+    players: 0,
+  });
+
+  useEffect(() => {
+    if (!userId) return;
+    let isMounted = true;
+    (async () => {
+      const [tourRes, teamsRes, profileRes] = await Promise.all([
+        tournamentsApi.getMyTournaments({ errorAlert: false }).catch(() => null),
+        teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
+        request(`api/users/profile/${userId}`, {
+          method: "GET",
+          errorAlert: false,
+        }).catch(() => null),
+      ]);
+      if (!isMounted) return;
+
+      const tournamentsList = Array.isArray(tourRes?.data?.content)
+        ? tourRes.data.content
+        : Array.isArray(tourRes?.data)
+        ? tourRes.data
+        : [];
+
+      const rawTeams = Array.isArray(teamsRes?.data) ? teamsRes.data : [];
+      const playersCount = rawTeams.reduce((sum, tm) => {
+        const raw = tm?.team?.[0] || tm;
+        return sum + (Array.isArray(raw?.players) ? raw.players.length : 0);
+      }, 0);
+
+      const profileStats =
+        profileRes?.data?.data?.stats || profileRes?.data?.stats || {};
+      const matchesCount = Math.max(
+        profileStats?.batting?.matches || 0,
+        profileStats?.bowling?.matches || 0
+      );
+
+      setQuickStats({
+        tournaments: tournamentsList.length,
+        matches: matchesCount,
+        players: playersCount,
+      });
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
 
   const navigateToScreen = (screenName, params) => {
     const currentRoutes = navigation.getState?.()?.routeNames || [];
@@ -461,7 +516,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 <Trophy size={16} color={colors.primary} />
               </View>
               <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                12
+                {quickStats.tournaments}
               </ThemedText>
               <ThemedText
                 style={[styles.statName, { color: colors.textSecondary }]}
@@ -480,7 +535,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 <Activity size={16} color={colors.primary} />
               </View>
               <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                48
+                {quickStats.matches}
               </ThemedText>
               <ThemedText
                 style={[styles.statName, { color: colors.textSecondary }]}
@@ -499,7 +554,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 <Users size={16} color={colors.primary} />
               </View>
               <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                156
+                {quickStats.players}
               </ThemedText>
               <ThemedText
                 style={[styles.statName, { color: colors.textSecondary }]}

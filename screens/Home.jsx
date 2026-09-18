@@ -9,6 +9,7 @@ import {
   ImageBackground,
   useColorScheme,
   RefreshControl,
+  Linking,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
@@ -53,7 +54,7 @@ export default function Home({}) {
     isLoading,
     data,
     error,
-  } = useAxiosGet("api/configs", {
+  } = useAxiosGet("api/configs/public", {
     showAlert: true,
     useBaseURL: true,
   });
@@ -269,70 +270,88 @@ export default function Home({}) {
           </View>
 
           {/* Hero Highlights Carousel */}
-          <View className="my-2">
-            <Carousel
-              loop
-              width={width - 32}
-              height={width * 0.48}
-              autoPlay={true}
-              autoPlayInterval={5000}
-              data={[1, 2, 3]}
-              scrollAnimationDuration={800}
-              mode="parallax"
-              parallaxScrollingScale={0.92}
-              parallaxScrollingOffset={40}
-              renderItem={({ item, index }) => (
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  className="rounded-2xl overflow-hidden border border-slate-700/20"
-                  style={{
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 8,
-                    elevation: 5,
-                  }}
-                >
-                  <ImageBackground
-                    source={require("../assets/stadium-background-image.jpg")}
-                    style={{ width: "100%", height: "100%" }}
-                    resizeMode="cover"
+          {homeConfig?.holding?.length > 0 && (
+            <View className="my-2">
+              <Carousel
+                loop={homeConfig.holding.length > 1}
+                width={width - 32}
+                height={width * 0.48}
+                autoPlay={homeConfig.holding.length > 1}
+                autoPlayInterval={5000}
+                data={homeConfig.holding}
+                scrollAnimationDuration={800}
+                mode="parallax"
+                parallaxScrollingScale={0.92}
+                parallaxScrollingOffset={40}
+                renderItem={({ item, index }) => (
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    disabled={!item?.callToAction}
+                    onPress={() => {
+                      if (item?.callToAction) {
+                        Linking.openURL(item.callToAction).catch(() => {});
+                      }
+                    }}
+                    className="rounded-2xl overflow-hidden border border-slate-700/20"
+                    style={{
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 8,
+                      elevation: 5,
+                    }}
                   >
-                    <LinearGradient
-                      colors={[
-                        "rgba(15,23,42,0.1)",
-                        "rgba(15,23,42,0.6)",
-                        "rgba(15,23,42,0.92)",
-                      ]}
-                      className="absolute inset-0 px-4 pb-4 justify-between"
+                    <ImageBackground
+                      source={
+                        item?.bannerImage
+                          ? { uri: item.bannerImage }
+                          : require("../assets/stadium-background-image.jpg")
+                      }
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
                     >
-                      {/* Top Pill */}
-                      <View className="flex-row justify-between items-center pt-3">
-                        <View className="px-2.5 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/20">
-                          <ThemedText className="text-[11px] font-bold text-white uppercase tracking-wider">
-                            Match Highlights • #{index + 1}
-                          </ThemedText>
+                      <LinearGradient
+                        colors={[
+                          "rgba(15,23,42,0.1)",
+                          "rgba(15,23,42,0.6)",
+                          "rgba(15,23,42,0.92)",
+                        ]}
+                        className="absolute inset-0 px-4 pb-4 justify-between"
+                      >
+                        {/* Top Pill */}
+                        <View className="flex-row justify-between items-center pt-3">
+                          <View className="px-2.5 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/20">
+                            <ThemedText className="text-[11px] font-bold text-white uppercase tracking-wider">
+                              Match Highlights • #{index + 1}
+                            </ThemedText>
+                          </View>
+                          {item?.isMatch && (
+                            <View className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md items-center justify-center">
+                              <Ionicons name="play" size={16} color="#FFFFFF" />
+                            </View>
+                          )}
                         </View>
-                        <View className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md items-center justify-center">
-                          <Ionicons name="play" size={16} color="#FFFFFF" />
-                        </View>
-                      </View>
 
-                      {/* Bottom Info */}
-                      <View>
-                        <ThemedText className="text-white text-lg font-bold">
-                          Grand Finale: Thunderbolts vs Knights
-                        </ThemedText>
-                        <ThemedText className="text-gray-300 text-xs mt-0.5">
-                          Thrilling final over thriller • 14 runs needed off 6 balls
-                        </ThemedText>
-                      </View>
-                    </LinearGradient>
-                  </ImageBackground>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
+                        {/* Bottom Info */}
+                        <View>
+                          {item?.heading && (
+                            <ThemedText className="text-white text-lg font-bold">
+                              {item.heading}
+                            </ThemedText>
+                          )}
+                          {item?.buttonText && (
+                            <ThemedText className="text-gray-300 text-xs mt-0.5">
+                              {item.buttonText}
+                            </ThemedText>
+                          )}
+                        </View>
+                      </LinearGradient>
+                    </ImageBackground>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          )}
 
           {/* Recent Matches Section */}
           <SectionHeader
