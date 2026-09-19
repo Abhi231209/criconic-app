@@ -286,7 +286,6 @@ export default function SearchScreen() {
   const renderPlayerItem = ({ item }) => {
     const name = item.username || item.name || "Player";
     const role = item.role || "Player";
-    const mobile = item.mobile || "";
 
     return (
       <TouchableOpacity
@@ -302,7 +301,7 @@ export default function SearchScreen() {
               {name}
             </ThemedText>
             <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              {role}{mobile ? ` • ${mobile}` : ""}
+              {role}{item.location ? ` • ${item.location}` : ""}
             </ThemedText>
           </View>
           <Ionicons

@@ -143,9 +143,15 @@ export default function GoLiveSetupScreen() {
 
   const C = isDarkMode ? COLORS.dark : COLORS.light;
 
-  const [activeTab, setActiveTab] = useState("mode"); // "mode" | "theme" | "ads"
+  const [activeTab, setActiveTab] = useState(route.params?.initialTab || "mode"); // "mode" | "theme" | "ads"
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
 
   // Match details & Configs
   const [matchDetails, setMatchDetails] = useState({});
@@ -221,15 +227,14 @@ export default function GoLiveSetupScreen() {
         (tournLive?.url && tournLive.active !== false && tournLive.active !== undefined)
       );
 
-      if (isTournActive) {
+      if (isTournActive && tournKey) {
         setLiveMode("tournament");
         setIsThisMatchLiveOnTournament(true);
         const urlKey = tournLive?.url || tournKey || matchId;
         setTournamentLiveUrl(`${WEB_URL}/go-live/${urlKey}`);
-      } else if (matchLive?.active) {
+      } else {
         setLiveMode("match");
         setIsThisMatchLiveOnTournament(false);
-      } else {
         if (tournKey) {
           setTournamentLiveUrl(`${WEB_URL}/go-live/${tournKey}`);
         }
@@ -241,12 +246,43 @@ export default function GoLiveSetupScreen() {
       const loadedThemes = Array.isArray(tData) && tData.length > 0 ? tData : getFallbackThemes();
       setThemes(loadedThemes);
 
-      // Default theme select
-      const initialTheme = loadedThemes[0];
-      if (initialTheme) {
-        setSelectedTheme(initialTheme._id || initialTheme.id);
-        setSelectedThemeConfig(initialTheme);
-        setupDefaultColors(initialTheme, mData);
+      // Check for existing saved theme config
+      const themeConfigByMatch =
+        tournLive?.themeConfigByMatch ||
+        matchLive?.themeConfigByMatch ||
+        configRes?.data?.content?.themeConfigByMatch;
+      const existingMatchConfig = themeConfigByMatch?.[matchId] || mData?.themeConfig;
+
+      if (existingMatchConfig?.selectedTheme) {
+        const storedTheme = existingMatchConfig.selectedTheme;
+        const storedThemeId = storedTheme._id || storedTheme.id || storedTheme.componentKey;
+        const matchedTheme =
+          loadedThemes.find((t) => (t._id || t.id || t.componentKey) === storedThemeId) ||
+          storedTheme;
+
+        setSelectedTheme(storedThemeId);
+        setSelectedThemeConfig(matchedTheme);
+
+        if (existingMatchConfig.colorConfig) {
+          setColorObject(existingMatchConfig.colorConfig);
+          const keys = Object.keys(existingMatchConfig.colorConfig);
+          if (keys.length > 0) {
+            setTeamAColor(existingMatchConfig.colorConfig[keys[0]] || existingMatchConfig.colorConfig["TeamA"]);
+          }
+          if (keys.length > 1) {
+            setTeamBColor(existingMatchConfig.colorConfig[keys[1]] || existingMatchConfig.colorConfig["TeamB"]);
+          }
+        } else {
+          setupDefaultColors(matchedTheme, mData);
+        }
+      } else {
+        // Default theme select
+        const initialTheme = loadedThemes[0];
+        if (initialTheme) {
+          setSelectedTheme(initialTheme._id || initialTheme.id);
+          setSelectedThemeConfig(initialTheme);
+          setupDefaultColors(initialTheme, mData);
+        }
       }
     } catch (err) {
       console.error("Error fetching GoLiveSetup data:", err);
@@ -707,7 +743,7 @@ export default function GoLiveSetupScreen() {
             backgroundColor: C.card,
             borderRadius: 16,
             borderWidth: 1.5,
-            borderColor: liveMode === "match" ? COLORS.primary : C.border,
+            borderColor: (!hasTournament || (!isThisMatchLiveOnTournament && liveMode === "match")) ? COLORS.primary : C.border,
             overflow: "hidden",
           }}
         >
@@ -732,16 +768,19 @@ export default function GoLiveSetupScreen() {
               </ThemedText>
             </View>
             <Switch
-              value={!isThisMatchLiveOnTournament && liveMode === "match"}
+              value={!hasTournament || (!isThisMatchLiveOnTournament && liveMode === "match")}
               onValueChange={(val) => {
-                if (val) {
-                  setLiveMode("match");
-                  setIsThisMatchLiveOnTournament(false);
-                } else if (hasTournament) {
-                  handleToggleTournamentMatchLive(true);
+                if (hasTournament) {
+                  if (val) {
+                    setLiveMode("match");
+                    setIsThisMatchLiveOnTournament(false);
+                  } else {
+                    handleToggleTournamentMatchLive(true);
+                  }
                 }
               }}
-              thumbColor={!isThisMatchLiveOnTournament && liveMode === "match" ? COLORS.primary : "#CBD5E1"}
+              disabled={!hasTournament}
+              thumbColor={(!hasTournament || (!isThisMatchLiveOnTournament && liveMode === "match")) ? COLORS.primary : "#CBD5E1"}
               trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
             />
           </View>
@@ -772,7 +811,7 @@ export default function GoLiveSetupScreen() {
             backgroundColor: C.card,
             borderRadius: 16,
             borderWidth: 1.5,
-            borderColor: isThisMatchLiveOnTournament ? "#D97706" : hasTournament ? C.border : (isDarkMode ? "#374151" : "#E5E7EB"),
+            borderColor: hasTournament && isThisMatchLiveOnTournament ? "#D97706" : hasTournament ? C.border : (isDarkMode ? "#374151" : "#E5E7EB"),
             overflow: "hidden",
             opacity: hasTournament ? 1 : 0.55,
           }}
@@ -794,7 +833,7 @@ export default function GoLiveSetupScreen() {
                 <ThemedText className="font-bold text-base" style={{ color: C.text }}>
                   Tournament Live Link
                 </ThemedText>
-                {isThisMatchLiveOnTournament && (
+                {hasTournament && isThisMatchLiveOnTournament && (
                   <View
                     style={{
                       backgroundColor: "#D97706",
@@ -816,9 +855,9 @@ export default function GoLiveSetupScreen() {
               </ThemedText>
             </View>
             <Switch
-              value={isThisMatchLiveOnTournament}
+              value={Boolean(hasTournament && isThisMatchLiveOnTournament)}
               onValueChange={hasTournament ? handleToggleTournamentMatchLive : undefined}
-              thumbColor={isThisMatchLiveOnTournament ? "#D97706" : "#CBD5E1"}
+              thumbColor={hasTournament && isThisMatchLiveOnTournament ? "#D97706" : "#CBD5E1"}
               trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#FDE68A" }}
               disabled={!hasTournament}
             />

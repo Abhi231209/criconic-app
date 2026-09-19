@@ -143,7 +143,24 @@ const MatchActionSheet = ({
     gradient: ["#F59E0B", "#D97706"],
     onPress: () => {
       closeSheet();
-      navigation.navigate(SCREENS.ThemeConfig, { matchId });
+      const tournamentId =
+        score?.tournament?._id ||
+        score?.tournament?.id ||
+        (typeof score?.tournament === "string" ? score?.tournament : null) ||
+        matchDetails?.tournamentID ||
+        matchDetails?.tournament?._id ||
+        matchDetails?.tournament?.id ||
+        (typeof matchDetails?.tournament === "string" ? matchDetails?.tournament : null);
+      const resolvedTournId =
+        typeof tournamentId === "object"
+          ? tournamentId?._id || tournamentId?.id
+          : tournamentId;
+      navigation.navigate(SCREENS.GoLiveSetup, {
+        matchId,
+        tournamentId: resolvedTournId,
+        initialTab: "theme",
+        fromActionSheet: true,
+      });
     },
   });
 

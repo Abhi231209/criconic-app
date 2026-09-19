@@ -722,7 +722,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       )}
 
       {/* Tournament Live Match Toggle */}
-      {Boolean(score?.tournament || matchDetails?.tournament || matchDetails?.tournamentID) && (
+      {/* {Boolean(score?.tournament || matchDetails?.tournament || matchDetails?.tournamentID) && (
         <View
           style={[
             styles.settingRow,
@@ -760,7 +760,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
             trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
           />
         </View>
-      )}
+      )} */}
 
       {/* Go Live Studio CTA */}
       <View style={{ marginBottom: 12 }}>
