@@ -781,13 +781,25 @@ export default function ScorerScreen() {
       });
 
       setAvailableBatters(eligibleBatters);
-      setNextBatterModalVisible(true);
+      // Only open next batter modal immediately if ball tracker is not active/pending.
+      // If ball tracker is active, next batter modal will open as soon as the tracker confirms or skips.
+      if (!showBallTrackerModal && !pendingBallParams) {
+        setNextBatterModalVisible(true);
+      }
     },
-    []
+    [showBallTrackerModal, pendingBallParams]
   );
   handleWicketRef.current = handleWicket;
 
   const handleSelectNextBatter = (player) => {
+    // If there was a pending ball that hasn't been committed yet, flush it now
+    if (pendingBallParams) {
+      console.log("[WICKET] Flushing pendingBallParams before selecting next batter");
+      const p = { ...pendingBallParams };
+      setPendingBallParams(null);
+      handleBall(p);
+    }
+
     const pendingFlow = pendingWicketFlowRef.current;
     const isNonStrikerWicket = pendingFlow?.type === 2;
     const shouldPromptStrike = Boolean(pendingFlow?.callSelectStrike);
@@ -1543,20 +1555,53 @@ export default function ScorerScreen() {
   };
 
   // Smart scoring interceptor: prompts BallTrackerModal when either check is
-  // ON. Skipped on a wide — no shot is credited to the batsman, so there's
-  // nothing to plot on the wagon wheel (the pitch map is still relevant).
+  // ON and relevant to the delivery/dismissal.
+  // 1) Mankaded / Retired / Timed Out / non-deliveries: no ball was bowled towards
+  //    the pitch and no shot was played, so Pitch Map and Wagon Wheel are both bypassed completely.
+  // 2) Bowled / LBW / Stumped / Wide / Byes / Leg-byes: a ball was bowled (Pitch Map relevant),
+  //    but no shot was played with the bat into the field (Wagon Wheel bypassed).
+  // 3) Batting shots & catches (Caught, Run Out off bat, normal runs): both Pitch Map & Wagon Wheel relevant.
   const scoreBall = (params) => {
-    const isWide = params?.ballType === "wide";
-    const dismissalType =
+    const ballType = String(params?.ballType || "").toLowerCase();
+    const runType = String(params?.runType || "").toLowerCase();
+    const dismissalType = String(
       params?.dismissalInfo?.dismissalType ||
       params?.dismissalType ||
-      "";
-    const isBowled = String(dismissalType).toLowerCase() === "bowled";
-    const effectiveWagonWheel = isWagonWheelChecked && !isWide && !isBowled;
-    const effectivePitchMap = isPitchMapChecked;
+      ""
+    ).toLowerCase();
+
+    // 1. Check if an actual delivery was bowled towards the pitch
+    const isMankaded = ballType === "mankaded" || dismissalType === "mankaded";
+    const isRetired = Boolean(params?.dontCountTheball) || dismissalType.includes("retire");
+    const isTimedOut = dismissalType === "timed out";
+    const isNoDelivery = isMankaded || isRetired || isTimedOut;
+
+    // 2. Check if a shot was hit with the bat into the field
+    const isBowled = dismissalType === "bowled";
+    const isLbw = dismissalType === "lbw";
+    const isStumped = dismissalType === "stumped";
+    const isWide = ballType === "wide" || runType === "wide";
+    const isByeOrLegBye =
+      runType === "bye" ||
+      runType === "leg-bye" ||
+      ballType === "bye" ||
+      ballType === "leg-bye";
+    const isNoBatShot = isNoDelivery || isBowled || isLbw || isStumped || isWide || isByeOrLegBye;
+
+    const effectivePitchMap = isPitchMapChecked && !isNoDelivery;
+    const effectiveWagonWheel = isWagonWheelChecked && !isNoBatShot;
 
     if (effectiveWagonWheel || effectivePitchMap) {
-      setPendingBallParams({ ...params, isBowled });
+      setPendingBallParams({
+        ...params,
+        isBowled,
+        isLbw,
+        isStumped,
+        isWide,
+        isMankaded,
+        isNoDelivery,
+        isNoBatShot,
+      });
       setShowBallTrackerModal(true);
     } else {
       handleBall(params);
@@ -1573,6 +1618,13 @@ export default function ScorerScreen() {
     };
     setPendingBallParams(null);
     handleBall(finalParams);
+
+    // If a wicket is pending, prompt next batter selection after scoring is committed
+    if (pendingWicketFlowRef.current) {
+      setTimeout(() => {
+        setNextBatterModalVisible(true);
+      }, 300);
+    }
   };
 
   const handleTrackerSkip = () => {
@@ -1581,11 +1633,20 @@ export default function ScorerScreen() {
     const finalParams = { ...pendingBallParams };
     setPendingBallParams(null);
     handleBall(finalParams);
+
+    // If a wicket is pending, prompt next batter selection after scoring is committed
+    if (pendingWicketFlowRef.current) {
+      setTimeout(() => {
+        setNextBatterModalVisible(true);
+      }, 300);
+    }
   };
 
   const handleTrackerCancel = () => {
     setShowBallTrackerModal(false);
     setPendingBallParams(null);
+    pendingWicketFlowRef.current = null;
+    setNextBatterModalVisible(false);
   };
 
   const handleUndo = () => {
@@ -1712,7 +1773,8 @@ export default function ScorerScreen() {
     (isConnected && pendingActionCount > 0) ||
     powerplayBanner ||
     (Number(score?.powerplayOvers) > 0 &&
-      parseFloat(score?.batting?.score?.over || "0") < Number(score.powerplayOvers))
+      parseFloat(score?.batting?.score?.over || "0") < Number(score.powerplayOvers)) ||
+    Boolean(score?.dls?.applied || matchDetails?.config?.dls?.applied)
   );
 
   return (
@@ -1769,6 +1831,29 @@ export default function ScorerScreen() {
               </View>
           )}
 
+          {/* DLS Active Banner */}
+          {(() => {
+            const dls = score?.dls || matchDetails?.config?.dls;
+            if (!dls?.applied) return null;
+            return (
+              <View className="bg-indigo-600 py-1.5 px-4 flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                  <ThemedText className="text-xs text-white font-bold mr-1.5">
+                    🌧️ DLS Applied:
+                  </ThemedText>
+                  <ThemedText className="text-xs text-indigo-100 font-semibold">
+                    Target {dls.revisedTarget} runs ({dls.revisedOvers} ov)
+                  </ThemedText>
+                </View>
+                {dls.dlsPar !== undefined && (
+                  <ThemedText className="text-xs text-yellow-300 font-bold">
+                    Par: {dls.dlsPar}
+                  </ThemedText>
+                )}
+              </View>
+            );
+          })()}
+
           {/* Header — no flex-1 here, it must size to its own content */}
           <View className="bg-primary">
             <MatchHeader
@@ -1776,7 +1861,7 @@ export default function ScorerScreen() {
               bowlingTeam={score?.bowling}
               battingTeam={score?.batting}
               currentOver={score?.batting?.score?.over}
-              batsmen={score?.batsman}
+              batsmen={score?.batsman?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)?.slice(0, 2)}
               bowler={score?.bowler}
               showHomeIcon={true}
               showSetting={true}
@@ -1798,6 +1883,20 @@ export default function ScorerScreen() {
                   const val = !!newSettings[MatchSettingEnum.RECORD_PITCH_MAP];
                   setIsPitchMapChecked(val);
                   AsyncStorage.setItem(`@criconic_pm_${matchID}`, String(val)).catch(() => {});
+                }
+                if (newSettings[MatchSettingEnum.DLS] !== undefined) {
+                  const dlsVal = newSettings[MatchSettingEnum.DLS];
+                  setScore((prev) => ({
+                    ...prev,
+                    dls: dlsVal,
+                    ...(dlsVal?.applied && dlsVal?.revisedTarget
+                      ? {
+                          target: dlsVal.revisedTarget,
+                          lastInningScore: dlsVal.revisedTarget - 1,
+                          totalOvers: dlsVal.revisedOvers || prev?.totalOvers,
+                        }
+                      : {}),
+                  }));
                 }
               }}
             />
@@ -1822,6 +1921,21 @@ export default function ScorerScreen() {
               <ThemedText className={`${hasTopBanner ? "text-xs" : "text-sm"} text-gray-300 mt-0.5 text-center px-4`}>
                 {score.description}
               </ThemedText>
+            )}
+            {Boolean(score?.dls?.applied) && (
+              <View
+                style={{
+                  marginTop: 4,
+                  paddingHorizontal: 10,
+                  paddingVertical: 2,
+                  borderRadius: 8,
+                  backgroundColor: "rgba(0, 0, 0, 0.25)",
+                }}
+              >
+                <ThemedText className="text-xs text-yellow-300 font-bold text-center">
+                  Target: {score.dls.revisedTarget} (DLS in {score.dls.revisedOvers} ov)
+                </ThemedText>
+              </View>
             )}
           </View>
 
@@ -1852,7 +1966,10 @@ export default function ScorerScreen() {
                 : "border-gray-200 bg-gray-50"
             }`}
           >
-            {score?.batsman?.map((b, idx) => (
+            {score?.batsman
+              ?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)
+              ?.slice(0, 2)
+              ?.map((b, idx) => (
               <View key={idx} className="flex-1 p-3 items-center">
                 <ThemedText
                   className={`text-xl font-semibold ${
@@ -2245,7 +2362,7 @@ export default function ScorerScreen() {
             bowlingTeam={bowlingTeamData}
             battingTeam={battingTeamData}
             currentOver={score?.batting?.score?.over}
-            batsmen={score?.batsman}
+            batsmen={score?.batsman?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)?.slice(0, 2)}
             bowler={score?.bowler}
             navigation={navigation}
             disabled={Boolean(matchStatus.isInningCompleted)}
@@ -3067,8 +3184,12 @@ export default function ScorerScreen() {
         onWicket={handleWicket}
         bowler={score?.bowler}
         batsmans={{
-          firstBatter: score?.batsman?.[0],
-          secondBatter: score?.batsman?.[1],
+          firstBatter:
+            score?.batsman?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)?.[0] ||
+            score?.batsman?.[0],
+          secondBatter:
+            score?.batsman?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)?.[1] ||
+            score?.batsman?.[1],
         }}
         bowlingTeam={bowlingTeamData}
         battingTeam={battingTeamData}
@@ -3077,7 +3198,7 @@ export default function ScorerScreen() {
       {/* Ball Tracker Modal (Prompted on scoring when Wagon Wheel or Pitch Map is enabled) */}
       <BallTrackerModal
         visible={showBallTrackerModal}
-        onClose={handleTrackerCancel}
+        onClose={handleTrackerSkip}
         onConfirm={handleTrackerConfirm}
         onSkip={handleTrackerSkip}
         ballContext={{
@@ -3109,10 +3230,16 @@ export default function ScorerScreen() {
         }}
         isWagonWheelEnabled={
           isWagonWheelChecked &&
+          !pendingBallParams?.isNoBatShot &&
           pendingBallParams?.ballType !== "wide" &&
-          !pendingBallParams?.isBowled
+          !pendingBallParams?.isBowled &&
+          !pendingBallParams?.isLbw &&
+          !pendingBallParams?.isStumped
         }
-        isPitchMapEnabled={isPitchMapChecked}
+        isPitchMapEnabled={
+          isPitchMapChecked &&
+          !pendingBallParams?.isNoDelivery
+        }
       />
 
       {/* Visual Analytics Viewer Modal (Wagon Wheel & Pitch Map full inspection) */}

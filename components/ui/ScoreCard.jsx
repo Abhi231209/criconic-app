@@ -4,6 +4,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   useColorScheme,
+  DeviceEventEmitter,
 } from "react-native";
 import { NavigationContext } from "@react-navigation/native";
 import ThemedText from "./custom/ThemedText";
@@ -37,6 +38,7 @@ function ScoreCard({
   fullWidth = false,
   style,
   navigation: propNavigation,
+  onDeleteSuccess,
 }) {
   const effectiveMatchId = matchId || match?._id || match?.id || match?.matchId;
   const cachedData = effectiveMatchId ? MATCH_CACHE.get(String(effectiveMatchId)) : null;
@@ -56,6 +58,18 @@ function ScoreCard({
   const { openSheet, closeSheet } = useBottomSheet();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const [isDeleted, setIsDeleted] = useState(false);
+
+  useEffect(() => {
+    if (!effectiveMatchId) return;
+    const sub = DeviceEventEmitter.addListener("MATCH_DELETED", ({ matchId: delId }) => {
+      if (String(delId) === String(effectiveMatchId)) {
+        setIsDeleted(true);
+        onDeleteSuccess?.(delId);
+      }
+    });
+    return () => sub.remove();
+  }, [effectiveMatchId, onDeleteSuccess]);
 
   useEffect(() => {
     if (!effectiveMatchId) return;
@@ -398,6 +412,10 @@ function ScoreCard({
         isAccessToUpdate={canScore}
         score={liveScore}
         matchDetails={combinedMatch}
+        onDeleteSuccess={(delId) => {
+          setIsDeleted(true);
+          onDeleteSuccess?.(delId);
+        }}
       />,
       ACTION_SHEET_SNAP_POINTS
     );
@@ -431,6 +449,8 @@ function ScoreCard({
     const batId = liveScore?.batting?.teamId || liveScore?.batting?.battingId;
     return isLive && batId && String(batId) === String(tId);
   };
+
+  if (isDeleted) return null;
 
   return (
     <View
@@ -710,6 +730,14 @@ function ScoreCard({
           >
             {displayDescription}
           </ThemedText>
+
+          {Boolean(liveScore?.dls?.applied || combinedMatch?.config?.dls?.applied) && (
+            <View className="bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded mr-1.5">
+              <ThemedText className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                DLS
+              </ThemedText>
+            </View>
+          )}
 
           <Ionicons
             name="chevron-forward"

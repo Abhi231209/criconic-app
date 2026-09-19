@@ -342,7 +342,11 @@ export const teamsApi = {
       User.id ||
       User.user?._id ||
       User.user?.id;
-    const endpoint = uid ? `api/users/withTeam/${uid}` : "api/users/withTeam";
+    const role = state?.auth?.user?.role ?? User.role;
+    const isUserAdmin = role === 1 || role === 2 || (typeof User.isAdmin === 'function' && User.isAdmin());
+    const endpoint = uid
+      ? `api/users/withTeam/${uid}?isAdmin=${isUserAdmin ? 1 : 0}`
+      : `api/users/withTeam?isAdmin=${isUserAdmin ? 1 : 0}`;
     return request(endpoint, { method: "GET", errorAlert: false, ...options });
   },
   getOpponentTeams: (options = {}) => {
@@ -354,13 +358,19 @@ export const teamsApi = {
       User.id ||
       User.user?._id ||
       User.user?.id;
+    const role = state?.auth?.user?.role ?? User.role;
+    const isUserAdmin = role === 1 || role === 2 || (typeof User.isAdmin === 'function' && User.isAdmin());
     const endpoint = uid
-      ? `api/teams/getOpponentTeam/${uid}?playerId=${uid}`
-      : "api/teams/getOpponentTeam";
+      ? `api/teams/getOpponentTeam/${uid}?playerId=${uid}&isAdmin=${isUserAdmin ? 1 : 0}`
+      : `api/teams/getOpponentTeam?isAdmin=${isUserAdmin ? 1 : 0}`;
     return request(endpoint, { method: "GET", errorAlert: false, ...options });
   },
-  getAllTeams: (options = {}) =>
-    request("api/teams", { method: "GET", errorAlert: false, ...options }),
+  getAllTeams: (options = {}) => {
+    const state = store?.getState?.();
+    const role = state?.auth?.user?.role ?? User.role;
+    const isUserAdmin = role === 1 || role === 2 || (typeof User.isAdmin === 'function' && User.isAdmin());
+    return request(`api/teams?isAdmin=${isUserAdmin ? 1 : 0}`, { method: "GET", errorAlert: false, ...options });
+  },
   getTeamById: (id, options = {}) =>
     request(`api/teams/${id}`, { method: "GET", errorAlert: false, ...options }),
   createTeam: (data, options = {}) =>
@@ -378,8 +388,24 @@ export const teamsApi = {
 export const tournamentsApi = {
   getAllTournaments: (options = {}) =>
     request("api/tournaments", { method: "GET", errorAlert: false, ...options }),
-  getMyTournaments: (options = {}) =>
-    request("api/tournaments?self=1&limit=50", { method: "GET", errorAlert: false, ...options }),
+  getMyTournaments: (options = {}) => {
+    const state = store?.getState?.();
+    const uid =
+      state?.auth?.user?._id ||
+      state?.auth?.user?.id ||
+      state?.auth?.user?.userId ||
+      User.id ||
+      User.user?._id ||
+      User.user?.id;
+    const mobile = state?.auth?.user?.mobile || User.mobile;
+    const params = new URLSearchParams({
+      self: "1",
+      limit: "50",
+      ...(uid ? { userId: String(uid) } : {}),
+      ...(mobile ? { mobile: String(mobile) } : {}),
+    }).toString();
+    return request(`api/tournaments?${params}`, { method: "GET", errorAlert: false, ...options });
+  },
   getTournamentById: (id, options = {}) =>
     request(`api/tournaments/${id}`, { method: "GET", errorAlert: false, ...options }),
   createTournament: (data, options = {}) =>
@@ -498,11 +524,23 @@ export const userApi = {
 export const rankingsApi = {
   getRegions: () =>
     request("api/rankings/regions", { method: "GET", errorAlert: false }),
-  getRankings: (region, type = "overall", options = {}) =>
-    request(
-      `api/rankings?region=${encodeURIComponent(region)}&type=${type}&page=${options.page || 1}&limit=${options.limit || 20}`,
-      { method: "GET", errorAlert: false }
-    ),
+  getRankings: (filter, type = "overall", options = {}) => {
+    let queryParts = [];
+    if (typeof filter === "object" && filter !== null) {
+      if (filter.country) queryParts.push(`country=${encodeURIComponent(filter.country)}`);
+      if (filter.state) queryParts.push(`state=${encodeURIComponent(filter.state)}`);
+      if (filter.district) queryParts.push(`district=${encodeURIComponent(filter.district)}`);
+      if (filter.region) queryParts.push(`region=${encodeURIComponent(filter.region)}`);
+      const page = filter.page || options.page || 1;
+      const limit = filter.limit || options.limit || 30;
+      const resolvedType = filter.type || type || "overall";
+      queryParts.push(`type=${resolvedType}&page=${page}&limit=${limit}`);
+    } else {
+      const regionStr = filter || "";
+      queryParts.push(`region=${encodeURIComponent(regionStr)}&type=${type}&page=${options.page || 1}&limit=${options.limit || 30}`);
+    }
+    return request(`api/rankings?${queryParts.join("&")}`, { method: "GET", errorAlert: false });
+  },
 };
 
 export default request;

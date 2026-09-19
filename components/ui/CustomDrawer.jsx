@@ -38,6 +38,13 @@ export default function CustomDrawer(props) {
   };
   const dispatch = useDispatch();
   const authUser = useSelector((state) => state.auth?.user);
+  const isAdmin = Boolean(
+    authUser?.role === 1 ||
+    authUser?.role === 2 ||
+    User?.isAdmin?.() ||
+    User?.user?.role === 1 ||
+    User?.user?.role === 2
+  );
   const { isLoggedIn, requireAuth } = useRequireAuth(navigation);
   const { isDark, toggleTheme, themeMode, setThemeMode } = useAppTheme();
   const isDarkMode = isDark;
@@ -298,12 +305,14 @@ export default function CustomDrawer(props) {
                 </View>
                 <ThemedText className="text-blue-200 text-xs mt-0.5">
                   {isLoggedIn
-                    ? (authUser?.email &&
-                       typeof authUser.email === "string" &&
-                       authUser.email.includes("@") &&
-                       !/^\+?\d+$/.test(authUser.email.replace(/[@.]/g, "").trim()))
-                      ? authUser.email
-                      : authUser?.playerRole || "Criconic Member"
+                    ? isAdmin
+                      ? (authUser?.mobile ? `+91 ${authUser.mobile} • Admin` : (authUser?.email ? `${authUser.email} • Admin` : "System Administrator"))
+                      : (authUser?.email &&
+                         typeof authUser.email === "string" &&
+                         authUser.email.includes("@") &&
+                         !/^\+?\d+$/.test(authUser.email.replace(/[@.]/g, "").trim()))
+                        ? authUser.email
+                        : authUser?.playerRole || "Criconic Member"
                     : "Tap to sign in / create account"}
                 </ThemedText>
               </View>

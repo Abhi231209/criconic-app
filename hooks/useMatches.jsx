@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { DeviceEventEmitter } from "react-native";
 import { request } from "@/utils/api";
 
 function useMatches({
@@ -90,6 +91,25 @@ function useMatches({
     setHasData(true);
     fetchPage(1, true);
   }, [playerId, teamId, itemsPerPage]);
+
+  // Immediately prune deleted match from matchesIds and invalidate cache
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "MATCH_DELETED",
+      ({ matchId: delId }) => {
+        if (!delId) return;
+        const strDelId = String(delId);
+        cache.current = {};
+        setMatchesIds((prev) =>
+          prev.filter((item) => {
+            const id = String(item?._id || item?.id || item?.matchId || item);
+            return id !== strDelId;
+          })
+        );
+      }
+    );
+    return () => sub.remove();
+  }, []);
 
   const fetchMore = useCallback(() => {
     if (!isFetchingRef.current && hasData) {

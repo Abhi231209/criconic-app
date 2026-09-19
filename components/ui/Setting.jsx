@@ -63,8 +63,9 @@ export default function Settings() {
     );
   };
 
-  const userSubtitle =
-    isValidDisplayEmail(authUser?.email)
+  const userSubtitle = isAdmin
+    ? (authUser?.mobile ? `+91 ${authUser.mobile} • Admin` : (authUser?.email ? `${authUser.email} • Admin` : "System Administrator"))
+    : isValidDisplayEmail(authUser?.email)
       ? authUser.email
       : isValidDisplayEmail(User?.email)
       ? User.email

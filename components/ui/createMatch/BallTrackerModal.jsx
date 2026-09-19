@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   Alert,
 } from "react-native";
-import { X, Check, ArrowRight, ArrowLeft } from "lucide-react-native";
+import { Check, ArrowRight, ArrowLeft } from "lucide-react-native";
 import PitchMap from "./PitchMap";
 import WagonWheel from "./WagonWheel";
 import { COLORS } from "@/theme/colors";
@@ -28,29 +28,75 @@ export default function BallTrackerModal({
   const isDarkMode = colorScheme === "dark";
   const C = isDarkMode ? COLORS.dark : COLORS.light;
 
+  const ballTypeStr = String(ballContext?.ballType || "").toLowerCase();
+  const runTypeStr = String(ballContext?.runType || "").toLowerCase();
+  const dismissalTypeStr = String(
+    ballContext?.dismissalType ||
+    ballContext?.dismissalInfo?.dismissalType ||
+    ""
+  ).toLowerCase();
+
+  const isMankaded =
+    Boolean(ballContext?.isMankaded) ||
+    ballTypeStr === "mankaded" ||
+    dismissalTypeStr === "mankaded";
+  const isRetired =
+    Boolean(ballContext?.dontCountTheball) ||
+    dismissalTypeStr.includes("retire");
+  const isTimedOut = dismissalTypeStr === "timed out";
+  const isNoDelivery =
+    Boolean(ballContext?.isNoDelivery) ||
+    isMankaded ||
+    isRetired ||
+    isTimedOut;
+
   const isBowled =
-    Boolean(ballContext?.isBowled) ||
-    String(ballContext?.dismissalType || "").toLowerCase() === "bowled" ||
-    String(ballContext?.dismissalInfo?.dismissalType || "").toLowerCase() === "bowled";
-  const effectiveWagonWheelEnabled = isBowled ? false : isWagonWheelEnabled;
+    Boolean(ballContext?.isBowled) || dismissalTypeStr === "bowled";
+  const isLbw =
+    Boolean(ballContext?.isLbw) || dismissalTypeStr === "lbw";
+  const isStumped =
+    Boolean(ballContext?.isStumped) || dismissalTypeStr === "stumped";
+  const isWide =
+    Boolean(ballContext?.isWide) || ballTypeStr === "wide" || runTypeStr === "wide";
+  const isByeOrLegBye =
+    runTypeStr === "bye" ||
+    runTypeStr === "leg-bye" ||
+    ballTypeStr === "bye" ||
+    ballTypeStr === "leg-bye";
+  const isNoBatShot =
+    Boolean(ballContext?.isNoBatShot) ||
+    isNoDelivery ||
+    isBowled ||
+    isLbw ||
+    isStumped ||
+    isWide ||
+    isByeOrLegBye;
+
+  const effectivePitchMapEnabled = isNoDelivery ? false : isPitchMapEnabled;
+  const effectiveWagonWheelEnabled = isNoBatShot ? false : isWagonWheelEnabled;
 
   // Determine initial active tab
   const [activeTab, setActiveTab] = useState(
-    isPitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
+    effectivePitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
   );
   const [selectedPitch, setSelectedPitch] = useState(null);
   const [selectedShot, setSelectedShot] = useState(null);
 
   useEffect(() => {
     if (visible) {
+      // Auto-skip if neither tracker is applicable for this ball
+      if (!effectivePitchMapEnabled && !effectiveWagonWheelEnabled) {
+        onSkip ? onSkip() : onClose?.();
+        return;
+      }
       // Reset state for new ball
       setSelectedPitch(null);
       setSelectedShot(null);
       setActiveTab(
-        isPitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
+        effectivePitchMapEnabled ? "pitch" : effectiveWagonWheelEnabled ? "wagon" : "pitch"
       );
     }
-  }, [visible, isPitchMapEnabled, effectiveWagonWheelEnabled]);
+  }, [visible, effectivePitchMapEnabled, effectiveWagonWheelEnabled]);
 
   const {
     runs = 0,
@@ -78,20 +124,20 @@ export default function BallTrackerModal({
   const getBallBadgeText = () => {
     if (isWicket) return "WICKET";
     if (ballType === "wide") return `Wide + ${runs} Run(s)`;
-    if (ballType === "no-ball") return `No Ball + ${runs} Run(s)`;
-    if (runs === 6) return "6 - SIX";
-    if (runs === 4) return "4 - FOUR";
-    return `${runs} Run${runs === 1 ? "" : "s"}`;
-  };
-
-  const handleDone = () => {
-    onConfirm?.({
-      pitchMap: selectedPitch,
-      wagonWheel: selectedShot,
-    });
+    if (ballType === "noBall") return `No Ball + ${runs} Run(s)`;
+    if (runType === "bye") return `Bye + ${runs}`;
+    if (runType === "leg-bye") return `Leg Bye + ${runs}`;
+    if (runs === 4) return "FOUR (4)";
+    if (runs === 6) return "SIX (6)";
+    if (runs === 0) return "DOT BALL";
+    return `${runs} RUN${runs > 1 ? "S" : ""}`;
   };
 
   const handleNextToWagon = () => {
+    if (bothEnabled && !selectedPitch) {
+      Alert.alert("Pitch Spot Required", "Please select where the ball pitched before continuing.");
+      return;
+    }
     setActiveTab("wagon");
   };
 
@@ -99,19 +145,34 @@ export default function BallTrackerModal({
     setActiveTab("pitch");
   };
 
+  const handleDone = () => {
+    if (effectivePitchMapEnabled && !selectedPitch) {
+      Alert.alert("Pitch Spot Required", "Please select where the ball pitched.");
+      return;
+    }
+    if (effectiveWagonWheelEnabled && !selectedShot) {
+      Alert.alert("Shot Zone Required", "Please select the shot zone on the wagon wheel.");
+      return;
+    }
 
-  const handleSkip = () => {
+    onConfirm({
+      pitchMap: selectedPitch,
+      wagonWheel: selectedShot,
+    });
+  };
+
+  const handleSkipTracking = () => {
     onSkip?.();
   };
 
-  const bothEnabled = isPitchMapEnabled && effectiveWagonWheelEnabled;
+  const bothEnabled = effectivePitchMapEnabled && effectiveWagonWheelEnabled;
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent={true}
-      onRequestClose={onClose}
+      onRequestClose={() => {}}
     >
       <View style={styles.modalOverlay}>
         <SafeAreaView
@@ -165,14 +226,6 @@ export default function BallTrackerModal({
                 Bowler: {bowlerName}
               </Text>
             </View>
-
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <X size={20} color={isDarkMode ? "#94A3B8" : "#64748B"} />
-            </TouchableOpacity>
           </View>
 
           {/* Tab Switcher (if both enabled) */}
@@ -261,7 +314,7 @@ export default function BallTrackerModal({
             contentContainerStyle={styles.scrollContentContainer}
             showsVerticalScrollIndicator={false}
           >
-            {activeTab === "pitch" && isPitchMapEnabled && (
+            {activeTab === "pitch" && effectivePitchMapEnabled && (
               <PitchMap
                 width={310}
                 height={360}
@@ -298,45 +351,24 @@ export default function BallTrackerModal({
             ]}
           >
             {bothEnabled && activeTab === "pitch" ? (
-              <>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    styles.cancelBtn,
-                    { borderColor: isDarkMode ? "#334155" : "#E2E8F0" },
-                  ]}
-                  onPress={onClose}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.cancelBtnText,
-                      { color: isDarkMode ? "#94A3B8" : "#64748B" },
-                    ]}
-                  >
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    styles.nextBtn,
-                    !selectedPitch && {
-                      opacity: 0.5,
-                      backgroundColor: isDarkMode ? "#334155" : "#94A3B8",
-                    },
-                  ]}
-                  disabled={!selectedPitch}
-                  onPress={handleNextToWagon}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.doneBtnText}>
-                    {selectedPitch ? "Next: Wagon Wheel" : "Select Pitch Spot"}
-                  </Text>
-                  <ArrowRight size={17} color="#FFFFFF" />
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.nextBtn,
+                  !selectedPitch && {
+                    opacity: 0.5,
+                    backgroundColor: isDarkMode ? "#334155" : "#94A3B8",
+                  },
+                ]}
+                disabled={!selectedPitch}
+                onPress={handleNextToWagon}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.doneBtnText}>
+                  {selectedPitch ? "Next: Wagon Wheel" : "Select Pitch Spot"}
+                </Text>
+                <ArrowRight size={17} color="#FFFFFF" />
+              </TouchableOpacity>
             ) : bothEnabled && activeTab === "wagon" ? (
               <>
                 <TouchableOpacity
@@ -379,55 +411,34 @@ export default function BallTrackerModal({
                 </TouchableOpacity>
               </>
             ) : (
-              <>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    styles.cancelBtn,
-                    { borderColor: isDarkMode ? "#334155" : "#E2E8F0" },
-                  ]}
-                  onPress={onClose}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.cancelBtnText,
-                      { color: isDarkMode ? "#94A3B8" : "#64748B" },
-                    ]}
-                  >
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    styles.doneBtn,
-                    ((activeTab === "pitch" && !selectedPitch) ||
-                      (activeTab === "wagon" && !selectedShot)) && {
-                      opacity: 0.5,
-                      backgroundColor: isDarkMode ? "#334155" : "#94A3B8",
-                    },
-                  ]}
-                  disabled={
-                    (activeTab === "pitch" && !selectedPitch) ||
-                    (activeTab === "wagon" && !selectedShot)
-                  }
-                  onPress={handleDone}
-                  activeOpacity={0.8}
-                >
-                  <Check size={18} color="#FFFFFF" />
-                  <Text style={styles.doneBtnText}>
-                    {activeTab === "pitch"
-                      ? selectedPitch
-                        ? "Done & Score"
-                        : "Select Pitch Spot"
-                      : selectedShot
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.doneBtn,
+                  ((activeTab === "pitch" && !selectedPitch) ||
+                    (activeTab === "wagon" && !selectedShot)) && {
+                    opacity: 0.5,
+                    backgroundColor: isDarkMode ? "#334155" : "#94A3B8",
+                  },
+                ]}
+                disabled={
+                  (activeTab === "pitch" && !selectedPitch) ||
+                  (activeTab === "wagon" && !selectedShot)
+                }
+                onPress={handleDone}
+                activeOpacity={0.8}
+              >
+                <Check size={18} color="#FFFFFF" />
+                <Text style={styles.doneBtnText}>
+                  {activeTab === "pitch"
+                    ? selectedPitch
                       ? "Done & Score"
-                      : "Select Shot Zone"}
-                  </Text>
-                </TouchableOpacity>
-              </>
+                      : "Select Pitch Spot"
+                    : selectedShot
+                    ? "Done & Score"
+                    : "Select Shot Zone"}
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
         </SafeAreaView>

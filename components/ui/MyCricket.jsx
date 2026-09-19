@@ -8,6 +8,7 @@ import {
   useColorScheme,
   RefreshControl,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -26,6 +27,13 @@ export default function MyCricket() {
   const navigation = useNavigation();
   const authUser = useSelector((state) => state.auth?.user);
   const userId = User.id || authUser?._id || authUser?.id;
+  const isAdmin = Boolean(
+    authUser?.role === 1 ||
+    authUser?.role === 2 ||
+    User?.isAdmin?.() ||
+    User?.user?.role === 1 ||
+    User?.user?.role === 2
+  );
 
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
@@ -41,7 +49,25 @@ export default function MyCricket() {
   const [hasMoreMatches, setHasMoreMatches] = useState(true);
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "MATCH_DELETED",
+      ({ matchId: delId }) => {
+        if (!delId) return;
+        const strDelId = String(delId);
+        setRecentMatches((prev) =>
+          prev.filter((m) => {
+            const id = String(m?._id || m?.id || m?.matchId || m);
+            return id !== strDelId;
+          })
+        );
+      }
+    );
+    return () => sub.remove();
+  }, []);
+
   const isUserMatch = (m, uId) => {
+    if (isAdmin) return true;
     if (!uId) return false;
     const uidStr = String(uId);
     if (String(m?.createdBy || m?.userId || m?.user?._id || m?.user?.id || m?.user || "") === uidStr) return true;
@@ -61,15 +87,62 @@ export default function MyCricket() {
 
   const isUserTournament = (t, uId) => {
     if (!uId) return true;
-    const uidStr = String(uId);
-    if (String(t?.createdBy || t?.userId || t?.user?._id || t?.user?.id || t?.organizerId || "") === uidStr) return true;
+    const uidStr = String(uId).trim();
+    const uMobile = String(authUser?.mobile || authUser?.phoneNumber || User.mobile || "").replace(/[^0-9]/g, "").slice(-10);
+    const uName = String(authUser?.username || authUser?.name || User.name || "").toLowerCase().trim();
+
+    // Check createdBy (can be string, ObjectId, or populated user object)
+    const createdById = String(t?.createdBy?._id || t?.createdBy?.id || t?.createdBy || "").trim();
+    if (createdById && createdById === uidStr) return true;
+
+    // Check userId / organizerId
+    const tourUserId = String(t?.userId || t?.user?._id || t?.user?.id || t?.user || t?.organizerId || "").trim();
+    if (tourUserId && tourUserId === uidStr) return true;
+
+    // Check organizer (can be array of strings, ObjectIds, or populated user objects)
+    if (Array.isArray(t?.organizer)) {
+      for (const org of t.organizer) {
+        const orgId = String(org?._id || org?.id || org || "").trim();
+        if (orgId && orgId === uidStr) return true;
+        const orgMobile = String(org?.mobile || org?.phoneNumber || "").replace(/[^0-9]/g, "").slice(-10);
+        if (uMobile && orgMobile && orgMobile === uMobile) return true;
+        const orgName = String(org?.username || org?.name || "").toLowerCase().trim();
+        if (uName && orgName && orgName === uName) return true;
+      }
+    } else if (t?.organizer) {
+      const orgId = String(t.organizer?._id || t.organizer?.id || t.organizer || "").trim();
+      if (orgId && orgId === uidStr) return true;
+      const orgMobile = String(t.organizer?.mobile || t.organizer?.phoneNumber || "").replace(/[^0-9]/g, "").slice(-10);
+      if (uMobile && orgMobile && orgMobile === uMobile) return true;
+      const orgName = String(t.organizer?.username || t.organizer?.name || "").toLowerCase().trim();
+      if (uName && orgName && orgName === uName) return true;
+    }
+
+    // Check organizerNumber / organizerPhone
+    const tMobile = String(t?.organizerNumber || t?.organizerPhone || "").replace(/[^0-9]/g, "").slice(-10);
+    if (uMobile && tMobile && tMobile === uMobile) {
+      return true;
+    }
+
+    // Check organizerName
+    const tOrgName = String(t?.organizerName || "").toLowerCase().trim();
+    if (uName && tOrgName && tOrgName === uName) {
+      return true;
+    }
+
+    // Check teams and squad players
     if (Array.isArray(t?.teams)) {
       for (const tm of t.teams) {
-        if (String(tm?.createdBy || tm?.captain || tm?.userId || "") === uidStr) return true;
-        if (Array.isArray(tm?.players)) {
-          for (const p of tm.players) {
-            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || "");
-            if (pid === uidStr) return true;
+        const teamObj = tm?.teamId || tm;
+        const tmCreatedBy = String(teamObj?.createdBy?._id || teamObj?.createdBy?.id || teamObj?.createdBy || "").trim();
+        const tmCaptain = String(teamObj?.captain?._id || teamObj?.captain?.id || teamObj?.captain || "").trim();
+        const tmUserId = String(teamObj?.userId || "").trim();
+        if ((tmCreatedBy && tmCreatedBy === uidStr) || (tmCaptain && tmCaptain === uidStr) || (tmUserId && tmUserId === uidStr)) return true;
+
+        if (Array.isArray(teamObj?.players)) {
+          for (const p of teamObj.players) {
+            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || p?.user || "").trim();
+            if (pid && pid === uidStr) return true;
           }
         }
       }
@@ -130,8 +203,10 @@ export default function MyCricket() {
   const extractArray = (res) => {
     if (!res) return [];
     if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.content?.tournaments)) return res.content.tournaments;
     if (Array.isArray(res?.content?.teams)) return res.content.teams;
     if (Array.isArray(res?.content)) return res.content;
+    if (Array.isArray(res?.data?.content?.tournaments)) return res.data.content.tournaments;
     if (Array.isArray(res?.data?.content?.teams)) return res.data.content.teams;
     if (Array.isArray(res?.data?.content)) return res.data.content;
     if (Array.isArray(res?.data?.teams)) return res.data.teams;
@@ -149,9 +224,13 @@ export default function MyCricket() {
       setMatchPage(1);
       setHasMoreMatches(true);
 
-      // User-based match queries only
+      // User-based match queries only, or all matches if admin
       const matchPromises = [];
-      if (userId) {
+      if (isAdmin) {
+        matchPromises.push(
+          matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
+        );
+      } else if (userId) {
         matchPromises.push(
           matchesApi.getMatches({ self: 1, userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
@@ -167,17 +246,42 @@ export default function MyCricket() {
         );
       }
 
-      // User-based tournaments only (matching web PreviewPage: api/tournaments/withUser)
+      const userMobile = authUser?.mobile || authUser?.phoneNumber || User.mobile;
+      const cleanMob = String(userMobile || "").replace(/[^0-9]/g, "").slice(-10);
+
+      // User-based tournaments only (matching web PreviewPage: api/tournaments/withUser & self=1)
       const tourPromises = [
         tournamentsApi.getMyTournaments({ errorAlert: false }).catch(() => null),
-        request("api/tournaments/withUser", { method: "GET", errorAlert: false }).catch(() => null),
+        request(
+          userId ? `api/tournaments/withUser?userId=${userId}&limit=50` : "api/tournaments/withUser",
+          { method: "GET", errorAlert: false }
+        ).catch(() => null),
+        request(
+          `api/tournaments?self=1&limit=50${userId ? `&userId=${userId}` : ""}${cleanMob ? `&mobile=${cleanMob}` : ""}`,
+          { method: "GET", errorAlert: false }
+        ).catch(() => null),
+        ...(cleanMob
+          ? [
+              request(`api/tournaments/withUser?mobile=${cleanMob}&limit=50`, {
+                method: "GET",
+                errorAlert: false,
+              }).catch(() => null),
+            ]
+          : []),
       ];
 
-      // User-based teams only (matching web TeamPreview.jsx: api/users/withTeam)
-      const teamPromises = [
-        request("api/users/withTeam", { method: "GET", errorAlert: false }).catch(() => null),
-        teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
-      ];
+      // User-based teams only, or all teams if admin
+      const teamPromises = isAdmin
+        ? [
+            teamsApi.getAllTeams({ limit: 100, isAdmin: 1 }, { errorAlert: false }).catch(() => null),
+            teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
+            request("api/users/withTeam?isAdmin=1", { method: "GET", errorAlert: false }).catch(() => null),
+            request("api/teams?limit=100&isAdmin=1", { method: "GET", errorAlert: false }).catch(() => null),
+          ]
+        : [
+            request("api/users/withTeam", { method: "GET", errorAlert: false }).catch(() => null),
+            teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
+          ];
 
       const [matchesResList, tourResList, teamsResList] = await Promise.all([
         Promise.all(matchPromises),
@@ -197,7 +301,7 @@ export default function MyCricket() {
         }
       }
 
-      const userMatches = userId
+      const userMatches = (userId && !isAdmin)
         ? uniqueMatches.filter((m) => isUserMatch(m, userId))
         : uniqueMatches;
 
@@ -208,7 +312,8 @@ export default function MyCricket() {
       const rawTourList = tourResList.flatMap(extractArray);
       const seenTourIds = new Set();
       const uniqueTournaments = [];
-      for (const t of rawTourList) {
+      for (const item of rawTourList) {
+        const t = item?.tournament || item;
         const id = String(t?._id || t?.id || t?.slug || "");
         if (id && !seenTourIds.has(id)) {
           seenTourIds.add(id);
@@ -216,7 +321,9 @@ export default function MyCricket() {
         }
       }
 
-      const userTournaments = uniqueTournaments.filter((t) => isUserTournament(t, userId));
+      const userTournaments = userId
+        ? uniqueTournaments.filter((t) => isUserTournament(t, userId))
+        : uniqueTournaments;
 
       setTournaments(
         userTournaments.map((t) => {
@@ -298,17 +405,26 @@ export default function MyCricket() {
   };
 
   const loadMoreMatches = async () => {
-    if (loading || loadingMoreMatches || !hasMoreMatches || !userId) return;
+    if (loading || loadingMoreMatches || !hasMoreMatches || (!userId && !isAdmin)) return;
     try {
       setLoadingMoreMatches(true);
       const nextPage = matchPage + 1;
-      const resList = await Promise.all([
-        matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-        matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-        request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
-      ]);
+      let resList = [];
+      if (isAdmin) {
+        resList = await Promise.all([
+          matchesApi.getMatches({ page: nextPage, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null),
+        ]);
+      } else {
+        resList = await Promise.all([
+          matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+          matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+          request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
+        ]);
+      }
       const rawCombined = resList.flatMap(extractArray);
-      const userMatches = rawCombined.filter((m) => isUserMatch(m, userId));
+      const userMatches = (userId && !isAdmin)
+        ? rawCombined.filter((m) => isUserMatch(m, userId))
+        : rawCombined;
       if (userMatches.length > 0) {
         setRecentMatches((prev) => {
           const seen = new Set(prev.map((item) => item.id));

@@ -303,9 +303,19 @@ export default function WagonPitchViewerModal({
   // Shots matching the selected batsman, before the dots/singles/fours/sixes filter is applied
   const batsmanFilteredShots = useMemo(() => {
     return allDeliveries.filter((d) => {
-      // No shot is credited to the batsman on a wide — exclude it even if
-      // stray wagon wheel data ended up attached to one.
-      if (d.ballType === "wide") return false;
+      // Exclude wide, mankaded, retired, timed out, and non-delivery events from wagon wheel
+      const bType = String(d.ballType || "").toLowerCase();
+      const disType = String(d.dismissalInfo?.dismissalType || d.dismissalType || "").toLowerCase();
+      if (
+        bType === "wide" ||
+        bType === "mankaded" ||
+        disType === "mankaded" ||
+        disType.includes("retire") ||
+        disType === "timed out" ||
+        d.dontCountTheball
+      ) {
+        return false;
+      }
       const ww = d.wagonWheel || (d.angle !== undefined && d.zone !== undefined ? d : null);
       if (!ww) return false;
       if (selectedBatsmanId !== "all") {
@@ -354,6 +364,18 @@ export default function WagonPitchViewerModal({
   // Deliveries matching the selected bowler, before the dots/runs/wickets filter is applied
   const bowlerFilteredPitches = useMemo(() => {
     return allDeliveries.filter((d) => {
+      // Exclude mankaded, retired, timed out, and non-delivery events from pitch map
+      const bType = String(d.ballType || "").toLowerCase();
+      const disType = String(d.dismissalInfo?.dismissalType || d.dismissalType || "").toLowerCase();
+      if (
+        bType === "mankaded" ||
+        disType === "mankaded" ||
+        disType.includes("retire") ||
+        disType === "timed out" ||
+        d.dontCountTheball
+      ) {
+        return false;
+      }
       const pm = d.pitchMap || (d.impactPoint !== undefined || d.coordinates !== undefined ? d : null);
       if (!pm) return false;
       if (selectedBowlerId !== "all") {

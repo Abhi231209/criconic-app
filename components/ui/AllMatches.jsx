@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -36,6 +37,23 @@ export default function AllMatches() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "MATCH_DELETED",
+      ({ matchId: delId }) => {
+        if (!delId) return;
+        const strDelId = String(delId);
+        setMatches((prev) =>
+          prev.filter((m) => {
+            const id = String(m?._id || m?.id || m?.matchId || m);
+            return id !== strDelId;
+          })
+        );
+      }
+    );
+    return () => sub.remove();
+  }, []);
 
   const fetchMatches = useCallback(async (pageNum = 1, shouldAppend = false) => {
     try {

@@ -1,0 +1,119 @@
+{(() => {
+        const dlsConfig = matchConfigs?.[MatchSettingEnum.DLS] || matchDetails?.config?.dls;
+        const isDlsApplied = !!dlsConfig?.applied;
+
+        return (
+          <View
+            style={{
+              marginTop: 10,
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 12,
+              borderWidth: 1.5,
+              borderColor: isDlsApplied ? "#3B82F6" : C.border,
+              backgroundColor: isDlsApplied
+                ? isDarkMode
+                  ? "rgba(59, 130, 246, 0.12)"
+                  : "#EFF6FF"
+                : isDarkMode
+                ? "#1F2937"
+                : "#F8FAFC",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+                <Ionicons
+                  name="rainy"
+                  size={20}
+                  color={isDlsApplied ? "#3B82F6" : isDarkMode ? "#9CA3AF" : "#64748B"}
+                  style={{ marginRight: 8 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <ThemedText className="font-bold text-sm" style={{ color: C.text }}>
+                    DLS Method (Rain Rule)
+                  </ThemedText>
+                  <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
+                    {isDlsApplied
+                      ? `Target ${dlsConfig.revisedTarget} runs in ${dlsConfig.revisedOvers} ov`
+                      : "Calculate revised targets or par score for rain delays"}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 10,
+                  backgroundColor: isDlsApplied
+                    ? "#10B981"
+                    : isDarkMode
+                    ? "#374151"
+                    : "#E2E8F0",
+                }}
+              >
+                <ThemedText
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "800",
+                    color: isDlsApplied ? "#FFFFFF" : C.textSecondary,
+                  }}
+                >
+                  {isDlsApplied ? "ACTIVE" : "OFF"}
+                </ThemedText>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setDlsModalVisible(true)}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  backgroundColor: COLORS.primary,
+                }}
+              >
+                <Ionicons name="calculator-outline" size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                <ThemedText style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>
+                  {isDlsApplied ? "Edit / View DLS" : "Configure DLS"}
+                </ThemedText>
+              </TouchableOpacity>
+
+              {isDlsApplied && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleRemoveDls}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: COLORS.danger,
+                    backgroundColor: "transparent",
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={14} color={COLORS.danger} style={{ marginRight: 4 }} />
+                  <ThemedText style={{ color: COLORS.danger, fontWeight: "700", fontSize: 12 }}>
+                    Remove
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+      })()}

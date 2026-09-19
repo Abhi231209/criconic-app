@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Linking,
   BackHandler,
+  DeviceEventEmitter,
 } from "react-native";
 import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
@@ -42,6 +43,34 @@ export default function Home({}) {
   const { matchesIds, setMatchesIds, refresh: refreshMatches } = useMatches({
     initialCondition: MATCHES_CONDITION,
   });
+
+  // Listen for match deletion globally to immediately prune it from home view
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "MATCH_DELETED",
+      ({ matchId: delId }) => {
+        if (!delId) return;
+        const strDelId = String(delId);
+        lastFocusFetch.current = 0;
+        setMatchesIds((prev) =>
+          prev.filter((m) => {
+            const id = String(m?._id || m?.id || m?.matchId || m);
+            return id !== strDelId;
+          })
+        );
+        setTournaments((prev) =>
+          (prev || []).map((t) => ({
+            ...t,
+            matches: (t.matches || []).filter((m) => {
+              const id = String(m?._id || m?.id || m?.matchId || m);
+              return id !== strDelId;
+            }),
+          }))
+        );
+      }
+    );
+    return () => sub.remove();
+  }, [setMatchesIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -79,7 +108,7 @@ export default function Home({}) {
       );
 
       // Throttle tab focus refreshes to avoid freezing UI or re-fetching every tab switch
-      if (Date.now() - lastFocusFetch.current > 60000) {
+      if (Date.now() - lastFocusFetch.current > 15000) {
         lastFocusFetch.current = Date.now();
         refreshMatches?.();
       }

@@ -1095,23 +1095,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                     )}
 
                     {/* Phone Number / Add Number section */}
-                    {item.mobile ? (
-                      <View className="flex-row items-center mt-1">
-                        <Ionicons name="call" size={11} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
-                        <ThemedText className={`text-[11px] ml-1 font-medium ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-                          +91 {String(item.mobile)}
-                        </ThemedText>
-                        {isTeamOwner && (
-                          <TouchableOpacity
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            onPress={() => handleOpenEditNumberModal(item)}
-                            className="ml-1.5 p-0.5"
-                          >
-                            <Ionicons name="pencil" size={11} color={isDarkMode ? "#60A5FA" : "#2563EB"} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ) : (
+                    {item.mobile ? null : (
                       <View className="mt-1">
                         {isTeamOwner ? (
                           <TouchableOpacity
@@ -1123,16 +1107,16 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                                 : "bg-amber-50 border-amber-300"
                             }`}
                           >
-                            <Ionicons name="add-circle" size={12} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+                            <Ionicons name="alert-circle" size={12} color={isDarkMode ? "#FBBF24" : "#D97706"} />
                             <ThemedText className={`text-[11px] ml-1 font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
-                              + Add Phone Number
+                              Phone number required
                             </ThemedText>
                           </TouchableOpacity>
                         ) : (
                           <View className="flex-row items-center">
-                            <Ionicons name="call-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                            <Ionicons name="alert-circle-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
                             <ThemedText className={`text-[11px] ml-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                              No phone number
+                              Phone number required
                             </ThemedText>
                           </View>
                         )}

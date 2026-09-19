@@ -95,6 +95,14 @@ export default function SelectTeamScreen() {
     User.user?.id ||
     ""
   );
+
+  const isAdmin = Boolean(
+    authUser?.role === 1 ||
+    authUser?.role === 2 ||
+    User?.isAdmin?.() ||
+    User?.user?.role === 1 ||
+    User?.user?.role === 2
+  );
   
   const [teams, setTeams] = useState(() => cachedTeams || []);
   const [tournamentTeams, setTournamentTeams] = useState(() => (tournamentId && cachedTournamentTeams[tournamentId]) || []);
@@ -211,8 +219,8 @@ export default function SelectTeamScreen() {
         const norm = normalizeTeam(t, false);
         if (norm.id) {
           allTeamsMap.set(norm.id, t);
-          if (norm.isMyTeam) {
-            // User owns/belongs to this team!
+          if (norm.isMyTeam || isAdmin) {
+            // User owns/belongs to this team! (Or admin: full access to all teams)
             userTeamsMap.set(norm.id, { ...norm, isMyTeam: true });
           }
         }
@@ -223,11 +231,21 @@ export default function SelectTeamScreen() {
       const oppTeamsMap = new Map();
       rawOppTeams.forEach((t) => {
         const norm = normalizeTeam(t, false);
-        // Only include if it's NOT the user's team
-        if (norm.id && !userTeamsMap.has(norm.id)) {
+        // Only include if it's NOT the user's team (unless Admin, where all opponents are accessible)
+        if (norm.id && (!userTeamsMap.has(norm.id) || isAdmin)) {
           oppTeamsMap.set(norm.id, norm);
         }
       });
+
+      // For admin: ensure every team in the system is available under opponents as well
+      if (isAdmin) {
+        rawAllTeams.forEach((t) => {
+          const norm = normalizeTeam(t, false);
+          if (norm.id) {
+            oppTeamsMap.set(norm.id, { ...norm, isMyTeam: false });
+          }
+        });
+      }
 
       // 4. Also inspect user matches for any opponent teams played against
       const userMatches = Array.isArray(matchesRes?.data?.matches)
@@ -459,10 +477,12 @@ export default function SelectTeamScreen() {
   // Filter teams based on active tab, blockedTeamId, and quickSearchQuery
   const getFilteredTeams = () => {
     let filtered = teams;
-    if (activeTab === "myTeams") {
-      filtered = filtered.filter((t) => t.isMyTeam);
-    } else if (activeTab === "opponentTeams") {
-      filtered = filtered.filter((t) => !t.isMyTeam);
+    if (!isAdmin) {
+      if (activeTab === "myTeams") {
+        filtered = filtered.filter((t) => t.isMyTeam);
+      } else if (activeTab === "opponentTeams") {
+        filtered = filtered.filter((t) => !t.isMyTeam);
+      }
     }
 
     if (blockedTeamId) {

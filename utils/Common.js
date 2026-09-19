@@ -260,10 +260,12 @@ export const MatchSettingEnum = {
   SHOW_TOSS: "showToss",
   RECORD_WAGON_WHEEL: "recordWagonWheel",
   RECORD_PITCH_MAP: "recordPitchMap",
+  DLS: "dls",
 };
 
 export const MatchSettings = {
   [MatchSettingEnum.END_INNING]: "End Inning",
+  [MatchSettingEnum.DLS]: "DLS Method (Rain Rule)",
   [MatchSettingEnum.COUNT_NO_BALL_RUN]: "Count No Ball Run",
   [MatchSettingEnum.COUNT_WIDE_RUN]: "Count Wide Run",
   [MatchSettingEnum.SINGLE_BATSMAN_ALLOWED]: "Allow Single Batsman",

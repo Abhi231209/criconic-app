@@ -3,7 +3,7 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,6 +21,8 @@ import useAppTheme from "@/hooks/useAppTheme";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { MATCH_STATUS, matchRedirectBasedOnStatus } from "@/utils";
 import request, { matchesApi } from "@/utils/api";
+import { showGlobalAlert } from "@/contexts/AlertContext";
+import { MATCH_CACHE } from "@/components/ui/ScoreCard";
 
 const MatchActionSheet = ({
   closeSheet,
@@ -146,59 +148,69 @@ const MatchActionSheet = ({
   });
 
   // 4. Live Stream Broadcast Action
-  menuItems.push({
-    id: "livestream",
-    title:
-      score?.streamUrl || matchDetails?.streamUrl
-        ? "Watch Live Stream"
-        : "Live Stream Broadcast",
-    subtitle:
-      score?.streamUrl || matchDetails?.streamUrl
-        ? "Watch live YouTube or Facebook stream"
-        : "Add YouTube or Facebook stream link to match",
-    icon: Video,
-    gradient: ["#EF4444", "#DC2626"],
-    onPress: () => {
-      closeSheet();
-      navigation.navigate(SCREENS.MatchScoreCard, {
-        matchId,
-        initialScore: score,
-        initialMatch: matchDetails,
-      });
-    },
-  });
+  // menuItems.push({
+  //   id: "livestream",
+  //   title:
+  //     score?.streamUrl || matchDetails?.streamUrl
+  //       ? "Watch Live Stream"
+  //       : "Live Stream Broadcast",
+  //   subtitle:
+  //     score?.streamUrl || matchDetails?.streamUrl
+  //       ? "Watch live YouTube or Facebook stream"
+  //       : "Add YouTube or Facebook stream link to match",
+  //   icon: Video,
+  //   gradient: ["#EF4444", "#DC2626"],
+  //   onPress: () => {
+  //     closeSheet();
+  //     navigation.navigate(SCREENS.MatchScoreCard, {
+  //       matchId,
+  //       initialScore: score,
+  //       initialMatch: matchDetails,
+  //     });
+  //   },
+  // });
 
   const handleDelete = () => {
-    Alert.alert(
-      "Delete Match",
-      "Are you sure you want to delete this match? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            closeSheet();
-            try {
-              const res = await request(`api/matches/delete/${matchId}`, {
-                method: "PUT",
-                errorAlert: false,
-              });
-              if (res?.data?.success || res?.status === 200) {
-                Alert.alert("Success", res?.data?.message || "Match deleted successfully");
-                onDeleteSuccess?.(matchId);
-              }
-            } catch (err) {
-              console.log("[MatchActionSheet] Delete match error:", err);
-            }
-          },
-        },
-      ],
-      { cancelable: true }
-    );
+    closeSheet();
+    showGlobalAlert({
+      title: "Delete Match",
+      message: "Are you sure you want to delete this match? This action cannot be undone.",
+      type: "danger",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          const res = await request(`api/matches/delete/${matchId}`, {
+            method: "PUT",
+            errorAlert: false,
+          });
+          if (res?.data?.success || res?.status === 200) {
+            MATCH_CACHE?.delete(String(matchId));
+            DeviceEventEmitter.emit("MATCH_DELETED", { matchId: String(matchId) });
+            onDeleteSuccess?.(matchId);
+            showGlobalAlert({
+              title: "Success",
+              message: res?.data?.message || "Match deleted successfully",
+              type: "success",
+              confirmText: "OK",
+            });
+          } else {
+            showGlobalAlert({
+              title: "Error",
+              message: res?.data?.message || "Failed to delete match",
+              type: "error",
+            });
+          }
+        } catch (err) {
+          console.log("[MatchActionSheet] Delete match error:", err);
+          showGlobalAlert({
+            title: "Error",
+            message: err?.response?.data?.message || err?.message || "Failed to delete match",
+            type: "error",
+          });
+        }
+      },
+    });
   };
 
   const sheetBg = isDark ? "#1E293B" : "#FFFFFF";

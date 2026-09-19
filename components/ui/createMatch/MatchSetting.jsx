@@ -37,6 +37,8 @@ import { useSocket } from "@/contexts/SocketContext";
 import { MatchSettingEnum } from "@/utils/Common";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import DlsCalculatorModal from "./DlsCalculatorModal";
 
 const SafeIcon = ({ icon: Icon, size = 20, color, style }) => {
   if (!Icon) return <ThemedText style={{ color, fontSize: size - 4 }}>⚙</ThemedText>;
@@ -145,6 +147,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const [showBatsmenStats, setShowBatsmenStats] = useState(false);
   const [streamingLink, setStreamingLink] = useState("");
   const [isStartingLive, setIsStartingLive] = useState(false);
+  const [dlsModalVisible, setDlsModalVisible] = useState(false);
 
   // ---- ORGANIZERS (co-scorers) ----
   const [organizerQuery, setOrganizerQuery] = useState("");
@@ -230,12 +233,18 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           merged[MatchSettingEnum.RECORD_PITCH_MAP] = typeof pm === "boolean" ? pm : !!pm?.active;
         }
 
+        if (content[MatchSettingEnum.DLS] !== undefined) {
+          merged[MatchSettingEnum.DLS] = content[MatchSettingEnum.DLS];
+        } else if (matchDetails?.config?.dls !== undefined) {
+          merged[MatchSettingEnum.DLS] = matchDetails.config.dls;
+        }
+
         return merged;
       });
     } catch (err) {
       console.error("loadConfigs error:", err);
     }
-  }, [matchId, matchDetails?.config?.recordWagonWheel, matchDetails?.config?.recordPitchMap]);
+  }, [matchId, matchDetails?.config?.recordWagonWheel, matchDetails?.config?.recordPitchMap, matchDetails?.config?.dls]);
 
   useEffect(() => {
     loadConfigs();
@@ -256,6 +265,8 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     } else if (action === MatchSettingEnum.RECORD_PITCH_MAP) {
       AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(value)).catch(() => {});
       matchesApi.updateMatch(matchId, { config: { recordPitchMap: value } }).catch(() => {});
+    } else if (action === MatchSettingEnum.DLS) {
+      matchesApi.updateMatch(matchId, { config: { dls: value } }).catch(() => {});
     }
 
     try {
@@ -267,6 +278,56 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       });
     } catch (err) {
       console.warn("updateMatchSetting error:", err);
+    }
+  };
+
+  const handleApplyDls = async (dlsPayload) => {
+    try {
+      await updateMatchSetting(MatchSettingEnum.DLS, dlsPayload);
+      if (isConnected && emit) {
+        emit("score", { matchId, matchID: matchId, getCompleteScore: true });
+      }
+      Alert.alert(
+        "DLS Target Applied",
+        `Target set to ${dlsPayload.revisedTarget} runs in ${dlsPayload.revisedOvers} overs.`
+      );
+    } catch (err) {
+      console.warn("Failed to apply DLS:", err);
+      Alert.alert("Error", "Could not apply DLS target. Please try again.");
+    }
+  };
+
+  const handleRemoveDls = async () => {
+    try {
+      const origOvers =
+        matchConfigs?.[MatchSettingEnum.DLS]?.originalOvers ||
+        matchDetails?.totalOvers ||
+        20;
+      await updateMatchSetting(MatchSettingEnum.DLS, {
+        applied: false,
+        originalOvers: origOvers,
+      });
+      if (isConnected && emit) {
+        emit("score", { matchId, matchID: matchId, getCompleteScore: true });
+      }
+      Alert.alert("DLS Removed", "Original overs and target restored.");
+    } catch (err) {
+      console.warn("Failed to remove DLS:", err);
+      Alert.alert("Error", "Could not remove DLS.");
+    }
+  };
+
+  const handleConcludeWithDls = async (dlsResult) => {
+    try {
+      onClose?.();
+      setTimeout(() => {
+        onInningsComplete?.({
+          isMatchEndedByCommittee: true,
+          committeeResult: dlsResult,
+        });
+      }, 200);
+    } catch (err) {
+      console.warn("handleConcludeWithDls error:", err);
     }
   };
 
@@ -494,6 +555,8 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_PITCH_MAP, v)}
         isDarkMode={isDarkMode}
       />
+      
+
       <View style={[styles.inputRow, { borderBottomColor: C.divider }]}>
         <ThemedText className="font-semibold text-sm" style={{ color: C.text, marginBottom: 4 }}>
           External Streaming Link
@@ -901,6 +964,18 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── DLS CALCULATOR MODAL ── */}
+      <DlsCalculatorModal
+        visible={dlsModalVisible}
+        onClose={() => setDlsModalVisible(false)}
+        score={score}
+        matchDetails={matchDetails}
+        currentDls={matchConfigs?.[MatchSettingEnum.DLS] || matchDetails?.config?.dls}
+        onApplyDls={handleApplyDls}
+        onRemoveDls={handleRemoveDls}
+        onConcludeMatch={handleConcludeWithDls}
+      />
     </View>
   );
 }
