@@ -22,6 +22,7 @@ export default function LocationSearch({
   required = false,
   isDarkMode: propDarkMode,
   containerStyle,
+  inputContainerStyle,
 }) {
   const colorScheme = useColorScheme();
   const isDarkMode = propDarkMode !== undefined ? propDarkMode : colorScheme === "dark";
@@ -137,6 +138,7 @@ export default function LocationSearch({
         style={[
           styles.inputContainer,
           isDarkMode ? styles.inputContainerDark : styles.inputContainerLight,
+          inputContainerStyle,
         ]}
       >
         <Ionicons

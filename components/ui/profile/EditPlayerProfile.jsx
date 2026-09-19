@@ -18,6 +18,8 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
 import { request } from "@/utils/api";
+import { showGlobalAlert } from "@/contexts/AlertContext";
+import LocationSearch from "@/components/ui/custom/LocationSearch";
 
 export default function EditPlayerProfile() {
   const navigation = useNavigation();
@@ -34,7 +36,8 @@ export default function EditPlayerProfile() {
     name: routePlayer?.username || routePlayer?.name || authUser?.username || "",
     shortName: routePlayer?.shortName || "",
     team: routePlayer?.team || "",
-    nationality: routePlayer?.nationality || routePlayer?.location || "",
+    nationality: routePlayer?.nationality || routePlayer?.location || routePlayer?.city || authUser?.location || authUser?.city || "",
+    locationId: routePlayer?.locationId || authUser?.locationId || "",
     age: routePlayer?.age?.toString() || "",
     role: routePlayer?.role || authUser?.role || "Batsman",
     battingStyle: routePlayer?.battingStyle || "Right Handed",
@@ -104,7 +107,11 @@ export default function EditPlayerProfile() {
         });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to pick image");
+      showGlobalAlert({
+        title: "Error",
+        message: "Failed to pick image",
+        type: "error",
+      });
     }
   };
 
@@ -113,7 +120,11 @@ export default function EditPlayerProfile() {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== 'granted') {
-        Alert.alert("Permission required", "Camera access is needed to take photos");
+        showGlobalAlert({
+          title: "Permission required",
+          message: "Camera access is needed to take photos",
+          type: "warning",
+        });
         return;
       }
 
@@ -130,17 +141,29 @@ export default function EditPlayerProfile() {
         });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to take photo");
+      showGlobalAlert({
+        title: "Error",
+        message: "Failed to take photo",
+        type: "error",
+      });
     }
   };
 
   const handleSave = async () => {
     if (!formData.name?.trim()) {
-      Alert.alert("Error", "Please enter your name");
+      showGlobalAlert({
+        title: "Error",
+        message: "Please enter your name",
+        type: "warning",
+      });
       return;
     }
     if (!formData.nationality?.trim()) {
-      Alert.alert("Error", "Please enter your location or city");
+      showGlobalAlert({
+        title: "Error",
+        message: "Please enter your location or city",
+        type: "warning",
+      });
       return;
     }
 
@@ -150,9 +173,17 @@ export default function EditPlayerProfile() {
       if (playerId) {
         const updatePayload = {
           username: formData.name,
+          name: formData.name,
           role: formData.role,
           location: formData.nationality,
+          city: formData.nationality,
+          ...(formData.locationId ? { locationId: formData.locationId } : {}),
+          batStyle: formData.battingStyle,
+          ballStyle: formData.bowlingStyle,
+          battingStyle: formData.battingStyle,
+          bowlingStyle: formData.bowlingStyle,
           profileImage: formData.photo,
+          profileImg: formData.photo,
         };
         await request(`api/users/edit/${playerId}`, {
           method: "POST",
@@ -160,22 +191,25 @@ export default function EditPlayerProfile() {
         });
       }
 
-      // HARDCODED MOCK SAVE TIMEOUT - COMMENTED OUT (API ONLY)
-      /*
-      setTimeout(() => {
-        setPlayer({ ...formData });
-        setIsSaving(false);
-        Alert.alert("Success", "Profile updated successfully");
-        navigation.goBack();
-      }, 1500);
-      */
-
       setPlayer({ ...formData });
-      Alert.alert("Success", "Profile updated successfully");
-      navigation.goBack();
+      showGlobalAlert({
+        title: "Success",
+        message: "Profile updated successfully",
+        type: "success",
+        buttons: [
+          {
+            text: "OK",
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      });
     } catch (err) {
       console.error("Save profile error:", err);
-      Alert.alert("Error", err?.response?.data?.message || err.message || "Failed to update profile");
+      showGlobalAlert({
+        title: "Error",
+        message: err?.response?.data?.message || err.message || "Failed to update profile",
+        type: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -266,6 +300,7 @@ export default function EditPlayerProfile() {
 
       <ScrollView 
         className="flex-1" 
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
       >
@@ -368,12 +403,32 @@ export default function EditPlayerProfile() {
             placeholder="Enter team name"
           />
 
-          <InputField
-            label="Nationality"
-            value={formData.nationality}
-            onChange={(value) => handleInputChange("nationality", value)}
-            placeholder="Enter nationality"
-          />
+          {/* Location / City (Google API Powered) */}
+          <View style={{ zIndex: 1000 }} className="mb-4">
+            <LocationSearch
+              label="Location / City"
+              value={formData.nationality}
+              onChangeText={(text) => {
+                handleInputChange("nationality", text);
+                handleInputChange("locationId", "");
+              }}
+              onSelectLocation={(item) => {
+                const desc =
+                  typeof item === "string"
+                    ? item
+                    : item?.description ||
+                      item?.structured_formatting?.main_text ||
+                      "";
+                handleInputChange("nationality", desc);
+                if (item?.place_id) {
+                  handleInputChange("locationId", item.place_id);
+                }
+              }}
+              placeholder="Search city or location (powered by Google)..."
+              isDarkMode={isDarkMode}
+              containerStyle={{ marginBottom: 0 }}
+            />
+          </View>
 
           <InputField
             label="Age"

@@ -10,24 +10,46 @@ const AlertContext = createContext({
 let globalAlertHandler = null;
 
 export const showGlobalAlert = (options) => {
+  if (!options) return;
+
+  let normalized = { ...options };
+  if (Array.isArray(options.buttons) && options.buttons.length > 0) {
+    const confirmBtn =
+      options.buttons.find((b) => b.style !== "cancel") || options.buttons[0];
+    const cancelBtn = options.buttons.find((b) => b.style === "cancel");
+
+    if (!normalized.onConfirm && confirmBtn?.onPress) {
+      normalized.onConfirm = confirmBtn.onPress;
+    }
+    if (!normalized.confirmText && confirmBtn?.text) {
+      normalized.confirmText = confirmBtn.text;
+    }
+    if (!normalized.onCancel && cancelBtn?.onPress) {
+      normalized.onCancel = cancelBtn.onPress;
+    }
+    if (!normalized.cancelText && cancelBtn?.text) {
+      normalized.cancelText = cancelBtn.text;
+    }
+  }
+
   if (globalAlertHandler) {
-    globalAlertHandler(options);
+    globalAlertHandler(normalized);
   } else {
     // Fallback to native alert if called before provider mounts
     const buttons = [];
-    if (options.cancelText) {
+    if (normalized.cancelText) {
       buttons.push({
-        text: options.cancelText,
+        text: normalized.cancelText,
         style: "cancel",
-        onPress: options.onCancel,
+        onPress: normalized.onCancel,
       });
     }
     buttons.push({
-      text: options.confirmText || "OK",
-      style: options.type === "danger" ? "destructive" : "default",
-      onPress: options.onConfirm,
+      text: normalized.confirmText || "OK",
+      style: normalized.type === "danger" ? "destructive" : "default",
+      onPress: normalized.onConfirm,
     });
-    Alert.alert(options.title || "Notice", options.message || "", buttons);
+    Alert.alert(normalized.title || "Notice", normalized.message || "", buttons);
   }
 };
 

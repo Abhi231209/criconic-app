@@ -31,21 +31,61 @@ export default function AllTournaments() {
 
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const mapTournament = (t) => {
-    const startDateStr = t.date?.start
-      ? new Date(t.date.start).toISOString().split("T")[0]
+    const rawStart = t.date?.start || t.startDate;
+    const rawEnd = t.date?.end || t.endDate;
+    const startDateStr = rawStart
+      ? new Date(rawStart).toISOString().split("T")[0]
       : "TBD";
-    const endDateStr = t.date?.end
-      ? new Date(t.date.end).toISOString().split("T")[0]
+    const endDateStr = rawEnd
+      ? new Date(rawEnd).toISOString().split("T")[0]
       : "TBD";
     const now = new Date();
-    const start = t.date?.start ? new Date(t.date.start) : null;
-    const end = t.date?.end ? new Date(t.date.end) : null;
+    const start = rawStart ? new Date(rawStart) : null;
+    const end = rawEnd ? new Date(rawEnd) : null;
+
     let status = "ongoing";
-    if (start && now < start) status = "upcoming";
-    else if (end && now > end) status = "completed";
-    if (t.status) status = t.status.toLowerCase();
+    const rawStatus = String(t.status || "").toLowerCase().trim();
+    if (rawStatus === "cancelled" || rawStatus === "abandoned") {
+      status = "cancelled";
+    } else if (rawStatus === "completed" || rawStatus === "finished") {
+      status = "completed";
+    } else if (end && !isNaN(end.getTime())) {
+      const endOfDay = new Date(end.getTime());
+      endOfDay.setHours(23, 59, 59, 999);
+      if (now > endOfDay) {
+        status = "completed";
+      } else if (start && !isNaN(start.getTime())) {
+        const startOfDay = new Date(start.getTime());
+        startOfDay.setHours(0, 0, 0, 0);
+        if (now < startOfDay) {
+          status = "upcoming";
+        } else {
+          status = "ongoing";
+        }
+      } else {
+        status = "ongoing";
+      }
+    } else if (start && !isNaN(start.getTime())) {
+      const startOfDay = new Date(start.getTime());
+      startOfDay.setHours(0, 0, 0, 0);
+      if (now < startOfDay) {
+        status = "upcoming";
+      } else {
+        status = "ongoing";
+      }
+    } else if (rawStatus === "upcoming" || rawStatus === "ongoing") {
+      status = rawStatus;
+    }
+
+    const rawEntryFee = t.entryFee;
+    const entryFee = (rawEntryFee !== undefined && rawEntryFee !== null && rawEntryFee !== "" && Number(rawEntryFee) !== 0 && rawEntryFee !== "0")
+      ? (String(rawEntryFee).startsWith("₹") ? String(rawEntryFee) : `₹${rawEntryFee}`)
+      : null;
 
     return {
       id: String(t._id || t.id || t.slug),
@@ -66,30 +106,54 @@ export default function AllTournaments() {
       format: t.ballType
         ? t.ballType.charAt(0).toUpperCase() + t.ballType.slice(1)
         : "T20",
-      prizeMoney: t.prizeMoney ? `₹${t.prizeMoney}` : "N/A",
+      prizeMoney: t.prizeMoney ? (String(t.prizeMoney).startsWith("₹") ? String(t.prizeMoney) : `₹${t.prizeMoney}`) : "N/A",
+      entryFee,
       matches: Array.isArray(t.matches) ? t.matches.length : 0,
       progress: status === "completed" ? 100 : status === "upcoming" ? 0 : 50,
       raw: t,
     };
   };
 
-  const fetchTournaments = async () => {
+  const fetchTournaments = async (pageNum = 1, shouldAppend = false) => {
     try {
-      const res = await tournamentsApi.getAllTournaments();
+      if (pageNum === 1 && !shouldAppend) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
+      const res = await tournamentsApi.getAllTournaments({
+        params: { page: pageNum, limit: 12 },
+      });
       const list = res?.data?.content || res?.data || [];
       if (Array.isArray(list)) {
-        setTournaments(list.map(mapTournament));
+        const mapped = list.map(mapTournament);
+        if (shouldAppend) {
+          setTournaments((prev) => {
+            const seen = new Set(prev.map((item) => item.id));
+            const newItems = mapped.filter((item) => !seen.has(item.id));
+            return [...prev, ...newItems];
+          });
+        } else {
+          setTournaments(mapped);
+        }
+        setPage(pageNum);
+        setHasMore(list.length >= 12);
+      } else {
+        if (!shouldAppend) setTournaments([]);
+        setHasMore(false);
       }
     } catch (error) {
       console.warn("[AllTournaments] Failed to fetch tournaments:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchTournaments();
+    fetchTournaments(1, false);
   }, []);
 
   const filters = [
@@ -101,7 +165,14 @@ export default function AllTournaments() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchTournaments();
+    setHasMore(true);
+    fetchTournaments(1, false);
+  };
+
+  const loadMore = () => {
+    if (!loading && !loadingMore && hasMore) {
+      fetchTournaments(page + 1, true);
+    }
   };
 
   const filteredTournaments = tournaments.filter((tournament) => {
@@ -413,6 +484,17 @@ export default function AllTournaments() {
         keyExtractor={(item) => item.id}
         renderItem={renderTournamentCard}
         contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? (
+            <View className="py-4 items-center justify-center">
+              <ActivityIndicator size="small" color="#3B82F6" />
+            </View>
+          ) : (
+            <View style={{ height: 20 }} />
+          )
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

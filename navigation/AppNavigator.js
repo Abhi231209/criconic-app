@@ -57,13 +57,26 @@ import HomeConfig from "@/screens/admin/HomeConfig";
 import SetupAds from "@/screens/admin/SetupAds";
 import BlogPosts from "@/screens/admin/BlogPosts";
 import QRScanner from "@/screens/QRScanner";
+import CompleteProfileScreen from "@/screens/CompleteProfileScreen";
+import { useSelector } from "react-redux";
+import User from "@/utils/User";
+
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
 function MainStack() {
+  const authUser = useSelector((state) => state.auth?.user);
+  const isAuthenticated = useSelector((state) => state.auth?.isAuthenticated);
+  const isLoggedIn = Boolean(
+    isAuthenticated ||
+    authUser?._id ||
+    authUser?.id ||
+    User.isLogin()
+  );
+
   return (
     <Stack.Navigator
-      initialRouteName={SCREENS.Home}
+      initialRouteName={isLoggedIn ? SCREENS.Home : SCREENS.LoginScreen}
       screenOptions={{
         headerShown: false, // Hide header for all stack screens
       }}
@@ -152,6 +165,7 @@ function MainStack() {
       <Stack.Screen name={SCREENS.SetupAds} component={SetupAds} />
       <Stack.Screen name={SCREENS.BlogPosts} component={BlogPosts} />
       <Stack.Screen name={SCREENS.QRScanner} component={QRScanner} />
+      <Stack.Screen name={SCREENS.CompleteProfile} component={CompleteProfileScreen} />
       {/* Add more stack screens here */}
     </Stack.Navigator>
   );

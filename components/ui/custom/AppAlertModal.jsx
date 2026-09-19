@@ -10,6 +10,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import useAppTheme from "@/hooks/useAppTheme";
+import { showGlobalAlert } from "@/contexts/AlertContext";
+
+export { showGlobalAlert };
 
 export default function AppAlertModal({
   visible,

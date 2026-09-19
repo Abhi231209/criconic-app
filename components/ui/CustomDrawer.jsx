@@ -298,9 +298,12 @@ export default function CustomDrawer(props) {
                 </View>
                 <ThemedText className="text-blue-200 text-xs mt-0.5">
                   {isLoggedIn
-                    ? authUser?.mobile
-                      ? `+91 ${authUser.mobile}`
-                      : authUser?.email || "Criconic Member"
+                    ? (authUser?.email &&
+                       typeof authUser.email === "string" &&
+                       authUser.email.includes("@") &&
+                       !/^\+?\d+$/.test(authUser.email.replace(/[@.]/g, "").trim()))
+                      ? authUser.email
+                      : authUser?.playerRole || "Criconic Member"
                     : "Tap to sign in / create account"}
                 </ThemedText>
               </View>

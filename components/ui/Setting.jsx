@@ -53,6 +53,23 @@ export default function Settings() {
 
   const profileImageUrl = rawPhoto ? getImageFullUrl(rawPhoto) : null;
 
+  const isValidDisplayEmail = (str) => {
+    return Boolean(
+      str &&
+      typeof str === "string" &&
+      str.includes("@") &&
+      !str.startsWith("+") &&
+      !/^\d+$/.test(str.replace(/[@.]/g, "").trim())
+    );
+  };
+
+  const userSubtitle =
+    isValidDisplayEmail(authUser?.email)
+      ? authUser.email
+      : isValidDisplayEmail(User?.email)
+      ? User.email
+      : authUser?.playerRole || "Criconic Member";
+
   // User data
   const user = {
     name:
@@ -61,11 +78,7 @@ export default function Settings() {
       authUser?.fullName ||
       User?.name ||
       "User",
-    email:
-      authUser?.email ||
-      authUser?.mobile ||
-      User?.email ||
-      "user@criconic.com",
+    email: userSubtitle,
     profileImage: profileImageUrl,
   };
 
@@ -89,7 +102,14 @@ export default function Settings() {
           analytics.logLogout();
           dispatch(logoutAction());
           User.logout();
-          navigation.navigate(SCREENS.LoginScreen);
+          if (navigation.reset) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: SCREENS.LoginScreen }],
+            });
+          } else {
+            navigation.navigate(SCREENS.LoginScreen);
+          }
         }
       },
     });

@@ -22,6 +22,7 @@ import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import { tournamentsApi, upload } from '@/utils/api';
+import { showGlobalAlert } from '@/components/ui/custom/AppAlertModal';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -212,7 +213,11 @@ export default function EditTournament() {
   const pickImage = async (type = 'logo') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photos to upload images.');
+      showGlobalAlert({
+        title: 'Permission required',
+        message: 'Please allow access to your photos to upload images.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -225,34 +230,31 @@ export default function EditTournament() {
 
     if (!result.canceled) {
       if (type === 'logo') {
-        setFormData((prev) => ({ ...prev, logo: result.assets[0].uri }));
+        setFormData({ ...formData, logo: result.assets[0].uri });
       } else {
-        setFormData((prev) => ({ ...prev, coverImage: result.assets[0].uri }));
+        setFormData({ ...formData, coverImage: result.assets[0].uri });
       }
     }
   };
 
   const handleDateChange = (event, selectedDate, type) => {
+    if (type === 'start') {
+      setShowStartDatePicker(false);
+    } else {
+      setShowEndDatePicker(false);
+    }
+
     const currentDate = selectedDate || (type === 'start' ? formData.startDate : formData.endDate);
     
     if (type === 'start') {
-      setShowStartDatePicker(false);
       setFormData({ ...formData, startDate: currentDate });
     } else {
-      setShowEndDatePicker(false);
       setFormData({ ...formData, endDate: currentDate });
     }
   };
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   const formatCurrency = (amount) => {
+    if (!amount) return '';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -262,27 +264,59 @@ export default function EditTournament() {
 
   const handleSubmit = async () => {
     if (!formData.name.trim()) {
-      Alert.alert('Error', 'Please enter a tournament name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a tournament name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.shortName.trim()) {
-      Alert.alert('Error', 'Please enter a short name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter a short name',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.location.trim()) {
-      Alert.alert('Error', 'Please enter location');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter location',
+        type: 'warning',
+      });
       return;
     }
 
     if (!formData.organizerName.trim()) {
-      Alert.alert('Error', 'Please enter organizer name');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Please enter organizer name',
+        type: 'warning',
+      });
       return;
     }
 
+    if (formData.organizerPhone && formData.organizerPhone.trim()) {
+      const cleanPhone = formData.organizerPhone.replace(/\D/g, '');
+      if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+        showGlobalAlert({
+          title: 'Invalid Phone Number',
+          message: 'Organizer phone number must be a valid 10-digit mobile number starting with 6, 7, 8, or 9.',
+          type: 'warning',
+        });
+        return;
+      }
+    }
+
     if (formData.startDate > formData.endDate) {
-      Alert.alert('Error', 'End date cannot be before start date');
+      showGlobalAlert({
+        title: 'Error',
+        message: 'End date cannot be before start date',
+        type: 'warning',
+      });
       return;
     }
 
@@ -353,20 +387,25 @@ export default function EditTournament() {
         });
       }
       setIsLoading(false);
-      Alert.alert(
-        'Success',
-        'Tournament updated successfully!',
-        [
+      showGlobalAlert({
+        title: 'Success',
+        message: 'Tournament updated successfully!',
+        type: 'success',
+        buttons: [
           {
             text: 'OK',
             onPress: () => navigation.goBack(),
           },
-        ]
-      );
+        ],
+      });
     } catch (error) {
       setIsLoading(false);
       console.log('Error updating tournament:', error);
-      Alert.alert('Error', error?.response?.data?.message || error?.message || 'Failed to update tournament');
+      showGlobalAlert({
+        title: 'Error',
+        message: error?.response?.data?.message || error?.message || 'Failed to update tournament',
+        type: 'error',
+      });
     }
   };
 
@@ -512,10 +551,10 @@ export default function EditTournament() {
               <InputField
                 label="Organizer Phone"
                 value={formData.organizerPhone}
-                onChange={(text) => setFormData({ ...formData, organizerPhone: text })}
-                placeholder="Phone number"
+                onChange={(text) => setFormData({ ...formData, organizerPhone: text.replace(/\D/g, "").slice(0, 10) })}
+                placeholder="10-digit phone"
                 keyboardType="phone-pad"
-                maxLength={15}
+                maxLength={10}
               />
             </View>
           </View>

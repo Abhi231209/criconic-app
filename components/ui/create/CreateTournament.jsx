@@ -51,6 +51,7 @@ const InputField = ({
   multiline = false,
   numberOfLines = 1,
   keyboardType = 'default',
+  maxLength,
 }) => {
   const isDarkMode = useColorScheme() === 'dark';
   return (
@@ -71,6 +72,7 @@ const InputField = ({
         multiline={multiline}
         numberOfLines={numberOfLines}
         keyboardType={keyboardType}
+        maxLength={maxLength}
         style={{ minHeight: multiline ? 80 : 48 }}
       />
     </View>
@@ -274,10 +276,11 @@ export default function CreateTournament() {
       return;
     }
 
-    if (!formData.organizerPhone.trim()) {
+    const cleanPhone = (formData.organizerPhone || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10) {
       showGlobalAlert({
         title: 'Error',
-        message: 'Please enter organizer phone number',
+        message: 'Please enter a valid 10-digit organizer phone number',
         type: 'warning',
       });
       return;
@@ -556,9 +559,13 @@ export default function CreateTournament() {
           <InputField
             label="Organizer Phone *"
             value={formData.organizerPhone}
-            onChange={(text) => setFormData({ ...formData, organizerPhone: text })}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
+            onChange={(text) => {
+              const clean = text.replace(/[^0-9]/g, '').slice(0, 10);
+              setFormData({ ...formData, organizerPhone: clean });
+            }}
+            placeholder="Enter 10-digit phone number"
+            keyboardType="numeric"
+            maxLength={10}
           />
 
           {/* Description */}
@@ -617,26 +624,40 @@ export default function CreateTournament() {
             />
           </View> */}
 
-          {/* Submit Button */}
+        </AppKeyboardAwareScrollView>
+
+        {/* Sticky Bottom Create Button */}
+        <View
+          className={`px-4 py-3 border-t ${
+            isDarkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'
+          }`}
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: isDarkMode ? 0.3 : 0.08,
+            shadowRadius: 4,
+            elevation: 5,
+          }}
+        >
           <TouchableOpacity
             onPress={handleSubmit}
             disabled={isLoading}
-            className="mb-8"
+            activeOpacity={0.85}
           >
-           <LinearGradient
-  colors={['#2563EB', '#1D4ED8']}
-  className="rounded-lg py-4 px-6 items-center"
-  start={{ x: 0, y: 0 }}
-  end={{ x: 1, y: 0 }}
->
-  {isLoading ? (
-    <ThemedText className="text-white text-lg font-semibold">Creating...</ThemedText>
-  ) : (
-    <ThemedText className="text-white text-lg font-semibold">Create Tournament</ThemedText>
-  )}
-</LinearGradient>
+            <LinearGradient
+              colors={['#2563EB', '#1D4ED8']}
+              className="rounded-xl py-3.5 px-6 items-center justify-center flex-row"
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              {isLoading ? (
+                <ThemedText className="text-white text-base font-bold">Creating Tournament...</ThemedText>
+              ) : (
+                <ThemedText className="text-white text-base font-bold">Create Tournament</ThemedText>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
-        </AppKeyboardAwareScrollView>
+        </View>
     </SafeAreaView>
   );
 }

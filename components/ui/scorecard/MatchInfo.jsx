@@ -8,6 +8,8 @@ import {
   useWindowDimensions,
   useColorScheme,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import SCREENS from '@/screens';
 import Animated, {
   FadeIn,
   SlideInRight,
@@ -132,13 +134,13 @@ const AnimatedSectionHeader = ({ title, icon, isExpanded, onPress }) => {
 };
 
 // Info Item Component
-const InfoItem = ({ icon, label, value, clickable }) => {
+const InfoItem = ({ icon, label, value, clickable, onPress }) => {
   const colorScheme = useColorScheme();
   const textColor = colorScheme === 'dark' ? 'text-white' : 'text-gray-800';
   const labelColor = colorScheme === 'dark' ? 'text-gray-400' : 'text-gray-500';
   const bgColor = colorScheme === 'dark' ? 'bg-gray-800' : 'bg-white';
   
-  return (
+  const content = (
     <View className={`flex-row items-center gap-4 p-4 rounded-xl ${bgColor} mb-2 shadow-sm`}>
       <View className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
         {icon}
@@ -149,8 +151,20 @@ const InfoItem = ({ icon, label, value, clickable }) => {
           {value}
         </ThemedText>
       </View>
+      {clickable ? (
+        <Feather name="chevron-right" size={18} color={colorScheme === 'dark' ? '#94a3b8' : '#64748b'} />
+      ) : null}
     </View>
   );
+
+  if (clickable && onPress) {
+    return (
+      <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return content;
 };
 
 // Recent Form Indicator
@@ -169,7 +183,7 @@ const FormIndicator = ({ result }) => {
 };
 
 // Teams and Head to Head Section
-const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
+const TeamsSection = ({ score, headToHeadStats, cardBg, textColor, onTeamPress }) => {
   const teams = Array.isArray(score?.teams) ? score.teams : [];
   const team1 = teams[0] || {};
   const team2 = teams[1] || {};
@@ -193,19 +207,27 @@ const TeamsSection = ({ score, headToHeadStats, cardBg, textColor }) => {
       {/* Teams List */}
       <View className="mb-6">
         {teams.map((team, index) => (
-          <Animated.View
+          <TouchableOpacity
             key={team?.teamId || team?.id || index}
-            entering={SlideInRight.delay(index * 100)}
-            className="flex-row items-center gap-4 p-3 mb-3 rounded-xl bg-gray-100 dark:bg-gray-700"
+            activeOpacity={0.7}
+            onPress={() => onTeamPress?.(team)}
           >
-            <ImagePlaceHolder
-              image={team?.teamLogo}
-              name={team?.title}
-            />
-            <ThemedText className={`text-lg font-medium ${textColor}`}>
-              {team?.title}
-            </ThemedText>
-          </Animated.View>
+            <Animated.View
+              entering={SlideInRight.delay(index * 100)}
+              className="flex-row items-center justify-between p-3 mb-3 rounded-xl bg-gray-100 dark:bg-gray-700"
+            >
+              <View className="flex-row items-center gap-4 flex-1">
+                <ImagePlaceHolder
+                  image={team?.teamLogo}
+                  name={team?.title}
+                />
+                <ThemedText className={`text-lg font-medium ${textColor}`}>
+                  {team?.title}
+                </ThemedText>
+              </View>
+              <Feather name="chevron-right" size={18} color="#94a3b8" />
+            </Animated.View>
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -273,6 +295,7 @@ const MatchDetailsSection = ({ infoItems = [], cardBg }) => {
           label={item.label}
           value={item.value}
           clickable={item.clickable}
+          onPress={item.onPress}
         />
       ))}
     </Animated.View>
@@ -363,6 +386,19 @@ export default function MatchInfo({
     };
   }, [propHeadToHeadStats, matchId, team1Id, team2Id]);
 
+  const navigation = useNavigation();
+
+  const handleTeamPress = (team) => {
+    const rawId = team?.teamId || team?._id || team?.id;
+    const teamId = typeof rawId === 'object' ? rawId?._id || rawId?.id : rawId;
+    if (teamId) {
+      navigation.navigate(SCREENS.TeamProfile, {
+        teamId: String(teamId),
+        team,
+      });
+    }
+  };
+
   const [expandedSections, setExpandedSections] = useState({
     teams: true,
     details: true,
@@ -397,6 +433,12 @@ export default function MatchInfo({
       label: 'Tournament',
       value: score?.tournament?.title,
       clickable: true,
+      onPress: () => {
+        const slug = score?.tournament?.slug || score?.tournament?._id || score?.tournament?.id;
+        if (slug) {
+          navigation.navigate(SCREENS.TournamentProfile, { slug });
+        }
+      },
     },
     score?.roundType && {
       icon: <MaterialIcons name="emoji-events" size={20} color="#60a5fa" />,
@@ -474,16 +516,20 @@ export default function MatchInfo({
 
           {/* Teams vs Badge */}
           <View className="flex-row justify-center items-center my-6">
-            <View className="items-center flex-1">
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              onPress={() => handleTeamPress(score?.teams?.[0])}
+              className="items-center flex-1"
+            >
               <ImagePlaceHolder
                 image={score?.teams?.[0]?.teamLogo}
                 name={score?.teams?.[0]?.title}
                 size="16"
               />
-              <ThemedText className={`font-bold mt-2 ${textColor}`}>
+              <ThemedText className={`font-bold mt-2 ${textColor} text-center`}>
                 {score?.teams?.[0]?.shortName || score?.teams?.[0]?.title || "Team 1"}
               </ThemedText>
-            </View>
+            </TouchableOpacity>
 
             <View className="mx-4 items-center">
               <View className="bg-red-500 px-3 py-1 rounded-full">
@@ -491,16 +537,20 @@ export default function MatchInfo({
               </View>
             </View>
 
-            <View className="items-center flex-1">
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              onPress={() => handleTeamPress(score?.teams?.[1])}
+              className="items-center flex-1"
+            >
               <ImagePlaceHolder
                 image={score?.teams?.[1]?.teamLogo}
                 name={score?.teams?.[1]?.title}
                 size="16"
               />
-              <ThemedText className={`font-bold mt-2 ${textColor}`}>
+              <ThemedText className={`font-bold mt-2 ${textColor} text-center`}>
                 {score?.teams?.[1]?.shortName || score?.teams?.[1]?.title || "Team 2"}
               </ThemedText>
-            </View>
+            </TouchableOpacity>
           </View>
         </Animated.View>
 
@@ -519,6 +569,7 @@ export default function MatchInfo({
               headToHeadStats={headToHeadStats} 
               cardBg={cardBg} 
               textColor={textColor} 
+              onTeamPress={handleTeamPress}
             />
           )}
         </View>
