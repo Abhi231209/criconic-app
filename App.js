@@ -75,10 +75,10 @@ function AppContent() {
         routeNameRef.current = currentRouteName;
       }}
     >
-      <BottomSheetModalProvider>
-        <BottomSheetProvider>
-          <AlertProvider>
-            <SocketProvider>
+      <SocketProvider>
+        <BottomSheetModalProvider>
+          <BottomSheetProvider>
+            <AlertProvider>
               <KeyboardAvoidingView
                 style={styles.keyboardAvoiding}
                 behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -86,10 +86,10 @@ function AppContent() {
                 <AppNavigator />
               </KeyboardAvoidingView>
               <StatusBar style={isDark ? "light" : "dark"} />
-            </SocketProvider>
-          </AlertProvider>
-        </BottomSheetProvider>
-      </BottomSheetModalProvider>
+            </AlertProvider>
+          </BottomSheetProvider>
+        </BottomSheetModalProvider>
+      </SocketProvider>
     </NavigationContainer>
   );
 }
