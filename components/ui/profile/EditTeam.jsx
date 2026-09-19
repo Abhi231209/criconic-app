@@ -330,6 +330,7 @@ export default function EditTeam() {
           <View style={{ zIndex: 1000 }} className="mb-2">
             <LocationSearch
               label="Location *"
+              locationType="city"
               value={formData.location}
               onChangeText={(text) => setFormData({ ...formData, location: text, locationId: '' })}
               onSelectLocation={(loc) => {

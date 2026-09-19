@@ -395,6 +395,26 @@ export default function ScorerScreen() {
           return;
         }
 
+        // Return to whichever screen actually launched the match-creation
+        // flow (threaded through as returnScreen via CreateMatch →
+        // MatchDetailsScreen → PlayerSelectionScreen → TossScreen →
+        // ScorerScreen), instead of always dropping back to Home — the
+        // intermediate setup screens themselves can't be revisited (Home's
+        // own focus effect strips them from history), so a plain goBack()
+        // isn't an option here.
+        const returnScreen = route.params?.returnScreen;
+        if (returnScreen && returnScreen !== SCREENS.Home) {
+          if (navigation.reset) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: returnScreen }],
+            });
+          } else {
+            navigation.navigate(returnScreen);
+          }
+          return;
+        }
+
         if (navigation.reset) {
           navigation.reset({
             index: 0,
@@ -1495,6 +1515,10 @@ export default function ScorerScreen() {
         "Striker";
       const activeBowlerName = latestScore?.bowler?.name || "Bowler";
 
+      const currentOverValue = parseFloat(latestScore?.batting?.score?.over || 0);
+      const overNumber = Math.floor(currentOverValue) + 1;
+      const ballNumber = (latestScore?.currentOver?.length || 0) + 1;
+
       setSessionDeliveries((prev) => [
         {
           ...ballData,
@@ -1508,6 +1532,8 @@ export default function ScorerScreen() {
           batsmanName: activeStrikerName,
           bowler: activeBowler,
           bowlerName: activeBowlerName,
+          overNumber,
+          ballNumber,
           timestamp: Date.now(),
         },
         ...prev,

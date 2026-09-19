@@ -23,6 +23,7 @@ export default function LocationSearch({
   isDarkMode: propDarkMode,
   containerStyle,
   inputContainerStyle,
+  locationType, // "city" restricts results to cities only, excluding stadiums/venues
 }) {
   const colorScheme = useColorScheme();
   const isDarkMode = propDarkMode !== undefined ? propDarkMode : colorScheme === "dark";
@@ -32,6 +33,10 @@ export default function LocationSearch({
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const debounceTimerRef = useRef(null);
+  // Guards against slow/out-of-order responses overwriting a newer search
+  const requestIdRef = useRef(0);
+  // In-memory cache so re-typing/backspacing the same query is instant
+  const cacheRef = useRef(new Map());
 
   // Sync internal query if external value changes
   useEffect(() => {
@@ -41,19 +46,34 @@ export default function LocationSearch({
   }, [value]);
 
   const searchLocations = useCallback(async (text) => {
-    if (!text || text.trim().length < 3) {
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length < 3) {
       setResults([]);
       setIsLoading(false);
       setIsOpen(false);
       return;
     }
 
+    const cacheKey = `${locationType || "any"}:${trimmed.toLowerCase()}`;
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      setResults(cached);
+      setIsOpen(cached.length > 0);
+      setIsLoading(false);
+      return;
+    }
+
+    const thisRequestId = ++requestIdRef.current;
     setIsLoading(true);
     try {
+      const googleType = locationType === "city" ? "(cities)" : "geocode";
       const res = await request(
-        `api/users/searchLocation?searchKeyWord=${encodeURIComponent(text.trim())}&type=geocode`,
-        { method: "GET", errorAlert: false }
+        `api/users/searchLocation?searchKeyWord=${encodeURIComponent(trimmed)}&type=${encodeURIComponent(googleType)}`,
+        { method: "GET", errorAlert: false, timeout: 6000 }
       );
+
+      // A newer keystroke already fired another search — drop this stale result
+      if (thisRequestId !== requestIdRef.current) return;
 
       let predictions =
         res?.data?.data?.predictions ||
@@ -61,20 +81,24 @@ export default function LocationSearch({
         (Array.isArray(res?.data?.data) ? res?.data?.data : []);
 
       if (!Array.isArray(predictions) || predictions.length === 0) {
-        predictions = searchFallbackLocations(text);
+        predictions = searchFallbackLocations(text, locationType);
       }
 
+      cacheRef.current.set(cacheKey, predictions);
       setResults(predictions);
       setIsOpen(predictions.length > 0);
     } catch (err) {
+      if (thisRequestId !== requestIdRef.current) return;
       console.warn("[LocationSearch] Search error:", err?.message || err);
-      const fallback = searchFallbackLocations(text);
+      const fallback = searchFallbackLocations(text, locationType);
       setResults(fallback);
       setIsOpen(fallback.length > 0);
     } finally {
-      setIsLoading(false);
+      if (thisRequestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [locationType]);
 
   const handleTextChange = (text) => {
     setQuery(text);
@@ -91,10 +115,20 @@ export default function LocationSearch({
       return;
     }
 
+    // Instant results for a cached query — skip the debounce/loading spinner
+    const cacheKey = `${locationType || "any"}:${text.trim().toLowerCase()}`;
+    if (cacheRef.current.has(cacheKey)) {
+      const cached = cacheRef.current.get(cacheKey);
+      setResults(cached);
+      setIsOpen(cached.length > 0);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     debounceTimerRef.current = setTimeout(() => {
       searchLocations(text);
-    }, 350);
+    }, 300);
   };
 
   const handleSelect = (item) => {

@@ -9,6 +9,7 @@ export const POPULAR_LOCATIONS = [
   // Haryana (including Hisar)
   {
     place_id: "loc_hisar_1",
+    type: "city",
     description: "Hisar, Haryana, India",
     structured_formatting: {
       main_text: "Hisar",
@@ -17,6 +18,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_hisar_2",
+    type: "venue",
     description: "Mahabir Stadium, Hisar, Haryana, India",
     structured_formatting: {
       main_text: "Mahabir Stadium",
@@ -25,6 +27,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_hisar_3",
+    type: "venue",
     description: "CCS HAU Sports Complex, Hisar, Haryana, India",
     structured_formatting: {
       main_text: "CCS HAU Sports Complex",
@@ -33,6 +36,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_hisar_4",
+    type: "venue",
     description: "OP Jindal Cricket Ground, Hisar, Haryana, India",
     structured_formatting: {
       main_text: "OP Jindal Cricket Ground",
@@ -41,6 +45,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_hisar_5",
+    type: "city",
     description: "Hisar Cantt, Haryana, India",
     structured_formatting: {
       main_text: "Hisar Cantt",
@@ -49,6 +54,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_rohtak_1",
+    type: "city",
     description: "Rohtak, Haryana, India",
     structured_formatting: {
       main_text: "Rohtak",
@@ -57,6 +63,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_gurugram_1",
+    type: "city",
     description: "Gurugram, Haryana, India",
     structured_formatting: {
       main_text: "Gurugram",
@@ -65,6 +72,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_faridabad_1",
+    type: "venue",
     description: "Nahar Singh Stadium, Faridabad, Haryana, India",
     structured_formatting: {
       main_text: "Nahar Singh Stadium",
@@ -73,6 +81,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_panipat_1",
+    type: "city",
     description: "Panipat, Haryana, India",
     structured_formatting: {
       main_text: "Panipat",
@@ -81,6 +90,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_ambala_1",
+    type: "city",
     description: "Ambala, Haryana, India",
     structured_formatting: {
       main_text: "Ambala",
@@ -89,6 +99,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_karnal_1",
+    type: "city",
     description: "Karnal, Haryana, India",
     structured_formatting: {
       main_text: "Karnal",
@@ -98,6 +109,7 @@ export const POPULAR_LOCATIONS = [
   // Delhi NCR
   {
     place_id: "loc_delhi_1",
+    type: "venue",
     description: "Arun Jaitley Stadium, New Delhi, Delhi, India",
     structured_formatting: {
       main_text: "Arun Jaitley Stadium",
@@ -106,6 +118,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_delhi_2",
+    type: "city",
     description: "New Delhi, Delhi, India",
     structured_formatting: {
       main_text: "New Delhi",
@@ -114,6 +127,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_noida_1",
+    type: "venue",
     description: "Noida Cricket Stadium, Sector 21A, Noida, UP, India",
     structured_formatting: {
       main_text: "Noida Cricket Stadium",
@@ -123,6 +137,7 @@ export const POPULAR_LOCATIONS = [
   // Punjab & Chandigarh
   {
     place_id: "loc_mohali_1",
+    type: "venue",
     description: "PCA Stadium, Mohali, Punjab, India",
     structured_formatting: {
       main_text: "PCA Stadium, Mohali",
@@ -131,6 +146,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_chandigarh_1",
+    type: "venue",
     description: "Sector 16 Cricket Stadium, Chandigarh, India",
     structured_formatting: {
       main_text: "Sector 16 Stadium",
@@ -140,6 +156,7 @@ export const POPULAR_LOCATIONS = [
   // Maharashtra
   {
     place_id: "loc_mumbai_1",
+    type: "venue",
     description: "Wankhede Stadium, Mumbai, Maharashtra, India",
     structured_formatting: {
       main_text: "Wankhede Stadium",
@@ -148,6 +165,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_mumbai_2",
+    type: "city",
     description: "Mumbai, Maharashtra, India",
     structured_formatting: {
       main_text: "Mumbai",
@@ -156,6 +174,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_pune_1",
+    type: "venue",
     description: "MCA Stadium, Gahunje, Pune, Maharashtra, India",
     structured_formatting: {
       main_text: "MCA Stadium",
@@ -165,6 +184,7 @@ export const POPULAR_LOCATIONS = [
   // Karnataka
   {
     place_id: "loc_bengaluru_1",
+    type: "venue",
     description: "M. Chinnaswamy Stadium, Bengaluru, Karnataka, India",
     structured_formatting: {
       main_text: "M. Chinnaswamy Stadium",
@@ -173,6 +193,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_bengaluru_2",
+    type: "city",
     description: "Bengaluru, Karnataka, India",
     structured_formatting: {
       main_text: "Bengaluru",
@@ -182,6 +203,7 @@ export const POPULAR_LOCATIONS = [
   // Gujarat
   {
     place_id: "loc_ahmedabad_1",
+    type: "venue",
     description: "Narendra Modi Stadium, Motera, Ahmedabad, Gujarat, India",
     structured_formatting: {
       main_text: "Narendra Modi Stadium",
@@ -190,6 +212,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_ahmedabad_2",
+    type: "city",
     description: "Ahmedabad, Gujarat, India",
     structured_formatting: {
       main_text: "Ahmedabad",
@@ -199,6 +222,7 @@ export const POPULAR_LOCATIONS = [
   // Tamil Nadu
   {
     place_id: "loc_chennai_1",
+    type: "venue",
     description: "MA Chidambaram Stadium, Chepauk, Chennai, Tamil Nadu, India",
     structured_formatting: {
       main_text: "MA Chidambaram Stadium (Chepauk)",
@@ -208,6 +232,7 @@ export const POPULAR_LOCATIONS = [
   // West Bengal
   {
     place_id: "loc_kolkata_1",
+    type: "venue",
     description: "Eden Gardens, Kolkata, West Bengal, India",
     structured_formatting: {
       main_text: "Eden Gardens",
@@ -217,6 +242,7 @@ export const POPULAR_LOCATIONS = [
   // Telangana
   {
     place_id: "loc_hyderabad_1",
+    type: "venue",
     description: "Rajiv Gandhi International Cricket Stadium, Hyderabad, India",
     structured_formatting: {
       main_text: "Rajiv Gandhi International Stadium",
@@ -226,6 +252,7 @@ export const POPULAR_LOCATIONS = [
   // Rajasthan
   {
     place_id: "loc_jaipur_1",
+    type: "venue",
     description: "Sawai Mansingh Stadium, Jaipur, Rajasthan, India",
     structured_formatting: {
       main_text: "Sawai Mansingh Stadium",
@@ -235,6 +262,7 @@ export const POPULAR_LOCATIONS = [
   // Uttar Pradesh
   {
     place_id: "loc_lucknow_1",
+    type: "venue",
     description: "BRSABV Ekana Cricket Stadium, Lucknow, UP, India",
     structured_formatting: {
       main_text: "Ekana Cricket Stadium",
@@ -243,6 +271,7 @@ export const POPULAR_LOCATIONS = [
   },
   {
     place_id: "loc_kanpur_1",
+    type: "venue",
     description: "Green Park Stadium, Kanpur, UP, India",
     structured_formatting: {
       main_text: "Green Park Stadium",
@@ -252,6 +281,7 @@ export const POPULAR_LOCATIONS = [
   // Himachal Pradesh
   {
     place_id: "loc_dharamshala_1",
+    type: "venue",
     description: "HPCA Stadium, Dharamshala, Himachal Pradesh, India",
     structured_formatting: {
       main_text: "HPCA Stadium",
@@ -261,6 +291,7 @@ export const POPULAR_LOCATIONS = [
   // Madhya Pradesh
   {
     place_id: "loc_indore_1",
+    type: "venue",
     description: "Holkar Cricket Stadium, Indore, Madhya Pradesh, India",
     structured_formatting: {
       main_text: "Holkar Cricket Stadium",
@@ -270,13 +301,20 @@ export const POPULAR_LOCATIONS = [
 ];
 
 /**
- * Filter offline/popular locations by user search keyword
+ * Filter offline/popular locations by user search keyword.
+ * Pass `locationType: "city"` to exclude stadiums/grounds from the results
+ * (e.g. for a "City" field, where only city/place entries should show).
  */
-export const searchFallbackLocations = (keyword = "") => {
+export const searchFallbackLocations = (keyword = "", locationType) => {
   const q = (keyword || "").trim().toLowerCase();
   if (!q || q.length < 2) return [];
 
-  const matched = POPULAR_LOCATIONS.filter((item) => {
+  const pool =
+    locationType === "city"
+      ? POPULAR_LOCATIONS.filter((item) => item.type === "city")
+      : POPULAR_LOCATIONS;
+
+  const matched = pool.filter((item) => {
     const desc = (item.description || "").toLowerCase();
     const main = (item.structured_formatting?.main_text || "").toLowerCase();
     const sec = (item.structured_formatting?.secondary_text || "").toLowerCase();

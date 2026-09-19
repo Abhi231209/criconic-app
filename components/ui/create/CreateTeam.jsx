@@ -361,6 +361,7 @@ export default function CreateTeam() {
           <View style={{ zIndex: 1000 }} className="mb-2">
             <LocationSearch
               label="City"
+              locationType="city"
               required
               value={formData.city}
               onChangeText={(text) => setFormData({ ...formData, city: text, cityLocationId: "" })}

@@ -35,7 +35,8 @@
         {
           "cameraPermission": "Criconic uses your camera to scan QR codes for quickly joining teams and matches."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }
