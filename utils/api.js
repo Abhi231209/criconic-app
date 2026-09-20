@@ -511,7 +511,7 @@ export const configApi = {
 
 export const userApi = {
   getProfile: (userId) =>
-    request(`api/users/${userId}`, { method: "GET" }),
+    request(userId ? `api/users/profile/${userId}` : "api/users/profile", { method: "GET" }),
   updateProfile: (userId, data) =>
     request(`api/users/${userId}`, { method: "PUT", data }),
   searchLocation: (keyword) =>

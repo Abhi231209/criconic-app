@@ -25,6 +25,35 @@ import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 
+const calculateTournamentStatus = (t) => {
+  if (!t) return "upcoming";
+  const rawStatus = String(t?.status || "").toLowerCase().trim();
+  if (rawStatus === "cancelled" || rawStatus === "abandoned") return "cancelled";
+  if (rawStatus === "completed" || rawStatus === "finished") return "completed";
+  if (rawStatus === "ongoing" || rawStatus === "live") return "ongoing";
+  if (rawStatus === "upcoming" || rawStatus === "scheduled") return "upcoming";
+
+  const rawStart = t?.date?.start || t?.startDate;
+  const rawEnd = t?.date?.end || t?.endDate;
+  const start = rawStart ? new Date(rawStart) : null;
+  const end = rawEnd ? new Date(rawEnd) : null;
+  const now = new Date();
+
+  if (end && !isNaN(end.getTime())) {
+    const endOfDay = new Date(end.getTime());
+    endOfDay.setHours(23, 59, 59, 999);
+    if (now > endOfDay) return "completed";
+  }
+  if (start && !isNaN(start.getTime())) {
+    const startOfDay = new Date(start.getTime());
+    startOfDay.setHours(0, 0, 0, 0);
+    if (now < startOfDay) return "upcoming";
+    return "ongoing";
+  }
+
+  return "upcoming";
+};
+
 export default function TournamentProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
@@ -370,29 +399,6 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         } catch (e) {
           console.warn("[TournamentProfile] Secondary matches fetch failed:", e);
         }
-      }
-
-      // Third fallback: Query matchesApi with tournamentID
-      if (loadedMatches.length === 0 && (actualTournamentId || tournamentId)) {
-        const idToUse = actualTournamentId || tournamentId;
-        try {
-          const fallbackRes = await matchesApi.getMatches({ tournamentID: idToUse });
-          const fbList = extractMatches(fallbackRes);
-          if (fbList.length > 0) {
-            loadedMatches = fbList;
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // Fourth fallback: Check tData.matches directly
-      if (
-        loadedMatches.length === 0 &&
-        Array.isArray(tData?.matches) &&
-        tData.matches.length > 0
-      ) {
-        loadedMatches = tData.matches;
       }
 
       setMatchesList(loadedMatches);

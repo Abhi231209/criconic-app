@@ -333,53 +333,62 @@ export default function OutOptions({
   // ─── DISMISSAL ACTIONS ──────────────────────────────────────────────────
 
   const handleDirectOut = (dismissalType, extraInfo = {}, callSelectStrike = false) => {
-    console.log("[OUT-OPTIONS] Direct out triggered:", dismissalType);
+    const activeStriker = firstBatter?.isStrikeEnd ? firstBatter : (secondBatter || firstBatter);
+    const activeStrikerId = activeStriker?.playerId || activeStriker?.id || activeStriker?._id;
+    console.log("[OUT-OPTIONS] Direct out triggered:", dismissalType, "activeStrikerId:", activeStrikerId);
     setMainModalVisible(false);
     onClose?.();
     handelBall({
       isWicket: true,
       ballType: "ball",
+      actionBatsmen: activeStrikerId,
       dismissalInfo: {
         dismissalType,
         bowler: bowlerId,
         ...extraInfo,
       },
     });
-    onWicket(1, callSelectStrike);
+    onWicket(1, callSelectStrike, { outBatman: activeStrikerId });
   };
 
   const handleCaughtSubmit = (player) => {
     const fielderId = player?.playerId || player?.id || player?._id || player;
+    const activeStriker = firstBatter?.isStrikeEnd ? firstBatter : (secondBatter || firstBatter);
+    const activeStrikerId = activeStriker?.playerId || activeStriker?.id || activeStriker?._id;
     console.log("[OUT-OPTIONS] Caught submitted with fielder:", fielderId);
     setCaughtModalVisible(false);
     onClose?.();
     handelBall({
       isWicket: true,
       ballType: "ball",
+      actionBatsmen: activeStrikerId,
       dismissalInfo: {
         dismissalType: "Caught",
         caughtBy: fielderId,
         bowler: bowlerId,
       },
     });
-    onWicket(1, true); // strike selection prompt
+    onWicket(1, true, { outBatman: activeStrikerId }); // strike selection prompt
   };
 
   const handleStumpedSubmit = (player) => {
     const keeperId = player?.playerId || player?.id || player?._id || player;
+    const activeStriker = firstBatter?.isStrikeEnd ? firstBatter : (secondBatter || firstBatter);
+    const activeStrikerId = activeStriker?.playerId || activeStriker?.id || activeStriker?._id;
     console.log("[OUT-OPTIONS] Stumped submitted with keeper:", keeperId);
     setStumpedModalVisible(false);
     onClose?.();
     handelBall({
       isWicket: true,
       ballType: "ball",
+      actionBatsmen: activeStrikerId,
       dismissalInfo: {
         dismissalType: "Stumped",
         stumpBy: keeperId,
         bowler: bowlerId,
       },
     });
-    onWicket(1, false);
+    onWicket(1, false, { outBatman: activeStrikerId });
   };
 
   const handleRunOutSubmit = () => {

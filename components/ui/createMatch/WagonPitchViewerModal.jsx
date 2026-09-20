@@ -45,6 +45,8 @@ export default function WagonPitchViewerModal({
   initialTab = "wagon",
   initialPlayer = null,
   playerRole = "all", // "bowler" | "batsman" | "fow" | "all"
+  initialInning = "all",
+  inningsList = [],
   matchDetails = {},
   score = {},
   sessionDeliveries = [],
@@ -60,6 +62,9 @@ export default function WagonPitchViewerModal({
   const resolvedInitialTab = isBowlerOnly ? "pitch" : (isBatsmanOnly ? "wagon" : initialTab);
   const [activeTab, setActiveTab] = useState(resolvedInitialTab);
   const [selectedPlayer, setSelectedPlayer] = useState(initialPlayer);
+  const [selectedInning, setSelectedInning] = useState(
+    initialInning !== undefined && initialInning !== null ? String(initialInning) : "all"
+  );
   const [selectedBatsmanId, setSelectedBatsmanId] = useState("all");
   const [selectedBowlerId, setSelectedBowlerId] = useState("all");
   const [selectedFacedBatsmanId, setSelectedFacedBatsmanId] = useState("all");
@@ -93,6 +98,9 @@ export default function WagonPitchViewerModal({
       const currentResolvedTab = isBowlerOnly ? "pitch" : (isBatsmanOnly ? "wagon" : initialTab);
       setActiveTab(currentResolvedTab);
       setSelectedPlayer(initialPlayer);
+      setSelectedInning(
+        initialInning !== undefined && initialInning !== null ? String(initialInning) : "all"
+      );
       setShotFilter("all");
       setPitchFilter("all");
       setSelectedOver("all");
@@ -137,7 +145,7 @@ export default function WagonPitchViewerModal({
           .finally(() => setLoading(false));
       }
     }
-  }, [visible, matchId, matchDetails?._id, matchDetails?.id, score?._id, score?.id, initialTab, initialPlayer]);
+  }, [visible, matchId, matchDetails?._id, matchDetails?.id, score?._id, score?.id, initialTab, initialPlayer, initialInning]);
 
   useEffect(() => {
     setSelectedOver("all");
@@ -254,6 +262,39 @@ export default function WagonPitchViewerModal({
     });
   }, [fetchedMatch, matchDetails, score, sessionDeliveries]);
 
+  // Available innings for filtering
+  const availableInnings = useMemo(() => {
+    if (Array.isArray(inningsList) && inningsList.length > 0) {
+      return [
+        { key: "all", label: "All Innings" },
+        ...inningsList.map((i, idx) => ({
+          key: String(i.number || idx + 1),
+          label: i.label || `Inning ${idx + 1}`,
+        })),
+      ];
+    }
+    const innSet = new Set();
+    allDeliveries.forEach((d) => {
+      const inn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+      if (inn) innSet.add(inn);
+    });
+    if (innSet.size <= 1) return [];
+    const sorted = Array.from(innSet).sort((a, b) => Number(a) - Number(b));
+    let superOverCount = 0;
+    return [
+      { key: "all", label: "All Innings" },
+      ...sorted.map((numStr) => {
+        const n = Number(numStr);
+        const isSO = n >= 3;
+        if (isSO) superOverCount++;
+        return {
+          key: numStr,
+          label: isSO ? `Super Over ${superOverCount}` : `Inning ${n}`,
+        };
+      }),
+    ];
+  }, [inningsList, allDeliveries]);
+
   // Extract unique batsmen who have faced balls
   const availableBatsmen = useMemo(() => {
     const map = new Map();
@@ -303,6 +344,10 @@ export default function WagonPitchViewerModal({
   // Shots matching the selected batsman, before the dots/singles/fours/sixes filter is applied
   const batsmanFilteredShots = useMemo(() => {
     return allDeliveries.filter((d) => {
+      if (selectedInning !== "all") {
+        const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+        if (dInn && dInn !== String(selectedInning)) return false;
+      }
       // Exclude wide, mankaded, retired, timed out, and non-delivery events from wagon wheel
       const bType = String(d.ballType || "").toLowerCase();
       const disType = String(d.dismissalInfo?.dismissalType || d.dismissalType || "").toLowerCase();
@@ -330,7 +375,7 @@ export default function WagonPitchViewerModal({
       }
       return true;
     });
-  }, [allDeliveries, selectedBatsmanId, selectedPlayer]);
+  }, [allDeliveries, selectedBatsmanId, selectedPlayer, selectedInning]);
 
   // Filter shots for Wagon Wheel
   const filteredShots = useMemo(() => {
@@ -364,6 +409,10 @@ export default function WagonPitchViewerModal({
   // Deliveries matching the selected bowler, before the dots/runs/wickets filter is applied
   const bowlerFilteredPitches = useMemo(() => {
     return allDeliveries.filter((d) => {
+      if (selectedInning !== "all") {
+        const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+        if (dInn && dInn !== String(selectedInning)) return false;
+      }
       // Exclude mankaded, retired, timed out, and non-delivery events from pitch map
       const bType = String(d.ballType || "").toLowerCase();
       const disType = String(d.dismissalInfo?.dismissalType || d.dismissalType || "").toLowerCase();
@@ -390,7 +439,7 @@ export default function WagonPitchViewerModal({
       }
       return true;
     });
-  }, [allDeliveries, selectedBowlerId, selectedPlayer]);
+  }, [allDeliveries, selectedBowlerId, selectedPlayer, selectedInning]);
 
   // Extract unique batsmen that this bowler bowled to
   const facedBatsmen = useMemo(() => {
@@ -727,6 +776,55 @@ export default function WagonPitchViewerModal({
                   </Text>
                 </View>
               </View>
+            </View>
+          )}
+
+          {/* Inning Filter Chips (when multiple innings / super overs exist) */}
+          {availableInnings.length > 1 && (
+            <View style={[styles.filterSection, { marginBottom: 6 }]}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterScroll}
+              >
+                {availableInnings.map((inn) => {
+                  const isSelected = String(selectedInning) === String(inn.key);
+                  return (
+                    <TouchableOpacity
+                      key={inn.key}
+                      style={[
+                        styles.filterPill,
+                        isSelected && styles.filterPillActive,
+                        {
+                          backgroundColor: isSelected
+                            ? (isDarkMode ? "#2563EB" : "#3B82F6")
+                            : isDarkMode
+                            ? "#1E293B"
+                            : "#F1F5F9",
+                        },
+                      ]}
+                      onPress={() => setSelectedInning(inn.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterPillText,
+                          isSelected && styles.filterPillTextActive,
+                          {
+                            color: isSelected
+                              ? "#FFFFFF"
+                              : isDarkMode
+                              ? "#CBD5E1"
+                              : "#334155",
+                            fontWeight: isSelected ? "700" : "500",
+                          },
+                        ]}
+                      >
+                        {inn.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
 

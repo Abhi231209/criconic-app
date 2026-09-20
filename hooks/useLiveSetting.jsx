@@ -19,6 +19,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useAxiosGet } from "./useApi";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { COLORS } from "@/theme/colors";
+import SCREENS from "@/screens";
 
 const request =() =>{
     
@@ -152,7 +153,15 @@ export const useLiveSetting = ({ matchID: matchId, onInningsComplete }) => {
             <TouchableOpacity 
               style={[styles.settingButton, isDarkMode ? styles.darkButton : styles.lightButton]}
               onPress={() => {
-                navigation.navigate(SCREENS.ThemeConfig);
+                const tournamentId =
+                  score?.tournament?._id ||
+                  score?.tournament?.id ||
+                  (typeof score?.tournament === "string" ? score?.tournament : null);
+                navigation.navigate(SCREENS.GoLiveSetup, {
+                  matchId,
+                  tournamentId: typeof tournamentId === "object" ? tournamentId?._id || tournamentId?.id : tournamentId,
+                  initialTab: "theme",
+                });
               }}
             >
               <Radio size={20} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />

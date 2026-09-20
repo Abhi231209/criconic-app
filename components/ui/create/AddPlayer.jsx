@@ -26,6 +26,7 @@ import User from "@/utils/User";
 
 export default function AddPlayer({
   showHeader = true,
+  isEmbedded = false,
   teamID: propTeamID,
   cb: propCb,
   isOwner: propIsOwner,
@@ -128,15 +129,19 @@ export default function AddPlayer({
                 });
                 if (res?.data?.success || res?.status === 200 || res?.status === 201) {
                   Alert.alert("Success", `${player.name} added to team!`);
-                  cb?.();
-                  navigation.goBack();
+                  cb?.(player);
+                  if (!isEmbedded) {
+                    navigation.goBack();
+                  }
                 }
               } catch (e) {
                 Alert.alert("Error", "Failed to add player to team");
               }
             } else {
               cb?.(player);
-              navigation.goBack();
+              if (!isEmbedded) {
+                navigation.goBack();
+              }
             }
           },
         },
@@ -491,6 +496,7 @@ export default function AddPlayer({
             setShowUploadWithoutNumber={setShowUploadWithoutNumber}
             cb={cb}
             isTeamOwner={isTeamOwner}
+            isEmbedded={isEmbedded || !showHeader}
           />
         </SafeAreaView>
       </Modal>
@@ -526,6 +532,7 @@ export default function AddPlayer({
             teamID={teamID}
             setShowAddMobile={setShowAddMobile}
             cb={cb}
+            isEmbedded={isEmbedded || !showHeader}
           />
         </SafeAreaView>
       </Modal>
@@ -536,7 +543,7 @@ export default function AddPlayer({
 // ─────────────────────────────────────────────────────────────────────────────
 // Upload Without Number Component (ONLY asks Player Name - nothing else!)
 // ─────────────────────────────────────────────────────────────────────────────
-function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwner }) {
+function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwner, isEmbedded }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const navigation = useNavigation();
@@ -619,7 +626,7 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
 
         if (res?.data?.success || res?.status === 200 || res?.status === 201) {
           // Immediately trigger refresh callback for parent squad
-          cb?.();
+          cb?.(playersToAdd?.[0] || playersToAdd);
           showGlobalAlert({
             title: "Success",
             message: `${playersToAdd.length} ${
@@ -629,8 +636,10 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
             confirmText: "OK",
             onConfirm: () => {
               setShowUploadWithoutNumber(false);
-              cb?.();
-              navigation.goBack();
+              cb?.(playersToAdd?.[0] || playersToAdd);
+              if (!isEmbedded) {
+                navigation.goBack();
+              }
             },
           });
         } else {
@@ -652,7 +661,9 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
           onConfirm: () => {
             setShowUploadWithoutNumber(false);
             cb?.(playersToAdd);
-            navigation.goBack();
+            if (!isEmbedded) {
+              navigation.goBack();
+            }
           },
         });
       }
@@ -799,7 +810,7 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
 // ─────────────────────────────────────────────────────────────────────────────
 // Add with Phone Number Component (Asks Name, Mobile Number, Email, Location)
 // ─────────────────────────────────────────────────────────────────────────────
-function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
+function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const navigation = useNavigation();
@@ -905,7 +916,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
         });
         if (res?.data?.success || res?.status === 200 || res?.status === 201) {
           // Immediately notify parent to refresh squad
-          cb?.();
+          cb?.(playersToAdd?.[0] || playersToAdd);
           showGlobalAlert({
             title: "Success",
             message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
@@ -913,8 +924,10 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
             confirmText: "OK",
             onConfirm: () => {
               setShowAddMobile(false);
-              cb?.();
-              navigation.goBack();
+              cb?.(playersToAdd?.[0] || playersToAdd);
+              if (!isEmbedded) {
+                navigation.goBack();
+              }
             },
           });
         } else {
@@ -925,7 +938,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
           });
         }
       } else {
-        cb?.(playersToAdd);
+        cb?.(playersToAdd?.[0] || playersToAdd);
         showGlobalAlert({
           title: "Success",
           message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
@@ -933,8 +946,10 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb }) {
           confirmText: "OK",
           onConfirm: () => {
             setShowAddMobile(false);
-            cb?.(playersToAdd);
-            navigation.goBack();
+            cb?.(playersToAdd?.[0] || playersToAdd);
+            if (!isEmbedded) {
+              navigation.goBack();
+            }
           },
         });
       }

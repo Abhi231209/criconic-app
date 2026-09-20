@@ -11,13 +11,14 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, Plus, Check, ArrowLeft, Users, UserCheck } from "lucide-react-native";
+import { Search, Plus, Check, ArrowLeft, Users, UserCheck, X } from "lucide-react-native";
 import * as lodash from "lodash";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { request } from "@/utils/api";
 import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
+import AddPlayer from "@/components/ui/create/AddPlayer";
 
 const BUTTON_ENUM = {
   ADD: 1,
@@ -226,7 +227,12 @@ export default function ChangeSquad(props) {
     return route?.params?.team || props?.team || null;
   });
   
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(() => {
+    if (route?.params?.initialTab !== undefined) return Number(route.params.initialTab);
+    if (route?.params?.tab === "addPlayer" || route?.params?.tab === 1) return 1;
+    if (props?.initialTab !== undefined) return Number(props.initialTab);
+    return 0;
+  });
   const [filterTab, setFilterTab] = useState("ALL"); // ALL | SQUAD | BENCH
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -320,6 +326,7 @@ export default function ChangeSquad(props) {
           setTeamData((prev) => prev || teamObj);
           const fetchedPlayers = teamObj?.players || [];
           setTeamPlayers((prev) => mergePlayers(fetchedPlayers, prev));
+          return teamObj;
         }
       }
     } catch (error) {
@@ -564,7 +571,7 @@ export default function ChangeSquad(props) {
                   styles.addButtonLarge,
                   isDarkMode ? styles.darkAddButton : styles.lightAddButton
                 ]}
-                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
+                onPress={() => setActiveTab(1)}
                 activeOpacity={0.7}
               >
                 <Plus size={18} color={isDarkMode ? COLORS.dark.text : COLORS.light.text} />
@@ -732,31 +739,39 @@ export default function ChangeSquad(props) {
             )}
           </View>
         ) : (
-          // Add Player Tab
-          <View style={styles.tabContent}>
-            <View style={styles.addPlayerContent}>
-              <ThemedText style={[
-                styles.addPlayerTitle,
-                isDarkMode ? styles.darkText : styles.lightText
-              ]}>
-                Add New Players to Your Squad
-              </ThemedText>
-              <ThemedText style={[
-                styles.addPlayerDescription,
-                isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
-              ]}>
-                Click the button below to register a new player to your team and squad
-              </ThemedText>
-              
-              <TouchableOpacity
-                style={styles.addPlayerCta}
-                onPress={() => navigation.navigate(SCREENS.AddPlayer, { teamID: teamId, cb: fetchTeamData })}
-                activeOpacity={0.8}
-              >
-                <Plus size={22} color="#FFFFFF" />
-                <ThemedText style={styles.addPlayerCtaText}>Add New Player</ThemedText>
-              </TouchableOpacity>
-            </View>
+          // Add Player Tab - Unified universal AddPlayer component
+          <View style={{ flex: 1 }}>
+            <AddPlayer
+              showHeader={false}
+              isEmbedded={true}
+              teamID={teamId}
+              team={teamData}
+              cb={async (newPlayer) => {
+                const updatedTeam = await fetchTeamData();
+                if (newPlayer) {
+                  const playerItem = Array.isArray(newPlayer) ? newPlayer[0] : newPlayer;
+                  let pId = extractPlayerId(playerItem);
+                  const pName = getPlayerName(playerItem);
+
+                  if (updatedTeam?.players && (!pId || String(pId).startsWith("player_"))) {
+                    const matched = updatedTeam.players.find(
+                      (p) => getPlayerName(p)?.toLowerCase() === pName?.toLowerCase()
+                    );
+                    if (matched) {
+                      pId = extractPlayerId(matched);
+                    } else if (updatedTeam.players.length > 0) {
+                      pId = extractPlayerId(updatedTeam.players[updatedTeam.players.length - 1]);
+                    }
+                  }
+
+                  if (pId) {
+                    setPlayerToAdd((prev) => ({ ...prev, [pId]: pName || 1 }));
+                    setSelectedPlayer((prev) => ({ ...prev, [pId]: pName || 1 }));
+                  }
+                }
+                setActiveTab(0);
+              }}
+            />
           </View>
         )}
       </View>

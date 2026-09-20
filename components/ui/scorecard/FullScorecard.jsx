@@ -141,8 +141,26 @@ export default function FullScoreCard({
 
   const getInningData = (rawInning, fallbackTeam, inningIdx = 0) => {
     if (!rawInning) return { ...emptyInning, batting: { ...emptyInning.batting, battingTeam: fallbackTeam } };
-    const innRuns = rawInning.batting?.score?.runs ?? rawInning.score?.runs ?? rawInning.runs ?? 0;
-    const innOvers = rawInning.batting?.score?.over ?? rawInning.score?.over ?? rawInning.overs ?? "0.0";
+
+    const innRuns =
+      rawInning.batting?.score?.runs ??
+      rawInning.score?.runs ??
+      rawInning.totalRuns ??
+      rawInning.runs ??
+      0;
+    const innOvers =
+      rawInning.batting?.score?.over ??
+      rawInning.score?.over ??
+      rawInning.totalOvers ??
+      rawInning.overs ??
+      "0.0";
+    const innWickets =
+      rawInning.batting?.score?.wicket ??
+      rawInning.score?.wicket ??
+      rawInning.totalWickets ??
+      rawInning.wickets ??
+      0;
+
     const computedCRR = calculateCRR(innRuns, innOvers);
     const isSuperOver = Boolean(
       rawInning.isSuperOver ||
@@ -151,59 +169,91 @@ export default function FullScoreCard({
       (typeof inningIdx === "number" && inningIdx >= 2)
     );
 
+    const battingTeamTitle =
+      rawInning.batting?.battingTeam ||
+      score?.teams?.find(t => String(t.teamId || t._id || t.id) === String(rawInning.battingTeam))?.title ||
+      score?.teams?.find(t => String(t.teamId || t._id || t.id) === String(rawInning.battingId))?.title ||
+      rawInning.battingTeam ||
+      fallbackTeam;
+
+    const rawBatsmen =
+      (Array.isArray(rawInning.playedBatsman) && rawInning.playedBatsman.length > 0)
+        ? rawInning.playedBatsman
+        : (Array.isArray(rawInning.batsman) && rawInning.batsman.length > 0)
+        ? rawInning.batsman
+        : (Array.isArray(rawInning.batting?.batsman) ? rawInning.batting.batsman : []);
+
+    const rawBowlers =
+      (Array.isArray(rawInning.bowling?.allBowlers) && rawInning.bowling.allBowlers.length > 0)
+        ? rawInning.bowling.allBowlers
+        : (Array.isArray(rawInning.bowling?.bowlers) && rawInning.bowling.bowlers.length > 0)
+        ? rawInning.bowling.bowlers
+        : (Array.isArray(rawInning.bowlers) && rawInning.bowlers.length > 0)
+        ? rawInning.bowlers
+        : [];
+
     return {
       batting: {
-        battingTeam: rawInning.batting?.battingTeam || rawInning.battingTeam || fallbackTeam,
+        battingTeam: battingTeamTitle,
         score: {
           runs: innRuns,
-          wicket: rawInning.batting?.score?.wicket ?? rawInning.score?.wicket ?? rawInning.wickets ?? 0,
+          wicket: innWickets,
           over: innOvers,
           CRR: (computedCRR !== "0.00" ? computedCRR : (rawInning.batting?.score?.CRR ?? rawInning.score?.CRR ?? "0.00")),
           projectedScore: rawInning.batting?.score?.projectedScore ?? rawInning.score?.projectedScore ?? 0,
         },
         isSuperOver: isSuperOver,
       },
-      playedBatsman: Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : (Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
+      playedBatsman: rawBatsmen,
       extras: rawInning.extras ?? 0,
       batsmanUpcoming: (Array.isArray(rawInning.batsmanUpcoming) && rawInning.batsmanUpcoming.length > 0)
         ? rawInning.batsmanUpcoming
         : (Array.isArray(score?.batsmanUpcoming) ? score.batsmanUpcoming : []),
       bowling: {
-        allBowlers: Array.isArray(rawInning.bowling?.allBowlers) ? rawInning.bowling.allBowlers : (Array.isArray(rawInning.bowling?.bowlers) ? rawInning.bowling.bowlers : (Array.isArray(rawInning.bowlers) ? rawInning.bowlers : [])),
+        allBowlers: rawBowlers,
       },
       fallOfWickets: Array.isArray(rawInning.fallOfWickets) ? rawInning.fallOfWickets : [],
-      inningNumber: rawInning.inningNumber || 1,
+      inningNumber: rawInning.inningNumber || (inningIdx + 1),
       description: rawInning.description || "",
     };
   };
 
   let superOverCounter = 0;
-  const inningsList = Array.isArray(score?.inning) && score.inning.length > 0
-    ? score.inning.map((inn, idx) => {
-        const isSuperOver = Boolean(
-          inn?.isSuperOver ||
-          inn?.batting?.isSuperOver ||
-          inn?.isSuperOverInning ||
-          idx >= 2
-        );
-        let label = `Inning ${idx + 1}`;
-        if (isSuperOver) {
-          superOverCounter += 1;
-          label = `Super Over ${superOverCounter}`;
-        }
-        return {
-          number: idx + 1,
-          label,
-          data: getInningData(inn, score?.teams?.[idx % 2]?.title || (isSuperOver ? `Super Over ${superOverCounter}` : `Inning ${idx + 1}`), idx)
-        };
-      })
-    : [
-        {
-          number: 1,
-          label: "Inning 1",
-          data: getInningData(inning_I || score, score?.teams?.[0]?.title || "Inning 1", 0)
-        }
-      ];
+  const resolvedInningsList = (() => {
+    if (Array.isArray(score?.inning) && score.inning.length > 0) {
+      return score.inning.map((inn, idx) => {
+        const fallbackInning = idx === 0 ? (score?.innings_1 || score?.score?.innings_1) : (score?.innings_2 || score?.score?.innings_2);
+        return fallbackInning ? { ...fallbackInning, ...inn } : inn;
+      });
+    }
+    const raw1 = score?.innings_1 || score?.score?.innings_1 || inning_I;
+    const raw2 = score?.innings_2 || score?.score?.innings_2;
+    const list = [];
+    if (raw1) list.push(raw1);
+    if (raw2 && (raw2.totalRuns || raw2.totalOvers || raw2.batsman?.length || raw2.score?.runs)) list.push(raw2);
+    if (list.length === 0 && score) list.push(score);
+    return list;
+  })();
+
+  const inningsList = resolvedInningsList.map((inn, idx) => {
+    const isSuperOver = Boolean(
+      inn?.isSuperOver ||
+      inn?.batting?.isSuperOver ||
+      inn?.isSuperOverInning ||
+      idx >= 2
+    );
+    let label = `Inning ${idx + 1}`;
+    if (isSuperOver) {
+      superOverCounter += 1;
+      label = `Super Over ${superOverCounter}`;
+    }
+    const fallbackTeamName = score?.teams?.[idx % 2]?.title || score?.teams?.[idx % 2]?.name || (isSuperOver ? `Super Over ${superOverCounter}` : `Inning ${idx + 1}`);
+    return {
+      number: idx + 1,
+      label,
+      data: getInningData(inn, fallbackTeamName, idx)
+    };
+  });
 
   const selectedInningObj = inningsList.find(i => i.number === activeInning) || inningsList[0];
   const currentInning = selectedInningObj?.data || emptyInning;
@@ -608,6 +658,8 @@ export default function FullScoreCard({
         initialTab={trackerModalTab}
         initialPlayer={selectedTrackerPlayer}
         playerRole={trackerModalRole}
+        initialInning={activeInning}
+        inningsList={inningsList}
         matchId={matchId || score?._id || score?.id}
         matchDetails={score?.matchDetails || score}
         score={score}

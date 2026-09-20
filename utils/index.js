@@ -178,7 +178,7 @@ export const matchRedirectBasedOnStatus = (matchId, status) => {
       return { screen: SCREENS.PlayerSelectionScreen, params: { matchId } };
     case MATCH_STATUS.INNINGS_I_ENDED:
     case MATCH_STATUS.INNINGS_BREAK:
-      return { screen: SCREENS.PlayerSelectionScreen, params: { matchId, isInningsTwo: true, currentInnings: 2 } };
+      return { screen: SCREENS.ScorerScreen, params: { matchId, showInningsComplete: true } };
     case MATCH_STATUS.SUPER_OVER:
     case MATCH_STATUS.MATCH_OPENER_SELECTED:
     case MATCH_STATUS.MATCH_STARTED:

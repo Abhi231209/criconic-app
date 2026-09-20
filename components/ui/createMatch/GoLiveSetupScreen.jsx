@@ -179,6 +179,7 @@ export default function GoLiveSetupScreen() {
   // Success Modal
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [generatedLiveUrl, setGeneratedLiveUrl] = useState("");
+  const isAlreadyLive = Boolean(generatedLiveUrl || isThisMatchLiveOnTournament);
 
   // Fetch initial data
   const fetchData = useCallback(async () => {
@@ -226,6 +227,10 @@ export default function GoLiveSetupScreen() {
         (tournLive && tournLive.active && tournLive.url) ||
         (tournLive?.url && tournLive.active !== false && tournLive.active !== undefined)
       );
+
+      if (matchLive?.url) {
+        setGeneratedLiveUrl(`${WEB_URL}/go-live/${matchLive.url}`);
+      }
 
       if (isTournActive && tournKey) {
         setLiveMode("tournament");
@@ -365,11 +370,23 @@ export default function GoLiveSetupScreen() {
     const teamB = schemes[1] || schemes[0];
     setTeamAColor(teamA);
     setTeamBColor(teamB);
-    const teamAId = mData?.teams?.[0]?.teamId || "teamA";
-    const teamBId = mData?.teams?.[1]?.teamId || "teamB";
+    const teamAId =
+      mData?.teams?.[0]?.teamId?._id ||
+      mData?.teams?.[0]?.teamId ||
+      matchDetails?.teams?.[0]?.teamId?._id ||
+      matchDetails?.teams?.[0]?.teamId ||
+      "TeamA";
+    const teamBId =
+      mData?.teams?.[1]?.teamId?._id ||
+      mData?.teams?.[1]?.teamId ||
+      matchDetails?.teams?.[1]?.teamId?._id ||
+      matchDetails?.teams?.[1]?.teamId ||
+      "TeamB";
     setColorObject({
       [teamAId]: teamA,
       [teamBId]: teamB,
+      TeamA: teamA,
+      TeamB: teamB,
     });
   };
 
@@ -383,12 +400,18 @@ export default function GoLiveSetupScreen() {
   const handleColorChange = (teamSlot, scheme) => {
     if (teamSlot === "TeamA") {
       setTeamAColor(scheme);
-      const id = matchDetails?.teams?.[0]?.teamId || "teamA";
-      setColorObject((prev) => ({ ...prev, [id]: scheme }));
+      const id =
+        matchDetails?.teams?.[0]?.teamId?._id ||
+        matchDetails?.teams?.[0]?.teamId ||
+        "TeamA";
+      setColorObject((prev) => ({ ...prev, [id]: scheme, TeamA: scheme }));
     } else {
       setTeamBColor(scheme);
-      const id = matchDetails?.teams?.[1]?.teamId || "teamB";
-      setColorObject((prev) => ({ ...prev, [id]: scheme }));
+      const id =
+        matchDetails?.teams?.[1]?.teamId?._id ||
+        matchDetails?.teams?.[1]?.teamId ||
+        "TeamB";
+      setColorObject((prev) => ({ ...prev, [id]: scheme, TeamB: scheme }));
     }
   };
 
@@ -416,14 +439,23 @@ export default function GoLiveSetupScreen() {
       });
 
       // 2. Save Theme configuration
-      if (selectedThemeConfig) {
+      const themeToSave = selectedThemeConfig || themes[0];
+      const colorsToSave =
+        colorObject && Object.keys(colorObject).length > 0
+          ? colorObject
+          : {
+              TeamA: (themeToSave?.colorSchemes || [])[0],
+              TeamB: (themeToSave?.colorSchemes || [])[1] || (themeToSave?.colorSchemes || [])[0],
+            };
+
+      if (themeToSave) {
         await request(`api/matches/updateScoreCardTheme/${matchId}`, {
           method: "PUT",
           data: {
             match: matchId,
             configToUpdate: {
-              colorConfig: colorObject,
-              selectedTheme: selectedThemeConfig,
+              colorConfig: colorsToSave,
+              selectedTheme: themeToSave,
             },
           },
         });
@@ -449,6 +481,10 @@ export default function GoLiveSetupScreen() {
             match: matchId,
             userStream: true,
             key: tournKey,
+            themeConfig: {
+              colorConfig: colorsToSave,
+              selectedTheme: themeToSave,
+            },
           },
         });
         const urlKey = goLiveRes?.data?.matchId?.url || tournKey;
@@ -473,6 +509,10 @@ export default function GoLiveSetupScreen() {
           data: {
             match: matchId,
             userStream: false,
+            themeConfig: {
+              colorConfig: colorsToSave,
+              selectedTheme: themeToSave,
+            },
           },
         });
         const urlKey = goLiveRes?.data?.matchId?.url || matchId;
@@ -802,6 +842,72 @@ export default function GoLiveSetupScreen() {
                 </ThemedText>
               </View>
             ))}
+
+            {/* Match live link preview box */}
+            {Boolean(generatedLiveUrl) && (!hasTournament || (!isThisMatchLiveOnTournament && liveMode === "match")) && (
+              <View
+                style={{
+                  backgroundColor: isDarkMode ? "#0F172A" : "#EFF6FF",
+                  borderRadius: 10,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: isDarkMode ? "#1E3A8A44" : "#BFDBFE",
+                  marginTop: 4,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#10B981" }} />
+                  <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary }}>
+                    Match Live Broadcast Link
+                  </ThemedText>
+                </View>
+                <ThemedText
+                  className="font-medium text-xs"
+                  style={{ color: C.text, marginBottom: 10 }}
+                  numberOfLines={1}
+                >
+                  {generatedLiveUrl}
+                </ThemedText>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: `${COLORS.primary}18`,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      gap: 4,
+                    }}
+                    onPress={() => handleCopy(generatedLiveUrl)}
+                  >
+                    <Copy size={13} color={COLORS.primary} />
+                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary }}>
+                      Copy Link
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: `${COLORS.primary}18`,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      gap: 4,
+                    }}
+                    onPress={() => handleShare(generatedLiveUrl)}
+                  >
+                    <Share2 size={13} color={COLORS.primary} />
+                    <ThemedText className="font-bold text-xs" style={{ color: COLORS.primary }}>
+                      Share
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -1049,7 +1155,7 @@ export default function GoLiveSetupScreen() {
             <>
               <Zap size={18} color="#ffffff" />
               <ThemedText className="font-bold text-base text-white" style={{ marginLeft: 8 }}>
-                Launch Live Stream
+                {isAlreadyLive ? "Save & Update Live Stream" : "Launch Live Stream"}
               </ThemedText>
             </>
           )}
@@ -1066,12 +1172,16 @@ export default function GoLiveSetupScreen() {
                 className="font-extrabold text-sm"
                 style={{ color: isThisMatchLiveOnTournament ? "#D97706" : "#DC2626" }}
               >
-                {isThisMatchLiveOnTournament ? "TOURNAMENT LIVE" : "LIVE NOW"}
+                {isThisMatchLiveOnTournament ? "TOURNAMENT LIVE" : isAlreadyLive ? "UPDATED LIVE" : "LIVE NOW"}
               </ThemedText>
             </View>
 
             <ThemedText className="font-bold text-xl" style={{ color: C.text, textAlign: "center", marginTop: 12 }}>
-              {isThisMatchLiveOnTournament ? "Match is Broadcasting on Tournament!" : "Match Stream is Live!"}
+              {isThisMatchLiveOnTournament
+                ? "Match is Broadcasting on Tournament!"
+                : isAlreadyLive
+                ? "Live Stream & Theme Updated!"
+                : "Match Stream is Live!"}
             </ThemedText>
             <ThemedText
               className="font-normal text-xs"
@@ -1079,6 +1189,8 @@ export default function GoLiveSetupScreen() {
             >
               {isThisMatchLiveOnTournament
                 ? "This match is now streaming on the tournament's shared live link. Anyone following the tournament can watch in real-time:"
+                : isAlreadyLive
+                ? "Your live overlay theme and settings have been updated in real-time. Your live broadcast link remains unchanged:"
                 : "Share this live broadcast link with fans, players, and viewers to watch real-time overlay scores:"}
             </ThemedText>
 

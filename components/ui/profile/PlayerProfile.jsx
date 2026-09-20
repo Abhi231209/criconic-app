@@ -154,6 +154,15 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           user = authRes?.data?.user;
         }
 
+        // If user has no teams or unpopulated string team IDs or missing titles, enrich with withTeam endpoint
+        if (user && (!Array.isArray(user.teams) || user.teams.length === 0 || typeof user.teams[0] === "string" || (!user.teams[0]?.title && !user.teams[0]?.name))) {
+          const withTeamRes = await request(`api/users/withTeam/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
+          const tList = withTeamRes?.data?.content?.teams || withTeamRes?.data?.teams || withTeamRes?.data?.data?.teams;
+          if (Array.isArray(tList) && tList.length > 0) {
+            user = { ...user, teams: tList };
+          }
+        }
+
         if (isMounted && user && typeof user === "object") {
           setFetchedPlayer(user);
         }
@@ -550,6 +559,26 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     route?.params?.score,
   ]);
 
+  const resolveBattingAvg = (rawObj, fallbackAvg) => {
+    const runs = Number(rawObj?.runs);
+    const innings = Number(rawObj?.innings ?? rawObj?.matches);
+    const notOut = Number(rawObj?.notOut || 0);
+    if (!isNaN(runs) && !isNaN(innings) && innings > 0) {
+      const outs = innings - notOut;
+      return outs <= 0 ? (runs > 0 ? runs.toFixed(2) : "0.00") : (runs / outs).toFixed(2);
+    }
+    return rawObj?.avg ?? fallbackAvg;
+  };
+
+  const resolveBowlingAvg = (rawObj, fallbackAvg) => {
+    const runs = Number(rawObj?.runsGiven ?? rawObj?.runs);
+    const wickets = Number(rawObj?.wickets);
+    if (!isNaN(runs) && !isNaN(wickets) && wickets > 0) {
+      return (runs / wickets).toFixed(2);
+    }
+    return rawObj?.avg ?? fallbackAvg;
+  };
+
   const getBattingStatsForType = (type) => {
     const derived = matchDerivedStats[type] || matchDerivedStats.all;
     if (type === "all") {
@@ -558,7 +587,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         matches: hasBackend ? (bStats.matches ?? derived.matches) : derived.matches,
         innings: hasBackend ? (bStats.innings ?? bStats.matches ?? derived.innings) : derived.innings,
         runs: hasBackend ? (bStats.runs ?? derived.runs) : derived.runs,
-        average: hasBackend ? (bStats.avg ?? derived.average) : derived.average,
+        average: hasBackend ? resolveBattingAvg(bStats, derived.average) : derived.average,
         strikeRate: hasBackend ? (bStats.strikeRate ?? derived.strikeRate) : derived.strikeRate,
         highest: hasBackend ? (bStats.highestScore ?? derived.highest) : derived.highest,
         centuries: hasBackend ? (bStats._100s ?? derived.centuries) : derived.centuries,
@@ -573,7 +602,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       matches: hasBackend ? (backendType.matches ?? derived.matches) : derived.matches,
       innings: hasBackend ? (backendType.innings ?? derived.innings) : derived.innings,
       runs: hasBackend ? (backendType.runs ?? derived.runs) : derived.runs,
-      average: hasBackend ? (backendType.avg ?? derived.average) : derived.average,
+      average: hasBackend ? resolveBattingAvg(backendType, derived.average) : derived.average,
       strikeRate: hasBackend ? (backendType.strikeRate ?? derived.strikeRate) : derived.strikeRate,
       highest: hasBackend ? (backendType.highestScore ?? derived.highest) : derived.highest,
       centuries: hasBackend ? (backendType._100s ?? derived.centuries) : derived.centuries,
@@ -591,7 +620,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         matches: hasBackend ? (bowlStats.matches ?? derived.matches) : derived.matches,
         innings: hasBackend ? (bowlStats.innings ?? derived.bowlingInnings) : derived.bowlingInnings,
         wickets: hasBackend ? (bowlStats.wickets ?? derived.wickets) : derived.wickets,
-        average: hasBackend ? (bowlStats.avg ?? derived.bowlingAverage) : derived.bowlingAverage,
+        average: hasBackend ? resolveBowlingAvg(bowlStats, derived.bowlingAverage) : derived.bowlingAverage,
         economy: hasBackend ? (bowlStats.eco ?? derived.economy) : derived.economy,
         bestBowling: hasBackend ? (bowlStats.bestBowling ?? derived.bestBowling) : derived.bestBowling,
         strikeRate: hasBackend ? (bowlStats.strikeRate ?? derived.bowlingStrikeRate) : derived.bowlingStrikeRate,
@@ -606,7 +635,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       matches: hasBackend ? (backendType.matches ?? derived.matches) : derived.matches,
       innings: hasBackend ? (backendType.innings ?? derived.bowlingInnings) : derived.bowlingInnings,
       wickets: hasBackend ? (backendType.wickets ?? derived.wickets) : derived.wickets,
-      average: hasBackend ? (backendType.avg ?? derived.bowlingAverage) : derived.bowlingAverage,
+      average: hasBackend ? resolveBowlingAvg(backendType, derived.bowlingAverage) : derived.bowlingAverage,
       economy: hasBackend ? (backendType.eco ?? derived.economy) : derived.economy,
       bestBowling: hasBackend ? (backendType.bestBowling ?? derived.bestBowling) : derived.bestBowling,
       strikeRate: hasBackend ? (backendType.strikeRate ?? derived.bowlingStrikeRate) : derived.bowlingStrikeRate,
@@ -652,73 +681,353 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   };
 
   const teams = React.useMemo(() => {
-    const list = (Array.isArray(fetchedPlayer?.teams) && fetchedPlayer.teams.length > 0
+    const rawList = (Array.isArray(fetchedPlayer?.teams) && fetchedPlayer.teams.length > 0
       ? fetchedPlayer.teams
       : Array.isArray(target?.teams) ? target.teams : []
-    ).map((t, idx) => ({
-      id: t?._id || t?.id || t?.teamId?._id || String(idx),
-      name: t?.title || t?.name || t?.teamId?.title || "Team",
-      shortName: t?.shortName || t?.teamId?.shortName || "",
-      location: t?.location || t?.teamId?.location || "",
-      seasons: t?.seasons || "Current",
-      matches: t?.matches || 0,
-      runs: t?.runs || 0,
-      wickets: t?.wickets || 0,
-      role: t?.role || "Player",
-    }));
+    );
 
-    // If no teams registered in profile, extract teams from player's matches
-    if (list.length === 0) {
-      const seenTeamNames = new Set();
-      const targetNames = [player.name, target?.username, target?.name].filter(Boolean).map(n => n.toLowerCase());
-      const isPlayerMatch = (p) => {
-        if (!p) return false;
-        const pId = p.id?._id || p.id?.id || p.id || p._id || p.playerId;
-        if (pId && targetId && String(pId) === String(targetId)) return true;
-        const pName = (p.username || p.name || "").toLowerCase();
-        return pName && targetNames.includes(pName);
-      };
+    // Build consolidated list of all matches available
+    const allMatchesList = [];
+    const seenMatchIds = new Set();
+    const addMatch = (m) => {
+      if (!m || typeof m !== "object") return;
+      const mId = String(m._id || m.id || m.matchId || "");
+      if (mId && seenMatchIds.has(mId)) return;
+      if (mId) seenMatchIds.add(mId);
+      allMatchesList.push(m);
+    };
 
-      const scanTeam = (teamObj) => {
-        if (!teamObj) return;
-        const tName = teamObj.title || teamObj.name || teamObj.teamName;
-        if (!tName || seenTeamNames.has(tName)) return;
-        seenTeamNames.add(tName);
-        list.push({
-          id: teamObj._id || teamObj.id || tName,
-          name: tName,
-          shortName: teamObj.shortName || "",
-          seasons: "Current",
-          matches: battingStats.all.matches || 1,
-          runs: battingStats.all.runs || 0,
-          wickets: bowlingStats.all.wickets || 0,
-          role: player.role || "Player",
-        });
-      };
+    if (route?.params?.match) addMatch(route.params.match);
+    if (route?.params?.score) addMatch(route.params.score);
+    playerMatches.forEach((m) => {
+      if (typeof m === "object") addMatch(m);
+      else if (typeof m === "string" && detailedMatchesMap[m]) addMatch(detailedMatchesMap[m]);
+    });
+    Object.values(detailedMatchesMap || {}).forEach(addMatch);
 
-      playerMatches.forEach((m) => {
-        if (typeof m === "object") {
-          if (m.teams?.[0]?.players?.some(isPlayerMatch)) scanTeam(m.teams[0]);
-          else if (m.teams?.[1]?.players?.some(isPlayerMatch)) scanTeam(m.teams[1]);
-          else if (m.teamA?.players?.some(isPlayerMatch)) scanTeam(m.teamA);
-          else if (m.teamB?.players?.some(isPlayerMatch)) scanTeam(m.teamB);
+    const targetNames = [
+      player?.name,
+      target?.username,
+      target?.name,
+      target?.playerName,
+      sanitizedRoutePlayer?.name,
+      sanitizedRoutePlayer?.username,
+      authUser?.username,
+      authUser?.name,
+    ]
+      .filter(Boolean)
+      .map((n) => String(n).trim().toLowerCase());
+
+    const isMatchForCurrentPlayer = (p) => {
+      if (!p) return false;
+      const pId = String(p.id?._id || p.id?.id || p.id || p._id || p.playerId || p.userId || "");
+      if (pId && targetId && pId === String(targetId)) return true;
+      const pName = (p.username || p.name || p.playerName || p.id?.username || p.id?.name || "").toString().trim().toLowerCase();
+      return pName && targetNames.includes(pName);
+    };
+
+    // Helper to calculate player's runs and wickets from a match
+    const getPlayerStatsFromMatch = (m) => {
+      let batRuns = 0;
+      let bowlWickets = 0;
+
+      const innings = [
+        ...(Array.isArray(m.inning) ? m.inning : []),
+        ...(Array.isArray(m.score?.inning) ? m.score.inning : []),
+        ...(Array.isArray(m.innings) ? m.innings : []),
+        ...(Array.isArray(m.scoreCard) ? m.scoreCard : []),
+        ...(Array.isArray(m.score?.scoreCard) ? m.score.scoreCard : []),
+      ];
+      if (m.innings_1 || m.score?.innings_1) innings.push(m.innings_1 || m.score.innings_1);
+      if (m.innings_2 || m.score?.innings_2) innings.push(m.innings_2 || m.score.innings_2);
+
+      innings.forEach((inn) => {
+        if (!inn) return;
+        const batsmen = [
+          ...(Array.isArray(inn.playedBatsman) ? inn.playedBatsman : []),
+          ...(Array.isArray(inn.batsman) ? inn.batsman : []),
+          ...(Array.isArray(inn.batting?.batsmen) ? inn.batting.batsmen : []),
+          ...(Array.isArray(inn.outBatsman) ? inn.outBatsman : []),
+        ];
+        const batRec = batsmen.find(isMatchForCurrentPlayer);
+        if (batRec) {
+          batRuns += Number(batRec.runs ?? batRec.score ?? 0);
+        }
+
+        const bowlers = [
+          ...(Array.isArray(inn.bowling?.allBowlers) ? inn.bowling.allBowlers : []),
+          ...(Array.isArray(inn.bowling?.bowlers) ? inn.bowling.bowlers : []),
+          ...(Array.isArray(inn.bowlers) ? inn.bowlers : []),
+          ...(Array.isArray(inn.bowling?.lastTwoBowlers) ? inn.bowling.lastTwoBowlers : []),
+          ...(inn.bowler ? [inn.bowler] : []),
+        ];
+        const bowlRec = bowlers.find(isMatchForCurrentPlayer);
+        if (bowlRec) {
+          bowlWickets += Number(bowlRec.wicketsTaken ?? bowlRec.wickets ?? bowlRec.wicket ?? 0);
         }
       });
-      if (list.length === 0 && player.team && player.team !== "Unassigned") {
-        list.push({
-          id: "curr",
-          name: player.team,
-          shortName: "",
-          seasons: "Current",
-          matches: battingStats.all.matches || 0,
-          runs: battingStats.all.runs || 0,
-          wickets: bowlingStats.all.wickets || 0,
-          role: player.role || "Player",
+
+      if (batRuns === 0) {
+        const topBatsmen = [
+          ...(Array.isArray(m.batsman) ? m.batsman : []),
+          ...(Array.isArray(m.score?.batsman) ? m.score.batsman : []),
+        ];
+        const topBat = topBatsmen.find(isMatchForCurrentPlayer);
+        if (topBat) batRuns = Number(topBat.runs ?? topBat.score ?? 0);
+      }
+
+      if (bowlWickets === 0) {
+        const topBowlers = [
+          ...(m.bowler ? [m.bowler] : []),
+          ...(m.score?.bowler ? [m.score.bowler] : []),
+          ...(Array.isArray(m.bowlers) ? m.bowlers : []),
+          ...(Array.isArray(m.score?.bowlers) ? m.score.bowlers : []),
+        ];
+        const topBowl = topBowlers.find(isMatchForCurrentPlayer);
+        if (topBowl) bowlWickets = Number(topBowl.wicketsTaken ?? topBowl.wickets ?? 0);
+      }
+
+      // Check player performance object if present
+      const allTeams = [m.teams?.[0], m.teams?.[1], m.teamA, m.teamB].filter(Boolean);
+      allTeams.forEach((teamEntry) => {
+        const pRec = teamEntry?.players?.find(isMatchForCurrentPlayer);
+        if (pRec?.performance?.stats?.batting?.runs != null) {
+          batRuns = Math.max(batRuns, Number(pRec.performance.stats.batting.runs || 0));
+        }
+        if (pRec?.performance?.stats?.bowling?.wickets != null) {
+          bowlWickets = Math.max(bowlWickets, Number(pRec.performance.stats.bowling.wickets || 0));
+        }
+      });
+
+      return { batRuns, bowlWickets };
+    };
+
+    // Helper to test if a match involves this team and player played for this team
+    const matchBelongsToTeam = (m, teamObj) => {
+      const tId = String(teamObj._id || teamObj.id || teamObj.teamId?._id || teamObj.teamId || "").trim();
+      const tName = String(teamObj.title || teamObj.name || teamObj.teamName || teamObj.teamId?.title || teamObj.teamId?.name || "").trim().toLowerCase();
+      const tShort = String(teamObj.shortName || teamObj.teamId?.shortName || "").trim().toLowerCase();
+
+      const mTeams = [m.teams?.[0], m.teams?.[1], m.teamA, m.teamB].filter(Boolean);
+      let matchTeamObj = null;
+
+      for (const mt of mTeams) {
+        const mtId = String(mt._id || mt.id || mt.teamId?._id || mt.teamId || "").trim();
+        const mtName = String(mt.title || mt.name || mt.teamName || mt.teamId?.title || mt.teamId?.name || "").trim().toLowerCase();
+        const mtShort = String(mt.shortName || mt.teamId?.shortName || "").trim().toLowerCase();
+
+        if (
+          (tId && mtId && tId === mtId) ||
+          (tName && mtName && (tName === mtName || tName.includes(mtName) || mtName.includes(tName))) ||
+          (tShort && mtShort && tShort === mtShort)
+        ) {
+          matchTeamObj = mt;
+          break;
+        }
+      }
+
+      if (!matchTeamObj) return false;
+
+      // Check if player played for this team
+      if (matchTeamObj.players?.some(isMatchForCurrentPlayer) || matchTeamObj.squad?.some(isMatchForCurrentPlayer)) {
+        return true;
+      }
+
+      // If other team exists and contains player, this is NOT the player's team in this match
+      const otherTeamObj = mTeams.find((mt) => mt !== matchTeamObj);
+      if (otherTeamObj?.players?.some(isMatchForCurrentPlayer) || otherTeamObj?.squad?.some(isMatchForCurrentPlayer)) {
+        return false;
+      }
+
+      // If player participated anywhere in the match
+      return isMatchForPlayer(m, targetId) || isMatchForCurrentPlayer(m);
+    };
+
+    const computeTeamDetails = (rawTeam, isOnlyTeam = false) => {
+      const teamId = rawTeam?._id || rawTeam?.id || rawTeam?.teamId?._id || rawTeam?.teamId || "1";
+      const teamName = rawTeam?.title || rawTeam?.name || rawTeam?.teamName || rawTeam?.teamId?.title || "Team";
+      const shortName = rawTeam?.shortName || rawTeam?.teamId?.shortName || "";
+      const location = rawTeam?.location || rawTeam?.teamId?.location || "";
+
+      let matchesCount = 0;
+      let runsCount = 0;
+      let wicketsCount = 0;
+      const yearsSet = new Set();
+
+      const hasBackendStats = rawTeam?.matches !== undefined && rawTeam?.matches !== null;
+      if (hasBackendStats) {
+        matchesCount = Number(rawTeam.matches || 0);
+        runsCount = Number(rawTeam.runs || 0);
+        wicketsCount = Number(rawTeam.wickets || 0);
+      } else {
+        // Scan loaded matches for this team
+        allMatchesList.forEach((m) => {
+          if (matchBelongsToTeam(m, rawTeam)) {
+            matchesCount++;
+            const { batRuns, bowlWickets } = getPlayerStatsFromMatch(m);
+            runsCount += batRuns;
+            wicketsCount += bowlWickets;
+            const matchDate = m.startDate || m.matchDate || m.createdAt || m.date || m.score?.matchDate;
+            if (matchDate) {
+              const yr = new Date(matchDate).getFullYear();
+              if (!isNaN(yr) && yr > 2000) yearsSet.add(yr);
+            }
+          }
         });
       }
+
+      // If still 0 and player only has this 1 team (or this is the only team), fallback to career stats
+      if (matchesCount === 0 && isOnlyTeam) {
+        matchesCount = Number(battingStats.all.matches || bowlingStats.all.matches || bStats.matches || bowlStats.matches || 0);
+        runsCount = Number(battingStats.all.runs ?? bStats.runs ?? 0);
+        wicketsCount = Number(bowlingStats.all.wickets ?? bowlStats.wickets ?? 0);
+      }
+
+      // Determine Seasons
+      let seasons = "Current";
+      if (rawTeam?.seasons && rawTeam.seasons !== "Current" && rawTeam.seasons !== 0 && rawTeam.seasons !== "0") {
+        seasons = String(rawTeam.seasons);
+      } else if (yearsSet.size > 0) {
+        const sorted = Array.from(yearsSet).sort((a, b) => a - b);
+        seasons = sorted.length === 1 ? String(sorted[0]) : `${sorted[0]} - ${sorted[sorted.length - 1]}`;
+      } else if (rawTeam?.createdAt) {
+        const cYr = new Date(rawTeam.createdAt).getFullYear();
+        const curYr = new Date().getFullYear();
+        seasons = !isNaN(cYr) && cYr > 2000 ? (cYr === curYr ? String(cYr) : `${cYr} - ${curYr}`) : String(curYr);
+      } else {
+        const curYr = new Date().getFullYear();
+        seasons = `${curYr - 1} - ${curYr}`;
+      }
+
+      // Determine Role
+      let role = "Player";
+      if (rawTeam?.role && typeof rawTeam.role === "string" && rawTeam.role !== "Player" && isNaN(Number(rawTeam.role))) {
+        role = rawTeam.role;
+      } else {
+        const isCapt = (
+          String(rawTeam?.captain?._id || rawTeam?.captain?.id || rawTeam?.captain || "") === String(targetId) ||
+          (Array.isArray(rawTeam?.players) && rawTeam.players.some((p) => {
+            const pId = String(p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || "");
+            const pName = (p?.username || p?.name || "").toLowerCase().trim();
+            const isThis = (pId && pId === String(targetId)) || (pName && targetNames.includes(pName));
+            return isThis && (p.isCaptain || p.captain);
+          }))
+        );
+
+        if (isCapt) {
+          role = "Captain";
+        } else {
+          const pInSquad = Array.isArray(rawTeam?.players) ? rawTeam.players.find((p) => {
+            const pId = String(p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || "");
+            const pName = (p?.username || p?.name || "").toLowerCase().trim();
+            return (pId && pId === String(targetId)) || (pName && targetNames.includes(pName));
+          }) : null;
+
+          if (pInSquad?.isKeeper || pInSquad?.wicketKeeper) {
+            role = "WK-Batsman";
+          } else if (pInSquad?.role && typeof pInSquad.role === "string" && pInSquad.role !== "Player" && isNaN(Number(pInSquad.role))) {
+            role = pInSquad.role;
+          } else if (target?.playingRole && target.playingRole !== "Player") {
+            role = target.playingRole;
+          } else if (sanitizedRoutePlayer?.role && sanitizedRoutePlayer.role !== "Player") {
+            role = sanitizedRoutePlayer.role;
+          } else if (target?.role && typeof target.role === "string" && target.role !== "Player" && isNaN(Number(target.role))) {
+            role = target.role;
+          } else if (wicketsCount >= 1 && runsCount >= 25) {
+            role = "All-Rounder";
+          } else if (wicketsCount >= 2) {
+            role = "Bowler";
+          } else if (runsCount > 0) {
+            role = "Batsman";
+          } else if (matchesCount > 0 && (target?.ballStyle || target?.bowlingStyle)) {
+            role = "Bowler";
+          } else if (matchesCount > 0 && (target?.batStyle || target?.battingStyle)) {
+            role = "Batsman";
+          } else if (matchesCount > 0) {
+            role = "All-Rounder";
+          } else {
+            role = "Player";
+          }
+        }
+      }
+
+      return {
+        id: teamId,
+        name: teamName,
+        shortName,
+        location,
+        seasons,
+        matches: matchesCount,
+        runs: runsCount,
+        wickets: wicketsCount,
+        role,
+      };
+    };
+
+    let list = rawList
+      .filter((t) => t && (typeof t === "object" || typeof t === "string"))
+      .map((t) => {
+        const teamObj = typeof t === "string" ? { _id: t, title: "Team" } : t;
+        return computeTeamDetails(teamObj, rawList.length === 1);
+      })
+      .filter((t) => t.name && t.name !== "Team");
+
+    // If no resolved teams found in profile, extract teams from player's matches
+    if (list.length === 0) {
+      const seenTeamNames = new Set();
+      const discoveredTeams = [];
+
+      allMatchesList.forEach((m) => {
+        if (typeof m === "object" && m) {
+          const checkAndAdd = (teamEntry) => {
+            if (!teamEntry) return;
+            const tName = teamEntry.title || teamEntry.name || teamEntry.teamName;
+            if (!tName || seenTeamNames.has(tName)) return;
+            seenTeamNames.add(tName);
+            discoveredTeams.push(teamEntry);
+          };
+
+          if (m.teams?.[0]?.players?.some(isMatchForCurrentPlayer)) checkAndAdd(m.teams[0]);
+          else if (m.teams?.[1]?.players?.some(isMatchForCurrentPlayer)) checkAndAdd(m.teams[1]);
+          else if (m.teamA?.players?.some(isMatchForCurrentPlayer)) checkAndAdd(m.teamA);
+          else if (m.teamB?.players?.some(isMatchForCurrentPlayer)) checkAndAdd(m.teamB);
+          else if (m.teams?.[0]) checkAndAdd(m.teams[0]);
+          else if (m.teams?.[1]) checkAndAdd(m.teams[1]);
+        }
+      });
+
+      list = discoveredTeams.map((teamEntry) => computeTeamDetails(teamEntry, discoveredTeams.length === 1));
+
+      if (list.length === 0 && player.team && player.team !== "Unassigned") {
+        list.push(computeTeamDetails({ title: player.team }, true));
+      }
     }
+
     return list;
-  }, [fetchedPlayer?.teams, target?.teams, playerMatches, player.name, player.team, battingStats.all, bowlingStats.all, targetId]);
+  }, [
+    fetchedPlayer?.teams,
+    target?.teams,
+    playerMatches,
+    detailedMatchesMap,
+    route?.params?.match,
+    route?.params?.score,
+    player?.name,
+    player?.team,
+    battingStats.all,
+    bowlingStats.all,
+    targetId,
+    target?.username,
+    target?.name,
+    target?.role,
+    target?.playingRole,
+    target?.batStyle,
+    target?.ballStyle,
+    sanitizedRoutePlayer,
+    authUser,
+    bStats,
+    bowlStats,
+    isMatchForPlayer,
+  ]);
 
   const liveMatches = [];
   const recentMatches = [];

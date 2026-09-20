@@ -182,6 +182,18 @@ export default function ScorerScreen() {
   const [score, setScore] = useState({});
   const [matchDetails, setMatchDetails] = useState(null);
 
+  const isSuperOver = Boolean(
+    score?.isSuperOver ||
+    score?.score?.isSuperOver ||
+    score?.["innings_" + (score?.currentInnings || matchDetails?.currentInnings || 1)]?.isSuperOver ||
+    score?.status === MATCH_STATUS.SUPER_OVER ||
+    score?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER ||
+    matchDetails?.status === MATCH_STATUS.SUPER_OVER ||
+    matchDetails?.isSuperOver ||
+    route.params?.isSuperOver ||
+    route.params?.status === MATCH_STATUS.SUPER_OVER
+  );
+
   const [refreshing, setRefreshing] = useState(false);
   const [isStatusChecked, setIsStatusChecked] = useState(false);
 
@@ -328,6 +340,7 @@ export default function ScorerScreen() {
   const [selectStrikerModalVisible, setSelectStrikerModalVisible] = useState(false);
   const [strikerCandidates, setStrikerCandidates] = useState([]);
   const pendingWicketFlowRef = useRef(null);
+  const checkAndPromptNextBatterRef = useRef(null);
 
   const handleShowCustomRunsModal = (title, type) => {
     setCustomModalDescription({ title, type });
@@ -455,23 +468,19 @@ export default function ScorerScreen() {
     useCallback(() => {
       isLeavingRef.current = false;
 
-      // Throttle focus refetch to avoid repeated calls
-      const now = Date.now();
-      if (now - lastFocusFetchRef.current > 5000) {
-        lastFocusFetchRef.current = now;
-        if (socketRef.current && matchID) {
-          socketRef.current.emit("score", { matchId: matchID, matchID });
-        }
-        if (matchID) {
-          matchesApi
-            .getMatchById(matchID)
-            .then((res) => {
-              if (res?.data) {
-                setMatchDetails(res.data);
-              }
-            })
-            .catch(() => {});
-        }
+      // Always request score refresh on focus
+      if (socketRef.current && matchID) {
+        socketRef.current.emit("score", { matchId: matchID, matchID });
+      }
+      if (matchID) {
+        matchesApi
+          .getMatchById(matchID)
+          .then((res) => {
+            if (res?.data) {
+              setMatchDetails(res.data);
+            }
+          })
+          .catch(() => {});
       }
 
       const backAction = () => {
@@ -723,22 +732,19 @@ export default function ScorerScreen() {
       }
 
       // Validation 2: all-out check (no incoming batters left)
-      const maxWickets = latestScore?.matchConfig?.singleBatsmanAllowed
+      const isSuperOverInn = Boolean(
+        latestScore?.isSuperOver ||
+        latestScore?.score?.isSuperOver ||
+        latestScore?.["innings_" + (latestScore?.currentInnings || 1)]?.isSuperOver ||
+        matchDetails?.status === MATCH_STATUS.SUPER_OVER ||
+        route.params?.isSuperOver
+      );
+      const maxWickets = isSuperOverInn
+        ? 2
+        : latestScore?.matchConfig?.singleBatsmanAllowed
         ? battingSquad.length
         : Math.max(0, battingSquad.length - 1);
       const isOddInning = ((latestScore?.currentInnings || latestScore?.currentInning || 1) % 2 === 1);
-
-      if (
-        battingSquad.length > 0 &&
-        latestScore?.currentInningWicket >= maxWickets
-      ) {
-        console.log("[WICKET] All out reached — skipping incoming batter");
-        if (isOddInning) {
-          console.log("[WICKET] Inning all out — setting isInningCompleted");
-          matchStatusHandler("isInningCompleted", true);
-        }
-        return;
-      }
 
       // Snapshot active batsmen before the wicket so we always know the surviving partner
       const snapshotActiveBatsmen = (latestScore?.batsman || []).map((b) => ({
@@ -755,6 +761,21 @@ export default function ScorerScreen() {
         options,
         activeBatsmen: snapshotActiveBatsmen,
       };
+
+      if (
+        (isSuperOverInn || battingSquad.length > 0) &&
+        latestScore?.currentInningWicket >= maxWickets
+      ) {
+        console.log("[WICKET] All out reached — skipping incoming batter");
+        if (isOddInning) {
+          console.log("[WICKET] Inning all out — setting isInningCompleted");
+          matchStatusHandler("isInningCompleted", true);
+          handleInningsCompleteRef.current?.();
+        } else {
+          setCommitteeEndModalVisible(true);
+        }
+        return;
+      }
 
       const allOutBatsmenIds = [
         ...(latestScore?.outBatsman || []).map((b) => String(b.id || b.playerId || b._id)),
@@ -803,25 +824,96 @@ export default function ScorerScreen() {
     const pendingFlow = pendingWicketFlowRef.current;
     const isNonStrikerWicket = pendingFlow?.type === 2;
     const shouldPromptStrike = Boolean(pendingFlow?.callSelectStrike);
-    const outBatmanId = String(pendingFlow?.options?.outBatman || "");
+    const rawOutId =
+      pendingFlow?.options?.outBatman?.playerId ||
+      pendingFlow?.options?.outBatman?.id ||
+      pendingFlow?.options?.outBatman?._id ||
+      pendingFlow?.options?.outBatman ||
+      "";
+    const outBatmanId = typeof rawOutId === "object" ? "" : String(rawOutId);
 
-    const newBatterId = player.id || player._id || player.playerId;
+    const newBatterId = String(player.id || player._id || player.playerId || "");
     const newBatterName = player.name || player.username;
 
-    const data = {
-      userId,
-      matchId: matchID,
-      action: "BATSMAN_SELECTED",
-      data: {
-        batsman: {
-          name: newBatterName,
-          id: newBatterId,
-          isStrikeEnd: isNonStrikerWicket ? false : true,
-        },
+    updateScore(MATCH_ACTION.BATSMAN_SELECTED, {
+      batsman: {
+        name: newBatterName,
+        id: newBatterId,
+        isStrikeEnd: isNonStrikerWicket ? false : true,
       },
-    };
-    emit("update-score", data);
+    });
     setNextBatterModalVisible(false);
+
+    // Optimistically update score.batsman so the incoming batsman and strike indicator appear immediately
+    setScore((prev) => {
+      if (!prev) return prev;
+      const curBatsmen = prev.batsman || [];
+
+      // Determine who was out:
+      let resolvedOutId = outBatmanId;
+      if (!resolvedOutId) {
+        const striker = curBatsmen.find((b) => b?.isStrikeEnd);
+        const nonStriker = curBatsmen.find((b) => !b?.isStrikeEnd);
+        resolvedOutId = isNonStrikerWicket
+          ? String(nonStriker?.playerId || nonStriker?.id || nonStriker?._id || "")
+          : String(striker?.playerId || striker?.id || striker?._id || "");
+      }
+
+      // Mark the out batsman as out in the batsman history
+      const updatedExistingBatsmen = curBatsmen.map((b) => {
+        const bId = String(b?.playerId || b?.id || b?._id || "");
+        if (resolvedOutId && bId === resolvedOutId) {
+          return {
+            ...b,
+            notOut: false,
+            dismissalInfo: b.dismissalInfo || { dismissalType: "out" },
+            isStrikeEnd: false,
+          };
+        }
+        return b;
+      });
+
+      // Find the surviving partner (must NOT be the outed batsman and NOT the incoming batter)
+      const surviving = updatedExistingBatsmen.filter((b) => {
+        const bId = String(b?.playerId || b?.id || b?._id || "");
+        const isOut = b?.notOut === false || Boolean(b?.dismissalInfo) || (resolvedOutId && bId === resolvedOutId);
+        const isNew = bId === newBatterId;
+        return !isOut && !isNew;
+      });
+
+      const survivingPartner = surviving[0];
+
+      const incomingBatter = {
+        name: newBatterName,
+        id: newBatterId,
+        playerId: newBatterId,
+        notOut: true,
+        runs: 0,
+        ballsFaced: 0,
+        fours: 0,
+        sixes: 0,
+        sr: 0,
+        isStrikeEnd: isNonStrikerWicket ? false : true,
+      };
+
+      if (survivingPartner) {
+        survivingPartner.isStrikeEnd = isNonStrikerWicket ? true : false;
+      }
+
+      const activeTwo = isNonStrikerWicket
+        ? (survivingPartner ? [survivingPartner, incomingBatter] : [incomingBatter])
+        : (survivingPartner ? [incomingBatter, survivingPartner] : [incomingBatter]);
+
+      const outBatsmen = updatedExistingBatsmen.filter(
+        (b) => b?.notOut === false || Boolean(b?.dismissalInfo) || (resolvedOutId && String(b?.playerId || b?.id || b?._id || "") === resolvedOutId)
+      );
+
+      return {
+        ...prev,
+        batsman: activeTwo,
+        playedBatsman: [...(prev.playedBatsman || updatedExistingBatsmen), incomingBatter],
+      };
+    });
 
     if (shouldPromptStrike) {
       // Find surviving partner:
@@ -833,29 +925,47 @@ export default function ScorerScreen() {
         name: b.name || b.username,
         username: b.name || b.username,
         isStrikeEnd: b.isStrikeEnd,
+        notOut: b.notOut,
+        dismissalInfo: b.dismissalInfo,
       }));
 
-      // A surviving batter is one whose ID != outBatmanId
+      // Determine resolvedOutId
+      let resolvedOutId = outBatmanId;
+      if (!resolvedOutId) {
+        const striker = snapshotBatsmen.find((b) => b?.isStrikeEnd);
+        const nonStriker = snapshotBatsmen.find((b) => !b?.isStrikeEnd);
+        resolvedOutId = String(
+          isNonStrikerWicket
+            ? (nonStriker?.id || nonStriker?.playerId || "")
+            : (striker?.id || striker?.playerId || "")
+        );
+      }
+
+      // A surviving batter is one whose ID != resolvedOutId, not the new batter, and not out
       let survivingBatter = snapshotBatsmen.find((b) => {
         const bId = String(b.id || b.playerId || "");
-        return bId && outBatmanId && bId !== outBatmanId;
+        return bId && (!resolvedOutId || bId !== resolvedOutId) && bId !== newBatterId;
       });
 
-      // Fallback 2: Check current live batsmen for someone who is not outBatmanId and not the incoming player
+      // Fallback 2: Check current live batsmen for someone who is not resolvedOutId and not the incoming player
       if (!survivingBatter) {
         survivingBatter = currentLiveBatsmen.find((b) => {
           const bId = String(b.id || b.playerId || "");
-          const isNotOut = outBatmanId ? bId !== outBatmanId : true;
-          const isNotNew = String(newBatterId) !== bId;
+          const isNotOut = b.notOut !== false && !b.dismissalInfo && (!resolvedOutId || bId !== resolvedOutId);
+          const isNotNew = bId !== newBatterId;
           return isNotOut && isNotNew;
         });
       }
 
-      // Fallback 3: First available live batsman who is not the newly selected one
+      // Fallback 3: First available batsman who is neither resolvedOutId nor newBatterId
       if (!survivingBatter) {
-        survivingBatter = currentLiveBatsmen.find(
-          (b) => String(b.id || b.playerId || "") !== String(newBatterId)
-        ) || snapshotBatsmen[0];
+        survivingBatter = currentLiveBatsmen.find((b) => {
+          const bId = String(b.id || b.playerId || "");
+          return (!resolvedOutId || bId !== resolvedOutId) && bId !== newBatterId;
+        }) || snapshotBatsmen.find((b) => {
+          const bId = String(b.id || b.playerId || "");
+          return (!resolvedOutId || bId !== resolvedOutId) && bId !== newBatterId;
+        });
       }
 
       const survivingBatterObj = survivingBatter
@@ -895,7 +1005,126 @@ export default function ScorerScreen() {
     };
     emit("set-striker", data);
     setSelectStrikerModalVisible(false);
+
+    // Optimistically update isStrikeEnd so strike indicator appears immediately
+    setScore((prev) => {
+      if (!prev || !prev.batsman) return prev;
+      const targetIdStr = String(strikerId);
+      const updated = prev.batsman.map((b) => ({
+        ...b,
+        isStrikeEnd: String(b.id || b.playerId || b._id) === targetIdStr,
+      }));
+      return { ...prev, batsman: updated };
+    });
   };
+
+  const checkAndPromptNextBatterAfterSquadUpdate = useCallback((freshMatch) => {
+    const curScore = scoreRef.current;
+    if (!curScore || !freshMatch) return;
+
+    // Must have at least 1 wicket fallen! If 0 wickets, openers are batting, never prompt next batter!
+    const currentWickets = Number(curScore?.batting?.score?.wicket ?? curScore?.currentInningWicket ?? 0);
+    if (currentWickets <= 0 || currentWickets >= 10) return;
+
+    // Must have score properly populated with at least the 2 opening batsmen
+    if (!Array.isArray(curScore?.batsman) || curScore.batsman.length < 2) return;
+
+    const currentInn = curScore?.currentInnings || freshMatch?.currentInnings || 1;
+    const isSuperOverInn = Boolean(
+      curScore?.isSuperOver ||
+      curScore?.score?.isSuperOver ||
+      curScore?.["innings_" + currentInn]?.isSuperOver ||
+      curScore?.matchCurrentStatus === "SUPER_OVER" ||
+      curScore?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER
+    );
+    if (isSuperOverInn && currentWickets >= 2) return;
+
+    // Requirement: Inning resume only applies if overs are still remaining
+    const innOversMax = isSuperOverInn ? 1 : Number(curScore?.totalOvers || freshMatch?.totalOvers || 20);
+    const currentOverStr = String(curScore?.batting?.score?.over || "0");
+    const [completedOvers] = currentOverStr.split(".").map(Number);
+    const isOverFinished = completedOvers >= innOversMax;
+    if (isOverFinished) {
+      console.log("[SQUAD-RESUME] Overs completed, not prompting incoming batter");
+      return;
+    }
+
+    // Check surviving batsmen on pitch
+    const allOutBatsmenIds = [
+      ...(curScore?.outBatsman || []).map((b) => String(b.id || b.playerId || b._id)),
+      ...(curScore?.fallOfWickets || []).map((f) => String(f.batsman?.playerId || f.batsman?._id || f.batsman?.id)),
+      ...(curScore?.batsman || []).filter((b) => b.notOut === false || b.dismissalInfo).map((b) => String(b.id || b.playerId || b._id)),
+    ];
+    const outSet = new Set(allOutBatsmenIds.filter(Boolean));
+
+    const activeBatsmenIds = (curScore?.batsman || [])
+      .filter((b) => b.notOut !== false && !b.dismissalInfo)
+      .map((b) => String(b.id || b.playerId || b._id))
+      .filter((id) => !outSet.has(id));
+    const activeSet = new Set(activeBatsmenIds);
+
+    const singleBatsmanAllowed = Boolean(freshMatch?.config?.singleBatsmanAllowed || curScore?.matchConfig?.singleBatsmanAllowed);
+
+    // If 2 batsmen are already active on the pitch, never prompt next batter
+    if (activeBatsmenIds.length >= (singleBatsmanAllowed ? 1 : 2)) {
+      return;
+    }
+
+    if (activeBatsmenIds.length <= (singleBatsmanAllowed ? 0 : 1)) {
+      const allTeams = freshMatch?.teams || curScore?.teams || [];
+      const battingId = String(
+        curScore?.batting?.battingId ||
+        curScore?.batting?.teamId ||
+        curScore?.battingTeam ||
+        ""
+      );
+      const resolvedBattingTeam =
+        allTeams.find((t) => battingId && String(t.teamId || t.id || t._id) === battingId) ||
+        allTeams[0] || { players: [] };
+      const updatedBattingSquad = resolvedBattingTeam?.players || resolvedBattingTeam?.squad || [];
+
+      const candidateList =
+        Array.isArray(curScore?.batsmanUpcoming) && curScore.batsmanUpcoming.length > 0
+          ? curScore.batsmanUpcoming
+          : updatedBattingSquad;
+
+      const eligible = candidateList.filter((p) => {
+        const pid = String(p.id || p._id || p.playerId);
+        return !activeSet.has(pid) && !outSet.has(pid);
+      });
+
+      if (eligible.length > 0) {
+        console.log("[SQUAD-RESUME] Found newly eligible incoming batters:", eligible.length);
+        setInningsCompleteModalVisible(false);
+        matchStatusHandler("isInningCompleted", false);
+        setAvailableBatters(eligible);
+        setNextBatterModalVisible(true);
+      }
+    }
+  }, [matchStatusHandler]);
+  checkAndPromptNextBatterRef.current = checkAndPromptNextBatterAfterSquadUpdate;
+
+  const handleSquadUpdatedAfterWicket = useCallback(async () => {
+    try {
+      console.log("[SQUAD-UPDATE] Player added to squad after wicket/innings complete");
+      setInningsCompleteModalVisible(false);
+      matchStatusHandler("isInningCompleted", false);
+
+      const [mRes, sRes] = await Promise.all([
+        matchesApi.getMatchById(matchID),
+        matchesApi.getMatchScore(matchID),
+      ]);
+
+      const freshMatch = mRes?.data;
+      const freshScore = sRes?.data;
+      if (freshMatch) setMatchDetails(freshMatch);
+      if (freshScore) setScore(freshScore);
+
+      checkAndPromptNextBatterAfterSquadUpdate(freshMatch);
+    } catch (err) {
+      console.warn("[SQUAD-UPDATE] Error refreshing squad after wicket:", err);
+    }
+  }, [matchID, checkAndPromptNextBatterAfterSquadUpdate, matchStatusHandler]);
 
   // Over Complete & Next Bowler Flow
   const handleOverComplete = useCallback(() => {
@@ -1055,16 +1284,28 @@ export default function ScorerScreen() {
   handleInningsCompleteRef.current = handleInningsComplete;
 
   const handleStartInningsTwo = () => {
-    setIsEndingInnings(true);
-    updateScore("END_OF_INNINGS", {});
-    setInningsCompleteModalVisible(false);
+    Alert.alert(
+      "End Innings",
+      "Are you sure you want to end this innings? This will proceed to Innings 2 openers selection.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "End Innings",
+          onPress: () => {
+            setIsEndingInnings(true);
+            updateScore("END_OF_INNINGS", {});
+            setInningsCompleteModalVisible(false);
 
-    // Fallback in case INNINGS_START socket event is delayed or dropped
-    setTimeout(() => {
-      if (!isLeavingRef.current) {
-        handleInningsStartSocketRef.current?.();
-      }
-    }, 4000);
+            // Fallback in case INNINGS_START socket event is delayed or dropped
+            setTimeout(() => {
+              if (!isLeavingRef.current) {
+                handleInningsStartSocketRef.current?.();
+              }
+            }, 4000);
+          },
+        },
+      ]
+    );
   };
 
   const handleSuperOver = () => {
@@ -1134,24 +1375,64 @@ export default function ScorerScreen() {
     if (!score || Object.keys(score).length === 0) return;
 
     const currentStatus = String(score?.matchCurrentStatus || score?.status || "").toUpperCase();
+    const isSuperOverInn = Boolean(
+      score?.isSuperOver ||
+      score?.score?.isSuperOver ||
+      score?.["innings_" + (score?.currentInnings || 1)]?.isSuperOver ||
+      currentStatus === "SUPER_OVER" ||
+      currentStatus === MATCH_STATUS.SUPER_OVER ||
+      route.params?.isSuperOver
+    );
+    const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
+    const isOddInning = (currentInn % 2 === 1);
+    const innOversMax = isSuperOverInn ? 1 : Number(score?.totalOvers || matchDetails?.totalOvers || 20);
+    const currentOverStr = String(score?.batting?.score?.over || "0");
+    const [completedOvers] = currentOverStr.split(".").map(Number);
+    const isOverFinished = completedOvers >= innOversMax;
+    const currentWickets = Number(score?.batting?.score?.wicket ?? score?.currentInningWicket ?? 0);
+    const allTeams = matchDetails?.teams || score?.teams || [];
+    const battingId = String(
+      score?.batting?.battingId ||
+      score?.batting?.teamId ||
+      ""
+    );
+    const resolvedBattingTeam =
+      allTeams.find((t) => battingId && String(t.teamId || t.id || t._id) === battingId) ||
+      allTeams[0] || { players: [] };
+    const currentBattingSquad = resolvedBattingTeam?.players || resolvedBattingTeam?.squad || [];
+    const squadCount = currentBattingSquad.length > 0 ? currentBattingSquad.length : 11;
+    const maxWicketsAllowed = isSuperOverInn
+      ? 2
+      : (score?.matchConfig?.singleBatsmanAllowed ? squadCount : Math.max(1, squadCount - 1));
+    const isAllOut = currentWickets >= maxWicketsAllowed;
+    const canContinueInning = !isOverFinished && currentWickets < 10 && !isAllOut;
 
     if (
-      currentStatus === "INNINGS_I_ENDED" ||
+      (currentStatus === "INNINGS_I_ENDED" ||
       currentStatus === "INNINGS_BREAK" ||
       currentStatus === MATCH_STATUS.INNINGS_I_ENDED ||
-      currentStatus === MATCH_STATUS.INNINGS_BREAK
+      currentStatus === MATCH_STATUS.INNINGS_BREAK ||
+      (isSuperOverInn && isOddInning && (isOverFinished || isAllOut))) &&
+      !canContinueInning
     ) {
-      const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
-      const isOddInning = (currentInn % 2 === 1);
       if (isOddInning || !isInningsTwo) {
         matchStatusHandler("isInningCompleted", true);
+        setInningsCompleteModalVisible(true);
       }
     } else if (
       currentStatus === "MATCH_COMPLETED" ||
-      currentStatus === MATCH_STATUS.MATCH_COMPLETED
+      currentStatus === MATCH_STATUS.MATCH_COMPLETED ||
+      (isSuperOverInn && !isOddInning && (isOverFinished || isAllOut))
     ) {
-      matchStatusHandler("isMatchCompleted", true);
-      setMatchCompleteModalVisible(true);
+      const lastInningRuns = Number(score?.lastInningScore ?? 0);
+      const curRuns = Number(score?.batting?.score?.runs ?? 0);
+      if (isSuperOverInn && curRuns === lastInningRuns && (isOverFinished || isAllOut)) {
+        matchStatusHandler("isMatchTied", true);
+        setMatchTiedModalVisible(true);
+      } else {
+        matchStatusHandler("isMatchCompleted", true);
+        setMatchCompleteModalVisible(true);
+      }
     } else if (
       currentStatus === "MATCH_ENDED" ||
       currentStatus === MATCH_STATUS.MATCH_ENDED
@@ -1350,6 +1631,7 @@ export default function ScorerScreen() {
     const stableOverComplete = (...args) => handleOverCompleteRef.current?.(...args);
     const stableInningsComplete = () => {
       matchStatusHandler("isInningCompleted", true);
+      handleInningsCompleteRef.current?.();
     };
     const handlePowerplayStart = (data) => {
       showPowerplayBanner(`🏏 Powerplay is ON — first ${data?.oversCount ?? ""} overs`);
@@ -1650,6 +1932,14 @@ export default function ScorerScreen() {
   };
 
   const handleUndo = () => {
+    setNextBatterModalVisible(false);
+    setNextBowlerModalVisible(false);
+    setSelectStrikerModalVisible(false);
+    setInningsCompleteModalVisible(false);
+    setMatchCompleteModalVisible(false);
+    setMatchTiedModalVisible(false);
+    setCommitteeEndModalVisible(false);
+    pendingWicketFlowRef.current = null;
     updateScore(MATCH_ACTION.UNDO_LAST_BALL, {});
   };
 
@@ -1922,6 +2212,48 @@ export default function ScorerScreen() {
                 {score.description}
               </ThemedText>
             )}
+            {(() => {
+              const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
+              const isChasing = currentInn % 2 === 0;
+              const isSuper = Boolean(
+                score?.isSuperOver ||
+                score?.score?.isSuperOver ||
+                score?.["innings_" + currentInn]?.isSuperOver ||
+                matchDetails?.status === MATCH_STATUS.SUPER_OVER ||
+                route.params?.isSuperOver
+              );
+              const target = score?.target || (score?.lastInningScore !== undefined && score?.lastInningScore !== null ? Number(score.lastInningScore) + 1 : null);
+              if (!isChasing || !target) return null;
+
+              const curRuns = Number(score?.batting?.score?.runs ?? 0);
+              const runsNeeded = Math.max(0, target - curRuns);
+              const maxOvers = isSuper ? 1 : Number(score?.totalOvers || 20);
+              const [ov, b] = String(score?.batting?.score?.over || "0").split(".").map(Number);
+              const ballsBowled = (ov || 0) * 6 + (b || 0);
+              const ballsLeft = Math.max(0, maxOvers * 6 - ballsBowled);
+
+              return (
+                <View
+                  style={{
+                    marginTop: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 3,
+                    borderRadius: 12,
+                    backgroundColor: "rgba(0, 0, 0, 0.3)",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <ThemedText style={{ fontSize: 13, fontWeight: "700", color: "#fef08a" }}>
+                    🎯 Target: {target}
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 12, color: "#f1f5f9", fontWeight: "500" }}>
+                    • Need {runsNeeded} {runsNeeded === 1 ? "run" : "runs"} in {ballsLeft} {ballsLeft === 1 ? "ball" : "balls"}
+                  </ThemedText>
+                </View>
+              );
+            })()}
             {Boolean(score?.dls?.applied) && (
               <View
                 style={{
@@ -1969,16 +2301,19 @@ export default function ScorerScreen() {
             {score?.batsman
               ?.filter((b) => b?.notOut !== false && !b?.dismissalInfo)
               ?.slice(0, 2)
-              ?.map((b, idx) => (
-              <View key={idx} className="flex-1 p-3 items-center">
-                <ThemedText
-                  className={`text-xl font-semibold ${
-                    isDarkMode ? "text-white" : "text-gray-800"
-                  }`}
-                >
-                  {b?.isStrikeEnd ? "🏏 " : ""}
-                  {b?.name}
-                </ThemedText>
+              ?.map((b, idx, arr) => {
+                const hasStriker = arr.some((item) => item?.isStrikeEnd);
+                const showStrikeIcon = b?.isStrikeEnd || (!hasStriker && idx === 0);
+                return (
+                  <View key={idx} className="flex-1 p-3 items-center">
+                    <ThemedText
+                      className={`text-xl font-semibold ${
+                        isDarkMode ? "text-white" : "text-gray-800"
+                      }`}
+                    >
+                      {showStrikeIcon ? "🏏 " : ""}
+                      {b?.name}
+                    </ThemedText>
                 {b?.ballsFaced === 0 ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
                     <ThemedText
@@ -2024,7 +2359,8 @@ export default function ScorerScreen() {
                   </ThemedText>
                 )}
               </View>
-            ))}
+            );
+          })}
           </View>
 
           {/* Bowler / Current Over */}
@@ -2215,7 +2551,7 @@ export default function ScorerScreen() {
                   <View style={styles.inningCompleteBadge}>
                     <Ionicons name="flag" size={22} color="#2563eb" />
                     <ThemedText style={styles.inningCompleteTitle}>
-                      Innings 1 Complete
+                      {isSuperOver ? "Super Over Innings 1 Complete" : "Innings 1 Complete"}
                     </ThemedText>
                   </View>
                   <ThemedText
@@ -2228,7 +2564,7 @@ export default function ScorerScreen() {
                   </ThemedText>
                   <TouchableOpacity
                     style={styles.endInningsMainBtn}
-                    onPress={() => handleInningsComplete()}
+                    onPress={() => handleStartInningsTwo()}
                     activeOpacity={0.8}
                   >
                     <ThemedText style={styles.endInningsMainBtnText}>
@@ -2236,6 +2572,151 @@ export default function ScorerScreen() {
                     </ThemedText>
                     <Ionicons name="arrow-forward" size={18} color="#ffffff" style={{ marginLeft: 6 }} />
                   </TouchableOpacity>
+
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
+                    <TouchableOpacity
+                      onPress={() => handleUndo()}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexDirection: "row",
+                        gap: 4,
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                      <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#dc2626" }}>
+                        Undo Last Ball
+                      </ThemedText>
+                    </TouchableOpacity>
+
+                    {Number(score?.batting?.score?.wicket || 0) < 10 && !isSuperOver && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigation.navigate(SCREENS.ChangeSquad, {
+                            teamId: battingTeamData?.teamId || battingTeamData?.id,
+                            matchId: matchID,
+                            team: battingTeamData,
+                            squad: battingTeamData?.players,
+                            initialTab: 1,
+                            cb: handleSquadUpdatedAfterWicket,
+                          });
+                        }}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 10,
+                          paddingHorizontal: 8,
+                          borderRadius: 8,
+                          backgroundColor: isDarkMode ? "#334155" : "#e2e8f0",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexDirection: "row",
+                          gap: 4,
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="person-add-outline" size={15} color={isDarkMode ? "#60a5fa" : "#2563eb"} />
+                        <ThemedText style={{ fontSize: 12, fontWeight: "600", color: isDarkMode ? "#60a5fa" : "#2563eb" }}>
+                          + Add Player
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ) : (matchStatus.isMatchCompleted || matchStatus.isMatchEnded) ? (
+                <View
+                  style={[
+                    styles.inningCompleteCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111827" : "#f8fafc",
+                      borderColor: isDarkMode ? "#1f2937" : "#e2e8f0",
+                    },
+                  ]}
+                >
+                  <View style={styles.inningCompleteBadge}>
+                    <Ionicons name="trophy" size={22} color="#10b981" />
+                    <ThemedText style={[styles.inningCompleteTitle, { color: "#10b981" }]}>
+                      Match Complete
+                    </ThemedText>
+                  </View>
+                  <ThemedText
+                    style={[
+                      styles.inningCompleteSub,
+                      { color: isDarkMode ? "#9ca3af" : "#64748b" },
+                    ]}
+                  >
+                    {score?.description || "All balls bowled or target reached"}
+                  </ThemedText>
+                  <TouchableOpacity
+                    style={[styles.endInningsMainBtn, { backgroundColor: "#dc2626" }]}
+                    onPress={handleMatchComplete}
+                    activeOpacity={0.8}
+                  >
+                    <ThemedText style={styles.endInningsMainBtnText}>
+                      End Match
+                    </ThemedText>
+                    <Ionicons name="checkmark-done" size={18} color="#ffffff" style={{ marginLeft: 6 }} />
+                  </TouchableOpacity>
+
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
+                    <TouchableOpacity
+                      onPress={() => handleUndo()}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexDirection: "row",
+                        gap: 4,
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                      <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#dc2626" }}>
+                        Undo Last Ball
+                      </ThemedText>
+                    </TouchableOpacity>
+
+                    {Number(score?.batting?.score?.wicket || 0) < 10 && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigation.navigate(SCREENS.ChangeSquad, {
+                            teamId: battingTeamData?.teamId || battingTeamData?.id,
+                            matchId: matchID,
+                            team: battingTeamData,
+                            squad: battingTeamData?.players,
+                            initialTab: 1,
+                            cb: handleSquadUpdatedAfterWicket,
+                          });
+                        }}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 10,
+                          paddingHorizontal: 8,
+                          borderRadius: 8,
+                          backgroundColor: isDarkMode ? "#334155" : "#e2e8f0",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexDirection: "row",
+                          gap: 4,
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="person-add-outline" size={15} color={isDarkMode ? "#60a5fa" : "#2563eb"} />
+                        <ThemedText style={{ fontSize: 12, fontWeight: "600", color: isDarkMode ? "#60a5fa" : "#2563eb" }}>
+                          + Add Player
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               ) : (
                 leftButtons.map((row, rowIndex) => (
@@ -2781,7 +3262,7 @@ export default function ScorerScreen() {
             </TouchableOpacity>
 
             <ThemedText style={{ fontSize: 22, fontWeight: "bold", marginBottom: 8, marginTop: 4, color: isDarkMode ? "#ffffff" : "#111827" }}>
-              🏏 End of Innings 1
+              {isSuperOver ? "🏏 End of Super Over Innings 1" : "🏏 End of Innings 1"}
             </ThemedText>
             <ThemedText style={{ fontSize: 15, color: isDarkMode ? "#d1d5db" : "#4b5563", textAlign: "center", marginBottom: 16 }}>
               {`${score?.batting?.teamName || "Team"} scored ${score?.batting?.score?.runs || 0}/${score?.batting?.score?.wicket || 0} in ${score?.batting?.score?.over || 0} overs.`}
@@ -2803,6 +3284,109 @@ export default function ScorerScreen() {
                 {(score?.batting?.score?.runs || 0) + 1} runs
               </ThemedText>
             </View>
+
+            {/* If wickets < 10 (or team ran out of squad players): give them options to revert decision / add player */}
+            {Number(score?.batting?.score?.wicket || 0) < 10 && !isSuperOver && (
+              <View
+                style={{
+                  width: "100%",
+                  backgroundColor: isDarkMode ? "#1e293b" : "#f1f5f9",
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 14,
+                }}
+              >
+                <ThemedText style={{ fontSize: 13, color: isDarkMode ? "#cbd5e1" : "#475569", textAlign: "center", marginBottom: 8 }}>
+                  Team has lost {score?.batting?.score?.wicket || 0} wickets. You can add a player to the squad or undo the last ball.
+                </ThemedText>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setInningsCompleteModalVisible(false);
+                      navigation.navigate(SCREENS.ChangeSquad, {
+                        teamId: battingTeamData?.teamId || battingTeamData?.id,
+                        matchId: matchID,
+                        team: battingTeamData,
+                        squad: battingTeamData?.players,
+                        initialTab: 1,
+                        cb: handleSquadUpdatedAfterWicket,
+                      });
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      paddingHorizontal: 8,
+                      borderRadius: 8,
+                      backgroundColor: isDarkMode ? "#334155" : "#e2e8f0",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 4,
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="person-add-outline" size={15} color={isDarkMode ? "#60a5fa" : "#2563eb"} />
+                    <ThemedText style={{ fontSize: 12, fontWeight: "600", color: isDarkMode ? "#60a5fa" : "#2563eb" }}>
+                      + Add Player
+                    </ThemedText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      handleUndo();
+                      setInningsCompleteModalVisible(false);
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      paddingHorizontal: 8,
+                      borderRadius: 8,
+                      backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 4,
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                    <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#dc2626" }}>
+                      Undo Last Ball
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* If 10 wickets or super over: always allow Undo Last Ball */}
+            {(Number(score?.batting?.score?.wicket || 0) >= 10 || isSuperOver) && (
+              <View style={{ width: "100%", marginBottom: 14 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleUndo();
+                    setInningsCompleteModalVisible(false);
+                  }}
+                  style={{
+                    width: "100%",
+                    paddingVertical: 10,
+                    paddingHorizontal: 8,
+                    borderRadius: 8,
+                    backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "row",
+                    gap: 4,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                  <ThemedText style={{ fontSize: 13, fontWeight: "600", color: "#dc2626" }}>
+                    Undo Last Ball
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <TouchableOpacity
               onPress={handleStartInningsTwo}
               style={{
@@ -2815,7 +3399,7 @@ export default function ScorerScreen() {
               activeOpacity={0.8}
             >
               <ThemedText style={{ color: "#ffffff", fontSize: 16, fontWeight: "bold" }}>
-                Select Innings 2 Openers
+                {isSuperOver ? "Select Super Over Innings 2 Openers" : "Select Innings 2 Openers"}
               </ThemedText>
             </TouchableOpacity>
 
@@ -2858,19 +3442,109 @@ export default function ScorerScreen() {
       {/* Match Completed Dialog */}
       {matchCompleteModalVisible && isFocused && (
         <View style={styles.dialogOverlay} pointerEvents="box-none">
-          <View style={styles.sheetBackdrop} />
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setMatchCompleteModalVisible(false)}
+          />
           <View
             style={[
               styles.dialogCard,
               { backgroundColor: isDarkMode ? "#1f2937" : "#ffffff" },
             ]}
           >
-            <ThemedText style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, color: isDarkMode ? "#ffffff" : "#111827" }}>
+            <TouchableOpacity 
+              onPress={() => setMatchCompleteModalVisible(false)}
+              style={{ position: "absolute", top: 16, right: 16, padding: 6, zIndex: 10 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={24} color={isDarkMode ? "#9ca3af" : "#6b7280"} />
+            </TouchableOpacity>
+
+            <ThemedText style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, marginTop: 4, color: isDarkMode ? "#ffffff" : "#111827" }}>
               🏆 Match Completed!
             </ThemedText>
-            <ThemedText style={{ fontSize: 15, color: "#10b981", fontWeight: "600", textAlign: "center", marginBottom: 20 }}>
+            <ThemedText style={{ fontSize: 15, color: "#10b981", fontWeight: "600", textAlign: "center", marginBottom: 16 }}>
               {score?.description || "Congratulations to the winners!"}
             </ThemedText>
+
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 14, width: "100%" }}>
+              <TouchableOpacity
+                onPress={() => {
+                  handleUndo();
+                  setMatchCompleteModalVisible(false);
+                }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                  borderRadius: 8,
+                  backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "row",
+                  gap: 4,
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#dc2626" }}>
+                  Undo Last Ball
+                </ThemedText>
+              </TouchableOpacity>
+
+              {Number(score?.batting?.score?.wicket || 0) < 10 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setMatchCompleteModalVisible(false);
+                    navigation.navigate(SCREENS.ChangeSquad, {
+                      teamId: battingTeamData?.teamId || battingTeamData?.id,
+                      matchId: matchID,
+                      team: battingTeamData,
+                      squad: battingTeamData?.players,
+                      initialTab: 1,
+                      cb: handleSquadUpdatedAfterWicket,
+                    });
+                  }}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    paddingHorizontal: 8,
+                    borderRadius: 8,
+                    backgroundColor: isDarkMode ? "#334155" : "#e2e8f0",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "row",
+                    gap: 4,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="person-add-outline" size={15} color={isDarkMode ? "#60a5fa" : "#2563eb"} />
+                  <ThemedText style={{ fontSize: 12, fontWeight: "600", color: isDarkMode ? "#60a5fa" : "#2563eb" }}>
+                    + Add Player
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <TouchableOpacity
+              onPress={handleMatchComplete}
+              style={{
+                width: "100%",
+                padding: 14,
+                borderRadius: 12,
+                backgroundColor: "#dc2626",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+              activeOpacity={0.8}
+            >
+              <ThemedText style={{ color: "#ffffff", fontSize: 16, fontWeight: "bold" }}>
+                End Match
+              </ThemedText>
+            </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => {
                 setMatchCompleteModalVisible(false);
@@ -2900,30 +3574,21 @@ export default function ScorerScreen() {
                 View Full Scorecard
               </ThemedText>
             </TouchableOpacity>
+
             <TouchableOpacity
-              onPress={() => {
-                setMatchCompleteModalVisible(false);
-                isLeavingRef.current = true;
-                if (navigation.reset) {
-                  navigation.reset({
-                    index: 0,
-                    routes: [{ name: SCREENS.Home }],
-                  });
-                } else {
-                  navigation.navigate(SCREENS.Home);
-                }
-              }}
+              onPress={() => setMatchCompleteModalVisible(false)}
               style={{
                 width: "100%",
-                padding: 14,
+                padding: 12,
                 borderRadius: 12,
                 borderWidth: 1,
-                borderColor: "#9ca3af",
+                borderColor: isDarkMode ? "#374151" : "#d1d5db",
                 alignItems: "center",
               }}
+              activeOpacity={0.7}
             >
-              <ThemedText style={{ fontSize: 16, fontWeight: "600" }}>
-                Return to Home
+              <ThemedText style={{ color: isDarkMode ? "#d1d5db" : "#4b5563", fontSize: 15, fontWeight: "600" }}>
+                Cancel / Review Scorecard
               </ThemedText>
             </TouchableOpacity>
           </View>
@@ -2946,6 +3611,79 @@ export default function ScorerScreen() {
             <ThemedText style={{ fontSize: 15, color: isDarkMode ? "#9ca3af" : "#4b5563", textAlign: "center", marginBottom: 20 }}>
               The scores are level at the end of the match. Choose an option to proceed:
             </ThemedText>
+
+            {/* If wickets < 10 (or team ran out of squad players): give them options to revert decision / add player */}
+            {Number(score?.batting?.score?.wicket || 0) < 10 && !isSuperOver && (
+              <View style={{ width: "100%", marginBottom: 14 }}>
+                <View
+                  style={{
+                    backgroundColor: isDarkMode ? "#1e293b" : "#f1f5f9",
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: 10,
+                  }}
+                >
+                  <ThemedText style={{ fontSize: 13, color: isDarkMode ? "#cbd5e1" : "#475569", textAlign: "center", marginBottom: 8 }}>
+                    Team has lost {score?.batting?.score?.wicket || 0} wickets. You can add a player to continue batting or undo the last ball if recorded in error.
+                  </ThemedText>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setMatchTiedModalVisible(false);
+                        navigation.navigate(SCREENS.ChangeSquad, {
+                          teamId: battingTeamData?.teamId || battingTeamData?.id,
+                          matchId: matchID,
+                          team: battingTeamData,
+                          squad: battingTeamData?.players,
+                          initialTab: 1,
+                        });
+                      }}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        backgroundColor: isDarkMode ? "#334155" : "#e2e8f0",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexDirection: "row",
+                        gap: 4,
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="person-add-outline" size={15} color={isDarkMode ? "#60a5fa" : "#2563eb"} />
+                      <ThemedText style={{ fontSize: 12, fontWeight: "600", color: isDarkMode ? "#60a5fa" : "#2563eb" }}>
+                        + Add Player
+                      </ThemedText>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleUndo();
+                        setMatchTiedModalVisible(false);
+                      }}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 8,
+                        borderRadius: 8,
+                        backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexDirection: "row",
+                        gap: 4,
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                      <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#dc2626" }}>
+                        Undo Last Ball
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
 
             <TouchableOpacity
               onPress={handleSuperOver}
@@ -2973,11 +3711,33 @@ export default function ScorerScreen() {
                 borderWidth: 1,
                 borderColor: isDarkMode ? "#374151" : "#d1d5db",
                 alignItems: "center",
+                marginBottom: 8,
               }}
               activeOpacity={0.7}
             >
               <ThemedText style={{ color: isDarkMode ? "#d1d5db" : "#4b5563", fontSize: 15, fontWeight: "600" }}>
                 Declare Match Tied
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                handleUndo();
+                setMatchTiedModalVisible(false);
+              }}
+              style={{
+                width: "100%",
+                padding: 10,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-undo-outline" size={15} color="#ef4444" />
+              <ThemedText style={{ color: "#ef4444", fontSize: 13, fontWeight: "600" }}>
+                Undo Last Ball
               </ThemedText>
             </TouchableOpacity>
           </View>

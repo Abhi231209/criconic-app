@@ -1770,7 +1770,24 @@ export default function MatchScoreCard({
         matchStatusRaw !== "INNINGS_BREAK"
     );
 
+    const hasScoreData = Boolean(
+        Number(score?.batting?.score?.runs || 0) > 0 ||
+        Number(score?.batting?.score?.wicket || 0) > 0 ||
+        parseFloat(score?.batting?.score?.over || "0") > 0 ||
+        Number(score?.innings_1?.totalRuns || 0) > 0 ||
+        Number(score?.innings_1?.totalWickets || 0) > 0 ||
+        parseFloat(score?.innings_1?.totalOvers || "0") > 0 ||
+        Number(score?.innings_1?.score?.runs || 0) > 0 ||
+        parseFloat(score?.innings_1?.score?.over || "0") > 0 ||
+        (Array.isArray(score?.inning) && score.inning.some(inn => 
+            Number(inn?.batting?.score?.runs || inn?.score?.runs || inn?.runs || inn?.totalRuns || 0) > 0 ||
+            Number(inn?.batting?.score?.wicket || inn?.score?.wicket || inn?.wickets || inn?.totalWickets || 0) > 0 ||
+            parseFloat(inn?.batting?.score?.over || inn?.score?.over || inn?.over || inn?.totalOvers || "0") > 0
+        ))
+    );
+
     const isMatchNotStarted = Boolean(
+        !hasScoreData &&
         !isMatchEnded && (
             matchStatusRaw === "MATCH_SCHEDULED" ||
             matchStatusRaw === "MATCH_CREATED" ||
@@ -1803,7 +1820,7 @@ export default function MatchScoreCard({
         score?.inning?.some((inn) => inn?.isSuperOver) ||
         (Array.isArray(score?.inning) && score.inning.length > 2) ||
         matchStatusRaw.includes("SUPER_OVER") ||
-        lowerPrompt.includes("super over")
+        matchStatusRaw.includes("SUPER-OVER")
     );
 
     const isSuperOverEnded = isSuperOverMatch && isMatchEnded;
@@ -1824,19 +1841,25 @@ export default function MatchScoreCard({
     const regInn1 = trueRegularInnings[0] || score?.innings_1 || score?.score?.innings_1;
     const regInn2 = trueRegularInnings[1] || score?.innings_2 || score?.score?.innings_2;
 
-    const team1Name = regInn1?.batting?.battingTeam || regInn1?.battingTeam || score?.innings_1?.battingTeam || score?.teams?.[0]?.title || score?.teams?.[0]?.name || "Team 1";
-    let team2Name = regInn2?.batting?.battingTeam || regInn2?.battingTeam || score?.innings_2?.battingTeam || score?.teams?.[1]?.title || score?.teams?.[1]?.name || "Team 2";
+    const resolveTeamTitle = (rawName, fallback) => {
+        if (!rawName) return fallback;
+        const matched = (score?.teams || []).find(t => String(t?.teamId || t?._id || t?.id) === String(rawName));
+        return matched?.title || matched?.name || rawName;
+    };
+
+    const team1Name = resolveTeamTitle(regInn1?.batting?.battingTeam || regInn1?.battingTeam || score?.innings_1?.battingTeam || score?.teams?.[0]?.title || score?.teams?.[0]?.name, "Team 1");
+    let team2Name = resolveTeamTitle(regInn2?.batting?.battingTeam || regInn2?.battingTeam || score?.innings_2?.battingTeam || score?.teams?.[1]?.title || score?.teams?.[1]?.name, "Team 2");
     if (team2Name === team1Name && score?.teams?.[1]?.title) {
         team2Name = score.teams[1].title;
     }
 
-    let inn1Runs = regInn1?.batting?.score?.runs ?? regInn1?.score?.runs ?? score?.innings_1?.score?.runs ?? score?.innings_1?.totalRuns ?? regInn1?.runs ?? "-";
-    let inn1Wickets = regInn1?.batting?.score?.wicket ?? regInn1?.score?.wicket ?? score?.innings_1?.score?.wicket ?? score?.innings_1?.totalWickets ?? regInn1?.wicket ?? regInn1?.wickets ?? "";
-    let inn1Overs = regInn1?.batting?.score?.over ?? regInn1?.score?.over ?? score?.innings_1?.score?.over ?? score?.innings_1?.totalOvers ?? regInn1?.over ?? regInn1?.overs ?? "0.0";
+    let inn1Runs = regInn1?.batting?.score?.runs ?? regInn1?.score?.runs ?? score?.innings_1?.score?.runs ?? score?.innings_1?.totalRuns ?? regInn1?.totalRuns ?? regInn1?.runs ?? "-";
+    let inn1Wickets = regInn1?.batting?.score?.wicket ?? regInn1?.score?.wicket ?? score?.innings_1?.score?.wicket ?? score?.innings_1?.totalWickets ?? regInn1?.totalWickets ?? regInn1?.wicket ?? regInn1?.wickets ?? "";
+    let inn1Overs = regInn1?.batting?.score?.over ?? regInn1?.score?.over ?? score?.innings_1?.score?.over ?? score?.innings_1?.totalOvers ?? regInn1?.totalOvers ?? regInn1?.over ?? regInn1?.overs ?? "0.0";
 
-    let inn2Runs = regInn2?.batting?.score?.runs ?? regInn2?.score?.runs ?? score?.innings_2?.score?.runs ?? score?.innings_2?.totalRuns ?? regInn2?.runs ?? "-";
-    let inn2Wickets = regInn2?.batting?.score?.wicket ?? regInn2?.score?.wicket ?? score?.innings_2?.score?.wicket ?? score?.innings_2?.totalWickets ?? regInn2?.wicket ?? regInn2?.wickets ?? "";
-    let inn2Overs = regInn2?.batting?.score?.over ?? regInn2?.score?.over ?? score?.innings_2?.score?.over ?? score?.innings_2?.totalOvers ?? regInn2?.over ?? regInn2?.overs ?? "0.0";
+    let inn2Runs = regInn2?.batting?.score?.runs ?? regInn2?.score?.runs ?? score?.innings_2?.score?.runs ?? score?.innings_2?.totalRuns ?? regInn2?.totalRuns ?? regInn2?.runs ?? "-";
+    let inn2Wickets = regInn2?.batting?.score?.wicket ?? regInn2?.score?.wicket ?? score?.innings_2?.score?.wicket ?? score?.innings_2?.totalWickets ?? regInn2?.totalWickets ?? regInn2?.wicket ?? regInn2?.wickets ?? "";
+    let inn2Overs = regInn2?.batting?.score?.over ?? regInn2?.score?.over ?? score?.innings_2?.score?.over ?? score?.innings_2?.totalOvers ?? regInn2?.totalOvers ?? regInn2?.over ?? regInn2?.overs ?? "0.0";
 
     // If match tied and went to Super Over, ensure regular innings reflect the tied score
     if (isSuperOverMatch) {

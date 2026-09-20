@@ -322,6 +322,22 @@ export default function PlayerSelectionScreen() {
           m.currentInnings === 2 ||
           m.score?.currentInning === 2;
 
+        if (
+          isInningBreak &&
+          !isSuperOverMatch &&
+          route.params?.action !== "END_OF_INNINGS" &&
+          !route.params?.isInningsTwo &&
+          !route.params?.fromScorerEndInnings
+        ) {
+          // User has not explicitly ended innings 1 from ScorerScreen yet!
+          isLeavingRef.current = true;
+          navigation.replace(SCREENS.ScorerScreen, {
+            matchId,
+            showInningsComplete: true,
+          });
+          return;
+        }
+
         if (isSuperOverMatch) {
           // Super Over: stay on selection screen until openers are submitted
         } else if (isSecondInnings) {
@@ -617,6 +633,11 @@ export default function PlayerSelectionScreen() {
   }, [loadMatchData]);
 
   const handleBack = () => {
+    if (isInningsTwo || route.params?.isInningsTwo || route.params?.action === "END_OF_INNINGS") {
+      isLeavingRef.current = true;
+      navigation.navigate(SCREENS.ScorerScreen, { matchId });
+      return;
+    }
     confirmLeavePreScore({
       navigation,
       route,
@@ -686,11 +707,18 @@ export default function PlayerSelectionScreen() {
   };
 
   const selectPlayer = (player) => {
+    const pId = getPlayerId(player);
     switch (selectedRole) {
       case 'striker':
+        if (pId && pId === getPlayerId(nonStriker)) {
+          setNonStriker(null);
+        }
         setStriker(player);
         break;
       case 'nonStriker':
+        if (pId && pId === getPlayerId(striker)) {
+          setStriker(null);
+        }
         setNonStriker(player);
         break;
       case 'bowler':
@@ -873,12 +901,10 @@ export default function PlayerSelectionScreen() {
   };
 
   const getAvailablePlayers = () => {
-    const strikerId = getPlayerId(striker);
     switch (selectedRole) {
       case 'striker':
-        return battingSquad || [];
       case 'nonStriker':
-        return (battingSquad || []).filter(player => !strikerId || getPlayerId(player) !== strikerId);
+        return battingSquad || [];
       case 'bowler':
         return bowlingSquad || [];
       default:
@@ -890,7 +916,16 @@ export default function PlayerSelectionScreen() {
     const pId = getPlayerId(player);
     const pName = getPlayerName(player);
     const sId = getPlayerId(striker);
-    const isDisabled = selectedRole === 'nonStriker' && !!sId && sId === pId;
+    const nsId = getPlayerId(nonStriker);
+
+    const isStrikerDisabled = selectedRole === 'nonStriker' && !!sId && sId === pId;
+    const isNonStrikerDisabled = selectedRole === 'striker' && !!nsId && nsId === pId;
+    const isDisabled = isStrikerDisabled || isNonStrikerDisabled;
+    const disabledText = isStrikerDisabled
+      ? "Already striker"
+      : isNonStrikerDisabled
+      ? "Already non-striker"
+      : "";
     
     return (
       <TouchableOpacity
@@ -925,8 +960,8 @@ export default function PlayerSelectionScreen() {
         </View>
         
         {isDisabled && (
-          <ThemedText className="text-xs text-red-500">
-            Already striker
+          <ThemedText className="text-xs text-red-500 font-semibold">
+            {disabledText}
           </ThemedText>
         )}
       </TouchableOpacity>
