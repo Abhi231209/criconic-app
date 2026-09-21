@@ -8,7 +8,7 @@
 
 // Primary API Base URL - Change this single value to switch environments:
 
-export const DEFAULT_API_URL =  "http://192.168.1.26:8000/"
+export const DEFAULT_API_URL =  "http://192.168.31.38:8000/"
 // "https://devapi.criconic.com";
 
 // Resolve API base URL (supports EXPO_PUBLIC_API_URL from Expo environment if provided)

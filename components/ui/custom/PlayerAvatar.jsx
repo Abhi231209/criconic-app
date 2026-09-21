@@ -50,7 +50,7 @@ export default function PlayerAvatar({
   if (imgUri && typeof imgUri === "string" && imgUri.trim().length > 0 && !hasError) {
     return (
       <Image
-        source={{ uri: imgUri.trim() }}
+        source={{ uri: imgUri.trim(), cache: "force-cache" }}
         onError={() => setHasError(true)}
         style={[
           {

@@ -23,6 +23,7 @@ import { matchesApi, userApi, tournamentsApi } from "@/utils/api";
 import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "@/utils";
 import { searchFallbackLocations } from "@/utils/locationHelper";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import debounce from "lodash/debounce";
 
 export default function MatchDetailsScreen() {
@@ -66,6 +67,7 @@ export default function MatchDetailsScreen() {
   const scrollViewRef = useRef();
   const customOversInputRef = useRef();
   const locationInputRef = useRef();
+  const locationSectionYRef = useRef(0);
   const isLocationFocusedRef = useRef(false);
   const isLeavingRef = useRef(false);
 
@@ -120,11 +122,23 @@ export default function MatchDetailsScreen() {
         }
         setLocationSuggestions(Array.isArray(predictions) ? predictions : []);
         setShowLocationSuggestions(true);
+        if (isLocationFocusedRef.current && locationSectionYRef.current > 0) {
+          scrollViewRef.current?.scrollTo({
+            y: Math.max(0, locationSectionYRef.current - 15),
+            animated: true,
+          });
+        }
       } catch (err) {
         console.warn("[MatchDetailsScreen] searchLocation error:", err);
         const fallback = searchFallbackLocations(text);
         setLocationSuggestions(fallback);
         setShowLocationSuggestions(true);
+        if (isLocationFocusedRef.current && locationSectionYRef.current > 0) {
+          scrollViewRef.current?.scrollTo({
+            y: Math.max(0, locationSectionYRef.current - 15),
+            animated: true,
+          });
+        }
       } finally {
         setIsLoadingLocation(false);
       }
@@ -133,11 +147,19 @@ export default function MatchDetailsScreen() {
   );
 
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const showSub = Keyboard.addListener(showEvent, () => {
       if (isLocationFocusedRef.current) {
         setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 50);
+          if (locationSectionYRef.current > 0) {
+            scrollViewRef.current?.scrollTo({
+              y: Math.max(0, locationSectionYRef.current - 15),
+              animated: true,
+            });
+          } else {
+            scrollViewRef.current?.scrollToFocusedInput?.(locationInputRef, 60);
+          }
+        }, 80);
       }
     });
     return () => {
@@ -277,6 +299,7 @@ export default function MatchDetailsScreen() {
     }));
     setShowLocationSuggestions(false);
     setLocationSuggestions([]);
+    isLocationFocusedRef.current = false;
     Keyboard.dismiss();
   };
 
@@ -503,8 +526,15 @@ export default function MatchDetailsScreen() {
   const focusLocationInput = () => {
     isLocationFocusedRef.current = true;
     setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 150);
+      if (locationSectionYRef.current > 0) {
+        scrollViewRef.current?.scrollTo({
+          y: Math.max(0, locationSectionYRef.current - 15),
+          animated: true,
+        });
+      } else {
+        scrollViewRef.current?.scrollToFocusedInput?.(locationInputRef, 60);
+      }
+    }, 100);
   };
 
   const renderOptionButton = (value, label, icon, isSelected) => (
@@ -577,18 +607,15 @@ export default function MatchDetailsScreen() {
         </ThemedText>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      <AppKeyboardAwareScrollView 
+        ref={scrollViewRef}
+        className="flex-1 p-4" 
+        keyboardShouldPersistTaps="handled"
+        extraHeight={160}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0}
+        contentContainerStyle={{ paddingBottom: 60 }}
+        showsVerticalScrollIndicator={true}
       >
-        <ScrollView 
-          ref={scrollViewRef}
-          className="flex-1 p-4" 
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
-          showsVerticalScrollIndicator={true}
-        >
           {/* Teams Preview */}
           <View className={`p-4 rounded-xl mb-6 ${
             isDarkMode ? "bg-gray-800" : "bg-white"
@@ -835,7 +862,12 @@ export default function MatchDetailsScreen() {
           </View>
 
           {/* Location Input with Google Places Autocomplete */}
-          <View className="mb-6">
+          <View
+            className="mb-6"
+            onLayout={(e) => {
+              locationSectionYRef.current = e.nativeEvent.layout.y;
+            }}
+          >
             <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
               Location / Ground
             </ThemedText>
@@ -861,6 +893,10 @@ export default function MatchDetailsScreen() {
                   onBlur={() => {
                     isLocationFocusedRef.current = false;
                   }}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={() => Keyboard.dismiss()}
                   className={`flex-1 text-base ${
                     isDarkMode ? "text-white" : "text-gray-900"
                   }`}
@@ -996,8 +1032,7 @@ export default function MatchDetailsScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </AppKeyboardAwareScrollView>
+      </SafeAreaView>
   );
 }

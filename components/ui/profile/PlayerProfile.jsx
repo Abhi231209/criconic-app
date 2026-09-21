@@ -83,55 +83,107 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
   const targetId = routePlayerId || (authUser?._id || authUser?.id);
 
-  // Helper to ensure a match actually belongs to this player
-  const isMatchForPlayer = useCallback((match, pId) => {
-    if (!match || !pId) return false;
-    if (typeof match === "string") return true; // ID string will be verified when detailed data is fetched
-    const pIdStr = String(pId);
+  const candidateNames = React.useMemo(() => {
+    return [
+      sanitizedRoutePlayer?.name,
+      sanitizedRoutePlayer?.username,
+      routePlayer?.name,
+      routePlayer?.username,
+      authUser?.username,
+      authUser?.name,
+    ]
+      .filter(Boolean)
+      .map((n) => String(n).trim().toLowerCase());
+  }, [sanitizedRoutePlayer, routePlayer, authUser]);
 
-    // 1. Check teams & player rosters
-    if (Array.isArray(match?.teams)) {
-      for (const team of match.teams) {
+  // Helper to ensure a match actually belongs to this player
+  const isMatchForPlayer = useCallback(
+    (match, pId) => {
+      if (!match || !pId) return false;
+      if (typeof match === "string") return true; // ID string will be verified when detailed data is fetched
+      const pIdStr = String(pId);
+
+      const checkPlayerItem = (p) => {
+        if (!p) return false;
+        const id = String(
+          p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || p?.userId || ""
+        );
+        if (id && (id === pIdStr || (targetId && id === String(targetId)))) return true;
+        const name = String(
+          p?.username || p?.name || p?.playerName || p?.id?.username || p?.id?.name || ""
+        )
+          .trim()
+          .toLowerCase();
+        if (name && candidateNames.includes(name)) return true;
+        return false;
+      };
+
+      // 1. Check teams & player rosters
+      const teamsToCheck = [
+        ...(Array.isArray(match?.teams) ? match.teams : []),
+        match?.team1,
+        match?.team2,
+        match?.teamA,
+        match?.teamB,
+      ].filter(Boolean);
+
+      for (const team of teamsToCheck) {
         if (Array.isArray(team?.players)) {
           for (const p of team.players) {
-            const id = String(p?.id || p?._id || p?.playerId || p?.userId || "");
-            if (id === pIdStr) return true;
+            if (checkPlayerItem(p)) return true;
           }
         }
         if (Array.isArray(team?.squad)) {
           for (const p of team.squad) {
-            const id = String(p?.id || p?._id || p?.playerId || p?.userId || "");
-            if (id === pIdStr) return true;
+            if (checkPlayerItem(p)) return true;
           }
         }
       }
-    }
 
-    // 2. Check batsman / bowler records in match scoreCard
-    if (Array.isArray(match?.scoreCard)) {
-      for (const inn of match.scoreCard) {
-        if (Array.isArray(inn?.batsman)) {
-          for (const b of inn.batsman) {
-            const id = String(b?.playerId || b?.id || b?._id || "");
-            if (id === pIdStr) return true;
-          }
+      // 2. Check all innings variations
+      const inningsList = [
+        ...(Array.isArray(match?.scoreCard) ? match.scoreCard : []),
+        ...(Array.isArray(match?.inning) ? match.inning : []),
+        ...(Array.isArray(match?.score?.inning) ? match.score.inning : []),
+        ...(Array.isArray(match?.innings) ? match.innings : []),
+        match?.innings_1,
+        match?.innings_2,
+        match?.score?.innings_1,
+        match?.score?.innings_2,
+      ].filter(Boolean);
+
+      for (const inn of inningsList) {
+        const batsmen = [
+          ...(Array.isArray(inn?.batsman) ? inn.batsman : []),
+          ...(Array.isArray(inn?.playedBatsman) ? inn.playedBatsman : []),
+          ...(Array.isArray(inn?.batting?.batsmen) ? inn.batting.batsmen : []),
+          ...(Array.isArray(inn?.outBatsman) ? inn.outBatsman : []),
+        ];
+        for (const b of batsmen) {
+          if (checkPlayerItem(b)) return true;
         }
-        if (Array.isArray(inn?.bowler)) {
-          for (const bw of inn.bowler) {
-            const id = String(bw?.playerId || bw?.id || bw?._id || "");
-            if (id === pIdStr) return true;
-          }
+
+        const bowlers = [
+          ...(Array.isArray(inn?.bowler) ? inn.bowler : []),
+          ...(Array.isArray(inn?.bowling?.allBowlers) ? inn.bowling.allBowlers : []),
+          ...(Array.isArray(inn?.bowling?.bowlers) ? inn.bowling.bowlers : []),
+          ...(Array.isArray(inn?.bowlers) ? inn.bowlers : []),
+          ...(Array.isArray(inn?.bowling?.lastTwoBowlers) ? inn.bowling.lastTwoBowlers : []),
+        ];
+        for (const bw of bowlers) {
+          if (checkPlayerItem(bw)) return true;
         }
       }
-    }
 
-    // If match object has no team or scorecard details populated, allow it (from playerId query)
-    if ((!match?.teams || match.teams.length === 0) && (!match?.scoreCard || match.scoreCard.length === 0)) {
-      return true;
-    }
+      // If match object has no team or scorecard details populated, allow it (from playerId query)
+      if (teamsToCheck.length === 0 && inningsList.length === 0) {
+        return true;
+      }
 
-    return false;
-  }, []);
+      return false;
+    },
+    [targetId, candidateNames]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -205,9 +257,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           return [];
         };
 
+        const routeMatches = Array.isArray(route?.params?.matches) ? route.params.matches : [];
         const rawList = [
           ...extractMatches(idsRes),
           ...extractMatches(matchesRes),
+          ...routeMatches,
         ].filter((m) => isMatchForPlayer(m, targetId));
 
         // Only include route match if player is confirmed to have played/participated in it
@@ -232,8 +286,21 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           setPlayerMatches(combined);
         }
 
-        // Fetch rich match cards in parallel for up to the first 10 matches
+        // Preload any full match objects already available in combined
+        const preloadedDetails = {};
+        for (const item of combined) {
+          if (item && typeof item === "object") {
+            const mId = item._id || item.id || item.matchId;
+            if (mId) preloadedDetails[String(mId)] = item;
+          }
+        }
+        if (Object.keys(preloadedDetails).length > 0 && isMounted) {
+          setDetailedMatchesMap((prev) => ({ ...prev, ...preloadedDetails }));
+        }
+
+        // Fetch rich match cards in parallel for up to the first 10 matches that need fetching
         const idsToFetch = combined
+          .filter((m) => typeof m === "string" || !m.teams || !m.teams[0]?.players)
           .map((m) => (typeof m === "string" ? m : (m?._id || m?.id || m?.matchId)))
           .filter(Boolean)
           .slice(0, 10);
@@ -662,7 +729,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     id: target?._id || target?.id || target?.playerId || routePlayerId || authUser?._id || authUser?.id || "1",
     name: target?.username || target?.name || target?.playerName || sanitizedRoutePlayer?.name || sanitizedRoutePlayer?.username || (isSelf ? authUser?.username : "Player"),
     shortName: target?.shortName || target?.username || target?.name || sanitizedRoutePlayer?.name || (isSelf ? authUser?.username : "Player"),
-    team: target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || sanitizedRoutePlayer?.team || "Unassigned",
+    team: target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || route?.params?.team?.title || route?.params?.team?.name || sanitizedRoutePlayer?.team || "Unassigned",
     nationality: target?.nationality || target?.location || "India",
     age: target?.age || "-",
     role: target?.role && typeof target.role === "string" ? target.role : (isSelf && typeof authUser?.role === "string" ? authUser.role : (sanitizedRoutePlayer?.role || "Player")),
@@ -683,7 +750,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const teams = React.useMemo(() => {
     const rawList = (Array.isArray(fetchedPlayer?.teams) && fetchedPlayer.teams.length > 0
       ? fetchedPlayer.teams
-      : Array.isArray(target?.teams) ? target.teams : []
+      : Array.isArray(target?.teams) && target.teams.length > 0
+      ? target.teams
+      : route?.params?.team
+      ? [route.params.team]
+      : []
     );
 
     // Build consolidated list of all matches available

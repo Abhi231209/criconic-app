@@ -71,32 +71,6 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     return t;
   };
 
-  const [teamData, setTeamData] = useState(() => {
-    let base = Array.isArray(routeTeam) ? routeTeam[0] : routeTeam;
-    return unnestTeam(base) || null;
-  });
-  const MATCHES_PER_PAGE = 10;
-  const [teamStats, setTeamStats] = useState(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [allTeamMatches, setAllTeamMatches] = useState([]);
-  const [paginatedMatches, setPaginatedMatches] = useState([]);
-  const [matchesPage, setMatchesPage] = useState(1);
-  const [hasMoreMatches, setHasMoreMatches] = useState(true);
-  const [loadingMatches, setLoadingMatches] = useState(true);
-  const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
-  const [refreshingMatches, setRefreshingMatches] = useState(false);
-  const isFetchingMatchesRef = useRef(false);
-  const [battingLeaderboard, setBattingLeaderboard] = useState([]);
-  const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
-  const [squadPlayers, setSquadPlayers] = useState([]);
-  const [loadingSquad, setLoadingSquad] = useState(false);
-  const [editNumberModalVisible, setEditNumberModalVisible] = useState(false);
-  const [selectedPlayerForNumber, setSelectedPlayerForNumber] = useState(null);
-  const [inputPlayerNumber, setInputPlayerNumber] = useState("");
-  const [savingPlayerNumber, setSavingPlayerNumber] = useState(false);
-
   // Helper sanitizers to avoid rendering objects as React children
   const toDisplayText = (value, fallback = "") => {
     if (value === null || value === undefined) return String(fallback ?? "");
@@ -161,53 +135,107 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     return num.toFixed(2);
   };
 
+  const [teamData, setTeamData] = useState(() => {
+    let base = Array.isArray(routeTeam) ? routeTeam[0] : routeTeam;
+    return unnestTeam(base) || null;
+  });
+  const MATCHES_PER_PAGE = 10;
+  const [teamStats, setTeamStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [allTeamMatches, setAllTeamMatches] = useState([]);
+  const [paginatedMatches, setPaginatedMatches] = useState([]);
+  const [matchesPage, setMatchesPage] = useState(1);
+  const [hasMoreMatches, setHasMoreMatches] = useState(true);
+  const [loadingMatches, setLoadingMatches] = useState(true);
+  const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
+  const [refreshingMatches, setRefreshingMatches] = useState(false);
+  const isFetchingMatchesRef = useRef(false);
+  const [battingLeaderboard, setBattingLeaderboard] = useState([]);
+  const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
+  const [squadPlayers, setSquadPlayers] = useState(() => {
+    let base = Array.isArray(routeTeam) ? routeTeam[0] : routeTeam;
+    const unnested = unnestTeam(base);
+    const raw = Array.isArray(unnested?.players) ? unnested.players : [];
+    return raw.map((p, idx) => ({
+      id: String(p.id || p._id || p.playerId || idx),
+      name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
+      profileImg: p.profileImage || p.profileImg || null,
+      role: p.playerRole || p.role || null,
+      battingStyle: p.battingStyle || null,
+      bowlingStyle: p.bowlingStyle || null,
+      mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
+    }));
+  });
+  const [loadingSquad, setLoadingSquad] = useState(false);
+  const [editNumberModalVisible, setEditNumberModalVisible] = useState(false);
+  const [selectedPlayerForNumber, setSelectedPlayerForNumber] = useState(null);
+  const [inputPlayerNumber, setInputPlayerNumber] = useState("");
+  const [savingPlayerNumber, setSavingPlayerNumber] = useState(false);
+
+  const isInitialMountRef = useRef(true);
+  const isFetchingTeamRef = useRef(false);
+
   const fetchTeamData = useCallback(() => {
-    if (!teamId) return;
+    if (!teamId || isFetchingTeamRef.current) return;
+    isFetchingTeamRef.current = true;
     setLoading(true);
 
-    // 1. Fetch team details via POST getTeamsByIds (mirrors web)
-    request("api/teams/getTeamsByIds", {
-      method: "POST",
-      data: { teamIds: [teamId] },
-      errorAlert: false,
-    })
+    // Fetch team directly via GET api/teams/:teamId (single request with populated players)
+    request(`api/teams/${teamId}`, { method: "GET", errorAlert: false })
       .then((res) => {
-        let raw = null;
-        if (Array.isArray(res?.data)) raw = res.data[0];
-        else if (Array.isArray(res?.data?.data)) raw = res.data.data[0];
-        else if (Array.isArray(res?.data?.teams)) raw = res.data.teams[0];
-        else if (res?.data && typeof res.data === "object") raw = res.data;
+        const raw = Array.isArray(res?.data)
+          ? res.data[0]
+          : res?.data?.data || res?.data;
         if (raw) {
-          const unnested = unnestTeam(raw);
-          setTeamData(unnested);
-          // If batch endpoint returned team without populated players, fetch full team doc
-          if (!Array.isArray(unnested?.players) || unnested.players.length === 0) {
-            request(`api/teams/${teamId}`, { method: "GET", errorAlert: false })
-              .then((res2) => {
-                const raw2 = Array.isArray(res2?.data)
-                  ? res2.data[0]
-                  : res2?.data?.data || res2?.data;
-                if (raw2) setTeamData(unnestTeam(raw2));
-              })
-              .catch(() => {});
-          }
+          setTeamData(unnestTeam(raw));
+        } else {
+          // Fallback to batch endpoint if direct returns nothing
+          return request("api/teams/getTeamsByIds", {
+            method: "POST",
+            data: { teamIds: [teamId] },
+            errorAlert: false,
+          }).then((res2) => {
+            let raw2 = null;
+            if (Array.isArray(res2?.data)) raw2 = res2.data[0];
+            else if (Array.isArray(res2?.data?.data)) raw2 = res2.data.data[0];
+            else if (Array.isArray(res2?.data?.teams)) raw2 = res2.data.teams[0];
+            else if (res2?.data && typeof res2.data === "object") raw2 = res2.data;
+            if (raw2) setTeamData(unnestTeam(raw2));
+          });
         }
       })
       .catch(() => {
-        request(`api/teams/${teamId}`, { method: "GET", errorAlert: false })
-          .then((res) => {
-            const raw = Array.isArray(res?.data)
-              ? res.data[0]
-              : res?.data?.data || res?.data;
-            if (raw) setTeamData(unnestTeam(raw));
+        // Fallback to batch endpoint if direct GET failed
+        request("api/teams/getTeamsByIds", {
+          method: "POST",
+          data: { teamIds: [teamId] },
+          errorAlert: false,
+        })
+          .then((res2) => {
+            let raw2 = null;
+            if (Array.isArray(res2?.data)) raw2 = res2.data[0];
+            else if (Array.isArray(res2?.data?.data)) raw2 = res2.data.data[0];
+            else if (Array.isArray(res2?.data?.teams)) raw2 = res2.data.teams[0];
+            else if (res2?.data && typeof res2.data === "object") raw2 = res2.data;
+            if (raw2) setTeamData(unnestTeam(raw2));
           })
           .catch(() => {});
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        isFetchingTeamRef.current = false;
+        setLoading(false);
+      });
   }, [teamId]);
 
   useFocusEffect(
     useCallback(() => {
+      if (isInitialMountRef.current) {
+        // Skip on initial mount because useEffect handles it
+        isInitialMountRef.current = false;
+        return;
+      }
       if (teamId) {
         fetchTeamData();
       }
@@ -574,15 +602,6 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
       selectedPlayerForNumber._id ||
       selectedPlayerForNumber.playerId;
 
-    if (!targetPlayerId || String(targetPlayerId).startsWith("p_")) {
-      showGlobalAlert({
-        title: "Notice",
-        message: "This player record cannot be updated directly.",
-        type: "warning",
-      });
-      return;
-    }
-
     const cleanNumber = inputPlayerNumber.trim();
     if (!/^[6-9]\d{9}$/.test(cleanNumber)) {
       showGlobalAlert({
@@ -595,46 +614,77 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
     setSavingPlayerNumber(true);
     try {
-      const res = await request(`api/users/edit/${targetPlayerId}`, {
-        method: "POST",
-        data: {
-          dataToChange: {
-            mobile: Number(cleanNumber),
-          },
-        },
+      let updatedViaApi = false;
+      const isRegisteredUser =
+        targetPlayerId &&
+        !String(targetPlayerId).startsWith("p_") &&
+        !String(targetPlayerId).startsWith("idx_") &&
+        String(targetPlayerId).length >= 12;
+
+      if (isRegisteredUser) {
+        try {
+          const res = await request(`api/users/edit/${targetPlayerId}`, {
+            method: "POST",
+            data: {
+              dataToChange: {
+                mobile: Number(cleanNumber),
+              },
+            },
+          });
+          if (res?.data?.success) {
+            updatedViaApi = true;
+          }
+        } catch (e) {
+          console.warn("[TeamProfile] api/users/edit failed:", e);
+        }
+      }
+
+      // If it's a team player or user edit wasn't successful, also attempt updating through team
+      if (!updatedViaApi && teamId) {
+        try {
+          const addRes = await teamsApi.addPlayerToTeam(teamId, {
+            players: [
+              {
+                name: selectedPlayerForNumber.name || selectedPlayerForNumber.username,
+                username: selectedPlayerForNumber.username || selectedPlayerForNumber.name,
+                mobile: Number(cleanNumber),
+              },
+            ],
+          });
+          if (addRes?.data?.success || addRes?.status === 200 || addRes?.status === 201) {
+            updatedViaApi = true;
+          }
+        } catch (e) {
+          console.warn("[TeamProfile] teamsApi.addPlayerToTeam update failed:", e);
+        }
+      }
+
+      // Update squad state locally immediately so UI reflects change without lag
+      setSquadPlayers((prev) =>
+        prev.map((p) => {
+          const pId = p.id || p._id || p.playerId;
+          if (
+            (targetPlayerId && String(pId) === String(targetPlayerId)) ||
+            (p.name && selectedPlayerForNumber.name && p.name === selectedPlayerForNumber.name)
+          ) {
+            return { ...p, mobile: cleanNumber };
+          }
+          return p;
+        })
+      );
+
+      showGlobalAlert({
+        title: "Success",
+        message: `Phone number updated successfully for ${toDisplayText(selectedPlayerForNumber.name, "player")}!`,
+        type: "success",
       });
 
-      if (res?.data?.success) {
-        showGlobalAlert({
-          title: "Success",
-          message: `Phone number updated successfully for ${toDisplayText(selectedPlayerForNumber.name, "player")}!`,
-          type: "success",
-        });
+      setEditNumberModalVisible(false);
+      setSelectedPlayerForNumber(null);
+      setInputPlayerNumber("");
 
-        // Update squad state locally immediately so UI reflects change without lag
-        setSquadPlayers((prev) =>
-          prev.map((p) => {
-            const pId = p.id || p._id || p.playerId;
-            if (String(pId) === String(targetPlayerId)) {
-              return { ...p, mobile: cleanNumber };
-            }
-            return p;
-          })
-        );
-
-        setEditNumberModalVisible(false);
-        setSelectedPlayerForNumber(null);
-        setInputPlayerNumber("");
-
-        // Also refresh the team data to ensure consistency
-        fetchTeamData();
-      } else {
-        showGlobalAlert({
-          title: "Update Failed",
-          message: res?.data?.message || "Could not update phone number. Please try again.",
-          type: "error",
-        });
-      }
+      // Also refresh the team data to ensure consistency
+      fetchTeamData();
     } catch (err) {
       console.error("Error saving player number:", err);
       showGlobalAlert({
@@ -647,30 +697,51 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     }
   };
 
-  // Squad details fetched from user profile API
+  // Squad details: synchronously hydrated from teamData.players, then enriched in background
   useEffect(() => {
     const rawPlayers = Array.isArray(teamData?.players) ? teamData.players : [];
     if (rawPlayers.length === 0) {
       setSquadPlayers([]);
+      setLoadingSquad(false);
       return;
     }
 
-    let isMounted = true;
-    setLoadingSquad(true);
+    // 1. Immediately hydrate squadPlayers synchronously from teamData.players
+    // Provides instant 0ms render for names, roles, batting/bowling styles, and existing profile images
+    const initialSquad = rawPlayers.map((p, idx) => {
+      const pId = p.id || p._id || p.playerId;
+      const phone = p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null;
+      return {
+        id: String(pId || idx),
+        name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
+        profileImg: p.profileImage || p.profileImg || null,
+        role: p.playerRole || p.role || null,
+        battingStyle: p.battingStyle || null,
+        bowlingStyle: p.bowlingStyle || null,
+        mobile: phone,
+      };
+    });
 
-    Promise.all(
-      rawPlayers.map(async (p, idx) => {
-        const pId = p.id || p._id || p.playerId;
-        const fallback = {
-          id: String(pId || idx),
-          name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
-          profileImg: p.profileImage || p.profileImg || null,
-          role: p.playerRole || p.role || null,
-          battingStyle: p.battingStyle || null,
-          bowlingStyle: p.bowlingStyle || null,
-          mobile: p.mobile || null,
-        };
-        if (!pId) return fallback;
+    setSquadPlayers(initialSquad);
+    setLoadingSquad(false);
+
+    // 2. Non-blocking background enrichment:
+    // Only query api/users/profile for valid 24-char hex MongoDB ObjectIds
+    // Skip local/offline temporary IDs (e.g. p_172...) and numeric indices to avoid 404/500 errors
+    const isValidMongoId = (id) => /^[0-9a-fA-F]{24}$/.test(String(id || ""));
+    const playersToEnrich = rawPlayers.filter((p) => {
+      const pId = p.id || p._id || p.playerId;
+      return isValidMongoId(pId);
+    });
+
+    if (playersToEnrich.length === 0) return;
+
+    let isMounted = true;
+
+    // Use Promise.allSettled so no single player request can fail or delay the rest
+    Promise.allSettled(
+      playersToEnrich.map(async (p) => {
+        const pId = String(p.id || p._id || p.playerId);
         try {
           const res = await request(`api/users/profile/${pId}`, {
             method: "GET",
@@ -679,25 +750,45 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           const u = res?.data?.data;
           if (u) {
             return {
-              id: String(u._id || pId),
-              name: toDisplayText(u.name || u.username, fallback.name),
-              profileImg: u.profileImage || u.profileImg || u.photo || fallback.profileImg,
-              role: u.playerRole || u.role || fallback.role,
-              battingStyle: u.battingStyle || fallback.battingStyle,
-              bowlingStyle: u.bowlingStyle || fallback.bowlingStyle,
-              mobile: u.mobile || fallback.mobile,
+              id: pId,
+              name: toDisplayText(u.name || u.username),
+              profileImg: u.profileImage || u.profileImg || u.photo || null,
+              role: u.playerRole || u.role || null,
+              battingStyle: u.battingStyle || null,
+              bowlingStyle: u.bowlingStyle || null,
+              mobile: u.mobile || u.phoneNumber || u.phone || u.mobileNumber || u.contact || null,
             };
           }
         } catch (e) {}
-        return fallback;
+        return null;
       })
-    )
-      .then((detailed) => {
-        if (isMounted) setSquadPlayers(detailed);
-      })
-      .finally(() => {
-        if (isMounted) setLoadingSquad(false);
+    ).then((results) => {
+      if (!isMounted) return;
+      const enrichedMap = new Map();
+      results.forEach((r) => {
+        if (r.status === "fulfilled" && r.value && r.value.id) {
+          enrichedMap.set(r.value.id, r.value);
+        }
       });
+
+      if (enrichedMap.size > 0) {
+        setSquadPlayers((prev) =>
+          prev.map((existing) => {
+            const enriched = enrichedMap.get(existing.id);
+            if (!enriched) return existing;
+            return {
+              ...existing,
+              name: enriched.name || existing.name,
+              profileImg: enriched.profileImg || existing.profileImg,
+              role: enriched.role || existing.role,
+              battingStyle: enriched.battingStyle || existing.battingStyle,
+              bowlingStyle: enriched.bowlingStyle || existing.bowlingStyle,
+              mobile: enriched.mobile || existing.mobile,
+            };
+          })
+        );
+      }
+    });
 
     return () => {
       isMounted = false;
@@ -714,7 +805,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
         role: p.playerRole || p.role || null,
         battingStyle: p.battingStyle || null,
         bowlingStyle: p.bowlingStyle || null,
-        mobile: p.mobile || null,
+        mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
       }))
     : [];
 
@@ -1052,15 +1143,31 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             const displayName = toDisplayText(item.name, "Player");
 
             const targetPlayerId = item.id || item._id || item.playerId;
+            const pIdToUse = String(targetPlayerId || (item.name ? `team_p_${item.name}` : `p_${index}`));
 
             return (
               <TouchableOpacity
                 onPress={() => {
-                  if (targetPlayerId && !String(targetPlayerId).match(/^p_\d+$/)) {
-                    navigation.navigate(SCREENS.PlayerProfile, {
-                      playerId: String(targetPlayerId),
-                    });
-                  }
+                  navigation.navigate(SCREENS.PlayerProfile, {
+                    playerId: pIdToUse,
+                    player: {
+                      ...item,
+                      id: pIdToUse,
+                      _id: pIdToUse,
+                      name: item.name || displayName,
+                      username: item.name || displayName,
+                      role: item.role || "Player",
+                      battingStyle: item.battingStyle || "Right Handed",
+                      bowlingStyle: item.bowlingStyle || "Right Arm Medium",
+                      profileImg: item.profileImg,
+                      profileImage: item.profileImg,
+                      mobile: item.mobile,
+                      team: teamData?.title || teamData?.name || item.team || "Team",
+                      teamId: teamId,
+                    },
+                    team: teamData,
+                    matches: allTeamMatches,
+                  });
                 }}
                 className={`mb-2.5 rounded-2xl ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"} border`}
                 activeOpacity={0.75}
@@ -1072,7 +1179,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
                   {item.profileImg ? (
                     <Image
-                      source={{ uri: getImageFullUrl(item.profileImg) }}
+                      source={{ uri: getImageFullUrl(item.profileImg), cache: "force-cache" }}
                       className="w-12 h-12 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
                       resizeMode="cover"
                     />
@@ -1095,9 +1202,34 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                     )}
 
                     {/* Phone Number / Add Number section */}
-                    {item.mobile ? null : (
-                      <View className="mt-1">
-                        {isTeamOwner ? (
+                    <View className="mt-1">
+                      {item.mobile ? (
+                        isTeamOwner ? (
+                          <TouchableOpacity
+                            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                            onPress={() => handleOpenEditNumberModal(item)}
+                            className={`flex-row items-center self-start px-2 py-0.5 rounded-full border ${
+                              isDarkMode
+                                ? "bg-gray-700/60 border-gray-600"
+                                : "bg-gray-50 border-gray-200"
+                            }`}
+                          >
+                            <Ionicons name="call" size={11} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                            <ThemedText className={`text-[11px] ml-1 font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                              {String(item.mobile)}
+                            </ThemedText>
+                            <Ionicons name="pencil" size={10} color={isDarkMode ? "#9CA3AF" : "#6B7280"} style={{ marginLeft: 4 }} />
+                          </TouchableOpacity>
+                        ) : (
+                          <View className="flex-row items-center self-start px-2 py-0.5 rounded-full">
+                            <Ionicons name="call-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                            <ThemedText className={`text-[11px] ml-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                              {String(item.mobile).length > 4 ? `••••••${String(item.mobile).slice(-4)}` : String(item.mobile)}
+                            </ThemedText>
+                          </View>
+                        )
+                      ) : (
+                        isTeamOwner ? (
                           <TouchableOpacity
                             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                             onPress={() => handleOpenEditNumberModal(item)}
@@ -1119,9 +1251,9 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                               Phone number required
                             </ThemedText>
                           </View>
-                        )}
-                      </View>
-                    )}
+                        )
+                      )}
+                    </View>
                   </View>
 
                   {item.role ? (
@@ -1506,9 +1638,31 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           key={`bat_${pId}_${index}`}
           activeOpacity={0.7}
           onPress={() => {
-            if (pId && !pId.startsWith("bat_") && !pId.startsWith("derived_")) {
-              navigation.navigate(SCREENS.PlayerProfile, { playerId: pId });
-            }
+            const resolvedSquadMember = squad.find(
+              (s) =>
+                (pId && (String(s.id) === String(pId) || String(s._id) === String(pId) || String(s.playerId) === String(pId))) ||
+                (s.name && s.name.trim().toLowerCase() === name.trim().toLowerCase())
+            );
+            navigation.navigate(SCREENS.PlayerProfile, {
+              playerId: String(pId),
+              player: {
+                ...(resolvedSquadMember || {}),
+                id: String(pId),
+                _id: String(pId),
+                name: name,
+                username: name,
+                team: teamData?.title || teamData?.name || "Team",
+                teamId: teamId,
+                profileImg: fullImgUrl || resolvedSquadMember?.profileImg,
+                profileImage: fullImgUrl || resolvedSquadMember?.profileImg,
+                role: resolvedSquadMember?.role || "Batsman",
+                battingStyle: resolvedSquadMember?.battingStyle || "Right Handed",
+                bowlingStyle: resolvedSquadMember?.bowlingStyle || "Right Arm Medium",
+                mobile: resolvedSquadMember?.mobile,
+              },
+              team: teamData,
+              matches: allTeamMatches,
+            });
           }}
           className={`p-3 rounded-2xl mb-2 flex-row items-center ${
             isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
@@ -1528,7 +1682,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
           {fullImgUrl ? (
             <Image
-              source={{ uri: fullImgUrl }}
+              source={{ uri: fullImgUrl, cache: "force-cache" }}
               className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
               resizeMode="cover"
             />
@@ -1610,9 +1764,31 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           key={`bowl_${pId}_${index}`}
           activeOpacity={0.7}
           onPress={() => {
-            if (pId && !pId.startsWith("bowl_") && !pId.startsWith("derived_")) {
-              navigation.navigate(SCREENS.PlayerProfile, { playerId: pId });
-            }
+            const resolvedSquadMember = squad.find(
+              (s) =>
+                (pId && (String(s.id) === String(pId) || String(s._id) === String(pId) || String(s.playerId) === String(pId))) ||
+                (s.name && s.name.trim().toLowerCase() === name.trim().toLowerCase())
+            );
+            navigation.navigate(SCREENS.PlayerProfile, {
+              playerId: String(pId),
+              player: {
+                ...(resolvedSquadMember || {}),
+                id: String(pId),
+                _id: String(pId),
+                name: name,
+                username: name,
+                team: teamData?.title || teamData?.name || "Team",
+                teamId: teamId,
+                profileImg: fullImgUrl || resolvedSquadMember?.profileImg,
+                profileImage: fullImgUrl || resolvedSquadMember?.profileImg,
+                role: resolvedSquadMember?.role || "Bowler",
+                battingStyle: resolvedSquadMember?.battingStyle || "Right Handed",
+                bowlingStyle: resolvedSquadMember?.bowlingStyle || "Right Arm Medium",
+                mobile: resolvedSquadMember?.mobile,
+              },
+              team: teamData,
+              matches: allTeamMatches,
+            });
           }}
           className={`p-3 rounded-2xl mb-2 flex-row items-center ${
             isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
@@ -1632,7 +1808,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
           {fullImgUrl ? (
             <Image
-              source={{ uri: fullImgUrl }}
+              source={{ uri: fullImgUrl, cache: "force-cache" }}
               className="w-10 h-10 rounded-full mr-3 bg-gray-200 dark:bg-gray-700"
               resizeMode="cover"
             />
@@ -1840,7 +2016,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           {/* Logo or initials */}
           {team.logo ? (
             <Image
-              source={{ uri: getImageFullUrl(team.logo) }}
+              source={{ uri: getImageFullUrl(team.logo), cache: "force-cache" }}
               className="w-20 h-20 rounded-full mb-3 bg-gray-200"
               resizeMode="cover"
             />
@@ -2003,7 +2179,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             {/* Team Logo / Initials */}
             {team.logo ? (
               <Image
-                source={{ uri: getImageFullUrl(team.logo) }}
+                source={{ uri: getImageFullUrl(team.logo), cache: "force-cache" }}
                 className="w-16 h-16 rounded-full mb-2 bg-gray-100"
                 resizeMode="cover"
               />

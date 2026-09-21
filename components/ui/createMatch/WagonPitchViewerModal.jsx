@@ -160,13 +160,19 @@ export default function WagonPitchViewerModal({
     const scoreObj = targetSource.score || (targetSource.innings_1 || targetSource.inning ? targetSource : {});
 
     const normInn = (k) => String(k || "").replace(/[^0-9]/g, "") || "1";
+    const currentInningNum = String(
+      fetchedMatch?.currentInnings ||
+      matchDetails?.currentInnings ||
+      score?.currentInnings ||
+      "1"
+    );
     const seenKeySet = new Set();
 
     list.forEach((s) => {
       if (s.timestamp) seenKeySet.add(`ts_${s.timestamp}`);
       if (s._id) seenKeySet.add(`id_${s._id}`);
       if (s.id) seenKeySet.add(`id_${s.id}`);
-      const inn = normInn(s.inningsKey || s.inning || "1");
+      const inn = normInn(s.inningsKey || s.inning || s.inningNumber || currentInningNum);
       const ov = Number(s.overNumber ?? s.overIndex ?? 1);
       const bNum = Number(s.ballNumber ?? 1);
       seenKeySet.add(`pos_${inn}_${ov}_${bNum}`);
@@ -258,42 +264,232 @@ export default function WagonPitchViewerModal({
       return {
         ...d,
         overNumber: Number(overNum),
+        inningsKey: d.inningsKey || `innings_${normInn(d.inning || d.inningNumber || currentInningNum)}`,
       };
     });
   }, [fetchedMatch, matchDetails, score, sessionDeliveries]);
 
-  // Available innings for filtering
-  const availableInnings = useMemo(() => {
+  // All match innings unified from inningsList, scoreObj, or deliveries
+  const allMatchInnings = useMemo(() => {
     if (Array.isArray(inningsList) && inningsList.length > 0) {
-      return [
-        { key: "all", label: "All Innings" },
-        ...inningsList.map((i, idx) => ({
-          key: String(i.number || idx + 1),
-          label: i.label || `Inning ${idx + 1}`,
-        })),
-      ];
+      return inningsList.map((i, idx) => {
+        const num = Number(i.number || idx + 1);
+        return {
+          number: num,
+          key: String(num),
+          label: i.label || (num >= 3 ? `Super Over ${num - 2}` : `Inning ${num}`),
+          data: i.data || i,
+        };
+      });
     }
-    const innSet = new Set();
-    allDeliveries.forEach((d) => {
-      const inn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
-      if (inn) innSet.add(inn);
+
+    const targetSource = fetchedMatch || matchDetails || score || {};
+    const scoreObj = targetSource.score || (targetSource.innings_1 || targetSource.inning ? targetSource : {});
+
+    const map = new Map();
+
+    Object.keys(scoreObj).forEach((k) => {
+      if (k.startsWith("innings_")) {
+        const numStr = k.replace(/[^0-9]/g, "");
+        const num = Number(numStr);
+        if (num && !map.has(num)) {
+          map.set(num, {
+            number: num,
+            key: String(num),
+            data: scoreObj[k],
+            isSuperOver: Boolean(scoreObj[k]?.isSuperOver || num >= 3),
+          });
+        }
+      }
     });
-    if (innSet.size <= 1) return [];
-    const sorted = Array.from(innSet).sort((a, b) => Number(a) - Number(b));
-    let superOverCount = 0;
+
+    if (Array.isArray(scoreObj.inning)) {
+      scoreObj.inning.forEach((inn, idx) => {
+        const num = idx + 1;
+        if (!map.has(num)) {
+          map.set(num, {
+            number: num,
+            key: String(num),
+            data: inn,
+            isSuperOver: Boolean(inn?.isSuperOver || num >= 3),
+          });
+        }
+      });
+    }
+
+    allDeliveries.forEach((d) => {
+      const innStr = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+      const num = Number(innStr);
+      if (num && !map.has(num)) {
+        map.set(num, {
+          number: num,
+          key: String(num),
+          data: null,
+          isSuperOver: num >= 3,
+        });
+      }
+    });
+
+    const sortedNums = Array.from(map.keys()).sort((a, b) => a - b);
+    let soCount = 0;
+    return sortedNums.map((num) => {
+      const item = map.get(num);
+      const isSO = item?.isSuperOver || num >= 3;
+      if (isSO) soCount++;
+      const label = isSO ? `Super Over ${soCount}` : `Inning ${num}`;
+      return {
+        number: num,
+        key: String(num),
+        label,
+        data: item?.data || {},
+      };
+    });
+  }, [inningsList, fetchedMatch, matchDetails, score, allDeliveries]);
+
+  // Innings in which the selected batsman actually batted
+  const batsmanInnings = useMemo(() => {
+    const targetId = String(
+      selectedPlayer?.playerId ||
+      selectedPlayer?.id ||
+      selectedPlayer?._id ||
+      (selectedBatsmanId !== "all" ? selectedBatsmanId : "") ||
+      ""
+    );
+    const targetName = String(
+      selectedPlayer?.name ||
+      selectedPlayer?.username ||
+      selectedPlayer?.playerName ||
+      ""
+    ).toLowerCase().trim();
+
+    // If no specific batsman is selected (All Batsmen), return all match innings with batting deliveries
+    if (!targetId && !targetName && selectedBatsmanId === "all") {
+      return allMatchInnings.filter((inn) => {
+        return allDeliveries.some((d) => {
+          const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+          return dInn === inn.key;
+        });
+      });
+    }
+
+    const matchesPlayer = (b) => {
+      if (!b) return false;
+      const bId = String(b.playerId || b.id || b._id || (typeof b === "string" ? b : "") || "");
+      const bName = (b.name || b.username || b.playerName || "").toLowerCase().trim();
+      if (targetId && bId && bId === targetId) return true;
+      if (targetName && bName && (targetName === bName || targetName.includes(bName) || bName.includes(targetName))) return true;
+      return false;
+    };
+
+    return allMatchInnings.filter((inn) => {
+      // 1. Check if batsman is in playedBatsman or batsman list of this inning
+      const rawInning = inn.data || {};
+      const rawBatsmen = [
+        ...(Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : []),
+        ...(Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
+        ...(Array.isArray(rawInning.batting?.batsman) ? rawInning.batting.batsman : []),
+        ...(Array.isArray(rawInning.batting?.playedBatsman) ? rawInning.batting.playedBatsman : []),
+      ];
+      if (rawBatsmen.some(matchesPlayer)) {
+        return true;
+      }
+
+      // 2. Check if player faced any deliveries in allDeliveries for this inning
+      const hasDelivery = allDeliveries.some((d) => {
+        const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+        if (dInn !== inn.key) return false;
+        const bId = String(d.batsman?._id || d.batsman?.playerId || d.batsman?.id || (typeof d.batsman === "string" ? d.batsman : "") || "");
+        const bName = (d.batsmanName || d.batsman?.name || d.batsman?.username || d.batsman?.playerName || "").toLowerCase().trim();
+        if (targetId && bId && bId === targetId) return true;
+        if (targetName && bName && (targetName === bName || targetName.includes(bName) || bName.includes(targetName))) return true;
+        return false;
+      });
+
+      return hasDelivery;
+    });
+  }, [allMatchInnings, allDeliveries, selectedPlayer, selectedBatsmanId]);
+
+  // Innings in which the selected bowler actually bowled
+  const bowlerInnings = useMemo(() => {
+    const targetId = String(
+      selectedPlayer?.playerId ||
+      selectedPlayer?.id ||
+      selectedPlayer?._id ||
+      (selectedBowlerId !== "all" ? selectedBowlerId : "") ||
+      ""
+    );
+    const targetName = String(
+      selectedPlayer?.name ||
+      selectedPlayer?.username ||
+      selectedPlayer?.playerName ||
+      ""
+    ).toLowerCase().trim();
+
+    if (!targetId && !targetName && selectedBowlerId === "all") {
+      return allMatchInnings.filter((inn) => {
+        return allDeliveries.some((d) => {
+          const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+          return dInn === inn.key;
+        });
+      });
+    }
+
+    const matchesBowler = (b) => {
+      if (!b) return false;
+      const bId = String(b.playerId || b.id || b._id || (typeof b === "string" ? b : "") || "");
+      const bName = (b.name || b.username || b.playerName || "").toLowerCase().trim();
+      if (targetId && bId && bId === targetId) return true;
+      if (targetName && bName && (targetName === bName || targetName.includes(bName) || bName.includes(targetName))) return true;
+      return false;
+    };
+
+    return allMatchInnings.filter((inn) => {
+      const rawInning = inn.data || {};
+      const rawBowlers = [
+        ...(Array.isArray(rawInning.bowling?.allBowlers) ? rawInning.bowling.allBowlers : []),
+        ...(Array.isArray(rawInning.bowling?.bowlers) ? rawInning.bowling.bowlers : []),
+        ...(Array.isArray(rawInning.bowlers) ? rawInning.bowlers : []),
+      ];
+      if (rawBowlers.some(matchesBowler)) return true;
+
+      const hasDelivery = allDeliveries.some((d) => {
+        const dInn = String(d.inningsKey || d.inning || d.inningNumber || "1").replace(/[^0-9]/g, "");
+        if (dInn !== inn.key) return false;
+        const bId = String(d.bowler?._id || d.bowler?.playerId || d.bowler?.id || (typeof d.bowler === "string" ? d.bowler : "") || "");
+        const bName = (d.bowlerName || d.bowler?.name || d.bowler?.username || d.bowler?.playerName || "").toLowerCase().trim();
+        if (targetId && bId && bId === targetId) return true;
+        if (targetName && bName && (targetName === bName || targetName.includes(bName) || bName.includes(targetName))) return true;
+        return false;
+      });
+
+      return hasDelivery;
+    });
+  }, [allMatchInnings, allDeliveries, selectedPlayer, selectedBowlerId]);
+
+  // Available innings for filtering: only show when player played in multiple innings (e.g. Inning 1 and Super Over 1)
+  const availableInnings = useMemo(() => {
+    const activeInningsList = activeTab === "pitch" ? bowlerInnings : batsmanInnings;
+    if (activeInningsList.length <= 1) {
+      return [];
+    }
     return [
       { key: "all", label: "All Innings" },
-      ...sorted.map((numStr) => {
-        const n = Number(numStr);
-        const isSO = n >= 3;
-        if (isSO) superOverCount++;
-        return {
-          key: numStr,
-          label: isSO ? `Super Over ${superOverCount}` : `Inning ${n}`,
-        };
-      }),
+      ...activeInningsList.map((inn) => ({
+        key: inn.key,
+        label: inn.label,
+      })),
     ];
-  }, [inningsList, allDeliveries]);
+  }, [activeTab, bowlerInnings, batsmanInnings]);
+
+  // Keep selectedInning in sync: reset to "all" if current selection is not among available innings
+  useEffect(() => {
+    if (selectedInning !== "all") {
+      const isStillAvailable = availableInnings.some((inn) => inn.key === String(selectedInning));
+      if (!isStillAvailable) {
+        setSelectedInning("all");
+      }
+    }
+  }, [availableInnings, selectedInning]);
 
   // Extract unique batsmen who have faced balls
   const availableBatsmen = useMemo(() => {
@@ -363,12 +559,13 @@ export default function WagonPitchViewerModal({
       }
       const ww = d.wagonWheel || (d.angle !== undefined && d.zone !== undefined ? d : null);
       if (!ww) return false;
-      if (selectedBatsmanId !== "all") {
+      if (selectedBatsmanId !== "all" || selectedPlayer) {
         const bId = String(d.batsman?._id || d.batsman?.playerId || d.batsman?.id || (typeof d.batsman === "string" ? d.batsman : "") || "");
         const bName = (d.batsmanName || d.batsman?.name || d.batsman?.username || d.batsman?.playerName || "").toLowerCase().trim();
+        const selectedId = String(selectedPlayer?.playerId || selectedPlayer?.id || selectedPlayer?._id || (selectedBatsmanId !== "all" ? selectedBatsmanId : "") || "");
         const selectedName = selectedPlayer?.name ? String(selectedPlayer.name).toLowerCase().trim() : "";
 
-        const idMatches = bId && bId === String(selectedBatsmanId);
+        const idMatches = Boolean(selectedId && bId && bId === selectedId);
         const nameMatches = Boolean(selectedName && bName && (bName === selectedName || bName.includes(selectedName) || selectedName.includes(bName)));
 
         if (!idMatches && !nameMatches) return false;
@@ -427,19 +624,20 @@ export default function WagonPitchViewerModal({
       }
       const pm = d.pitchMap || (d.impactPoint !== undefined || d.coordinates !== undefined ? d : null);
       if (!pm) return false;
-      if (selectedBowlerId !== "all") {
+      if (selectedBowlerId !== "all" || (activeTab === "pitch" && selectedPlayer)) {
         const bowlId = String(d.bowler?._id || d.bowler?.playerId || d.bowler?.id || (typeof d.bowler === "string" ? d.bowler : "") || "");
         const bowlName = (d.bowlerName || d.bowler?.name || d.bowler?.username || d.bowler?.playerName || "").toLowerCase().trim();
+        const selectedId = String(selectedPlayer?.playerId || selectedPlayer?.id || selectedPlayer?._id || (selectedBowlerId !== "all" ? selectedBowlerId : "") || "");
         const selectedName = selectedPlayer?.name ? String(selectedPlayer.name).toLowerCase().trim() : "";
 
-        const idMatches = bowlId && bowlId === String(selectedBowlerId);
+        const idMatches = Boolean(selectedId && bowlId && bowlId === selectedId);
         const nameMatches = Boolean(selectedName && bowlName && (bowlName === selectedName || bowlName.includes(selectedName) || selectedName.includes(bowlName)));
 
         if (!idMatches && !nameMatches) return false;
       }
       return true;
     });
-  }, [allDeliveries, selectedBowlerId, selectedPlayer, selectedInning]);
+  }, [allDeliveries, selectedBowlerId, selectedPlayer, selectedInning, activeTab]);
 
   // Extract unique batsmen that this bowler bowled to
   const facedBatsmen = useMemo(() => {
@@ -589,6 +787,35 @@ export default function WagonPitchViewerModal({
     });
     return counts;
   }, [filteredPitches]);
+
+  // Inning-specific batsman stats for hero card when a specific inning is selected
+  const activeBatsmanInningStats = useMemo(() => {
+    if (!selectedPlayer) return null;
+    const targetId = String(selectedPlayer?.playerId || selectedPlayer?.id || selectedPlayer?._id || "");
+    const targetName = String(selectedPlayer?.name || selectedPlayer?.username || selectedPlayer?.playerName || "").toLowerCase().trim();
+
+    const matches = (b) => {
+      if (!b) return false;
+      const bId = String(b.playerId || b.id || b._id || (typeof b === "string" ? b : "") || "");
+      const bName = (b.name || b.username || b.playerName || "").toLowerCase().trim();
+      if (targetId && bId && bId === targetId) return true;
+      if (targetName && bName && (targetName === bName || targetName.includes(bName) || bName.includes(targetName))) return true;
+      return false;
+    };
+
+    if (selectedInning !== "all") {
+      const matchInn = allMatchInnings.find((i) => i.key === String(selectedInning));
+      const rawInning = matchInn?.data || {};
+      const list = [
+        ...(Array.isArray(rawInning.playedBatsman) ? rawInning.playedBatsman : []),
+        ...(Array.isArray(rawInning.batsman) ? rawInning.batsman : []),
+        ...(Array.isArray(rawInning.batting?.batsman) ? rawInning.batting.batsman : []),
+      ];
+      const found = list.find(matches);
+      if (found) return found;
+    }
+    return null;
+  }, [selectedPlayer, selectedInning, allMatchInnings]);
 
   return (
     <Modal
@@ -771,7 +998,7 @@ export default function WagonPitchViewerModal({
                     numberOfLines={1}
                   >
                     {activeTab === "wagon"
-                      ? `${selectedPlayer.runs ?? wagonStats.runs ?? 0} runs (${selectedPlayer.ballsFaced ?? selectedPlayer.balls ?? wagonStats.balls ?? 0}b) • 4s: ${selectedPlayer.fours ?? wagonStats.fours ?? 0} • 6s: ${selectedPlayer.sixes ?? wagonStats.sixes ?? 0} • SR: ${selectedPlayer.sr ?? (wagonStats.balls ? ((wagonStats.runs / wagonStats.balls) * 100).toFixed(1) : "0.00")}`
+                      ? `${activeBatsmanInningStats?.runs ?? selectedPlayer.runs ?? wagonStats.runs ?? 0} runs (${activeBatsmanInningStats?.ballsFaced ?? activeBatsmanInningStats?.balls ?? selectedPlayer.ballsFaced ?? selectedPlayer.balls ?? wagonStats.balls ?? 0}b) • 4s: ${activeBatsmanInningStats?.fours ?? selectedPlayer.fours ?? wagonStats.fours ?? 0} • 6s: ${activeBatsmanInningStats?.sixes ?? selectedPlayer.sixes ?? wagonStats.sixes ?? 0} • SR: ${activeBatsmanInningStats?.sr ?? selectedPlayer.sr ?? (wagonStats.balls ? ((wagonStats.runs / wagonStats.balls) * 100).toFixed(1) : "0.00")}`
                       : `${selectedPlayer.over ?? "0.0"} ov • ${selectedPlayer.runsGiven ?? selectedPlayer.runs ?? 0} runs • ${selectedPlayer.wicketsTaken ?? selectedPlayer.wickets ?? 0} wkts • ECO: ${selectedPlayer.eco ?? "0.00"}`}
                   </Text>
                 </View>
@@ -1155,7 +1382,10 @@ export default function WagonPitchViewerModal({
                               : "#F1F5F9",
                         },
                       ]}
-                      onPress={() => setSelectedBatsmanId("all")}
+                      onPress={() => {
+                        setSelectedBatsmanId("all");
+                        setSelectedPlayer(null);
+                      }}
                     >
                       <Text
                         style={[
@@ -1229,7 +1459,10 @@ export default function WagonPitchViewerModal({
                               : "#F1F5F9",
                         },
                       ]}
-                      onPress={() => setSelectedBowlerId("all")}
+                      onPress={() => {
+                        setSelectedBowlerId("all");
+                        setSelectedPlayer(null);
+                      }}
                     >
                       <Text
                         style={[

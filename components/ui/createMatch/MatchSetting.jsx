@@ -10,6 +10,8 @@ import {
   Alert,
   Share,
   Text,
+  Platform,
+  Keyboard,
 } from "react-native";
 import {
   ChevronDown,
@@ -577,6 +579,11 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           onChangeText={setStreamingLink}
           placeholder="https://youtube.com/..."
           placeholderTextColor={C.textSecondary}
+          keyboardType="url"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
           onBlur={() => updateMatchSetting(MatchSettingEnum.LIVE_STREAMING_LINK, streamingLink)}
         />
       </View>
@@ -917,7 +924,13 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 150 }}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Live & Broadcast Section First for easy access */}
         <AccordionSection
           title={isLive ? "🔴 Live & Broadcast (Active)" : "Live & Broadcast"}

@@ -42,7 +42,7 @@ const PlayerAvatar = ({ player, size = 40, onPress, style }) => {
 
   const content = hasValidImage ? (
     <Image
-      source={{ uri: imgUri.trim() }}
+      source={{ uri: imgUri.trim(), cache: "force-cache" }}
       onError={() => setHasError(true)}
       style={{
         width: size,

@@ -14,12 +14,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet
+  StyleSheet,
+  Keyboard
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Header from "./Header";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import MatchOverview from "./MatchOverview";
 import TabSwitch from "../custom/TabSwitch";
 import GoogleRecentOversStrip from "./GoogleRecentOversStrip";
@@ -62,6 +63,46 @@ export default function MatchScoreCard({
     const [streamInput, setStreamInput] = useState("");
     const [isSavingStream, setIsSavingStream] = useState(false);
     const isFirstMountRef = useRef(true);
+
+    const insets = useSafeAreaInsets();
+    const keyboardHeightAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (!isStreamModalVisible) {
+            keyboardHeightAnim.setValue(0);
+            return;
+        }
+
+        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+        const onShow = (e) => {
+            const h = e.endCoordinates?.height || 0;
+            Animated.timing(keyboardHeightAnim, {
+                toValue: h,
+                duration: Platform.OS === "ios" ? (e.duration || 250) : 150,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: false,
+            }).start();
+        };
+
+        const onHide = (e) => {
+            Animated.timing(keyboardHeightAnim, {
+                toValue: 0,
+                duration: Platform.OS === "ios" ? (e?.duration || 200) : 150,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: false,
+            }).start();
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, [isStreamModalVisible]);
 
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
@@ -2153,11 +2194,19 @@ export default function MatchScoreCard({
                             <TouchableOpacity
                                 style={StyleSheet.absoluteFillObject}
                                 activeOpacity={1}
-                                onPress={() => setIsStreamModalVisible(false)}
+                                onPress={() => {
+                                    Keyboard.dismiss();
+                                    setIsStreamModalVisible(false);
+                                }}
                             />
-                            <KeyboardAvoidingView
-                                behavior={Platform.OS === "ios" ? "padding" : undefined}
-                                keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
+                            <Animated.View
+                                style={{
+                                    width: "100%",
+                                    paddingBottom: Animated.add(
+                                        keyboardHeightAnim,
+                                        new Animated.Value(Math.max(insets?.bottom || 0, 16))
+                                    ),
+                                }}
                             >
                                 <View
                                     className={`rounded-t-3xl p-5 border-t ${
@@ -2165,6 +2214,13 @@ export default function MatchScoreCard({
                                             ? "bg-gray-900 border-gray-800"
                                             : "bg-white border-gray-200"
                                     }`}
+                                    style={{
+                                        shadowColor: "#000",
+                                        shadowOffset: { width: 0, height: -4 },
+                                        shadowOpacity: 0.25,
+                                        shadowRadius: 10,
+                                        elevation: 12,
+                                    }}
                                 >
                                     <View className="flex-row items-center justify-between mb-4">
                                         <View className="flex-row items-center gap-2">
@@ -2181,7 +2237,10 @@ export default function MatchScoreCard({
                                             </View>
                                         </View>
                                         <TouchableOpacity
-                                            onPress={() => setIsStreamModalVisible(false)}
+                                            onPress={() => {
+                                                Keyboard.dismiss();
+                                                setIsStreamModalVisible(false);
+                                            }}
                                             className="p-1.5 rounded-full bg-gray-500/20"
                                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                         >
@@ -2212,6 +2271,9 @@ export default function MatchScoreCard({
                                                 placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
                                                 autoCapitalize="none"
                                                 autoCorrect={false}
+                                                keyboardType="url"
+                                                returnKeyType="done"
+                                                onSubmitEditing={() => Keyboard.dismiss()}
                                                 style={{
                                                     flex: 1,
                                                     minHeight: 40,
@@ -2236,7 +2298,10 @@ export default function MatchScoreCard({
                                     <View className="flex-row items-center gap-3">
                                         {Boolean(score?.streamUrl) && (
                                             <TouchableOpacity
-                                                onPress={() => handleSaveStream("")}
+                                                onPress={() => {
+                                                    Keyboard.dismiss();
+                                                    handleSaveStream("");
+                                                }}
                                                 disabled={isSavingStream}
                                                 className="flex-1 py-3 rounded-xl bg-red-600/10 border border-red-500/30 items-center justify-center"
                                             >
@@ -2247,7 +2312,10 @@ export default function MatchScoreCard({
                                         )}
 
                                         <TouchableOpacity
-                                            onPress={() => handleSaveStream(streamInput)}
+                                            onPress={() => {
+                                                Keyboard.dismiss();
+                                                handleSaveStream(streamInput);
+                                            }}
                                             disabled={isSavingStream}
                                             className={`flex-1 py-3 rounded-xl items-center justify-center ${
                                                 isSavingStream ? "bg-blue-400" : "bg-blue-600 active:bg-blue-700"
@@ -2263,7 +2331,7 @@ export default function MatchScoreCard({
                                         </TouchableOpacity>
                                     </View>
                                 </View>
-                            </KeyboardAvoidingView>
+                            </Animated.View>
                         </View>
                     )}
             </SafeAreaView>
