@@ -1,7 +1,8 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   ScrollView,
+  FlatList,
   Text,
   TouchableOpacity,
   TextInput,
@@ -22,6 +23,7 @@ import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareS
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
+import * as Contacts from "expo-contacts";
 
 export default function AddPlayer({
   showHeader = true,
@@ -539,6 +541,30 @@ export default function AddPlayer({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phone Number Helper (Sanitizes & Formats Indian/International Mobile Numbers)
+// ─────────────────────────────────────────────────────────────────────────────
+export const cleanMobileNumber = (raw) => {
+  if (!raw) return "";
+  let digits = String(raw).replace(/\D/g, "");
+
+  // If starts with country code 91 (India) and has 12 digits, strip 91
+  if (digits.length === 12 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  } else if (digits.length === 11 && digits.startsWith("0")) {
+    // Leading trunk 0 (e.g. 09876543210)
+    digits = digits.slice(1);
+  } else if (digits.length > 10) {
+    // Check if the last 10 digits form a valid Indian mobile number (starts with 6,7,8,9)
+    const last10 = digits.slice(-10);
+    if (/^[6-9]\d{9}$/.test(last10)) {
+      digits = last10;
+    }
+  }
+
+  return digits.slice(0, 10);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Upload Without Number Component (ONLY asks Player Name - nothing else!)
 // ─────────────────────────────────────────────────────────────────────────────
 function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwner, isEmbedded }) {
@@ -550,6 +576,47 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
   const [username, setUsername] = useState("");
   const [addedPlayers, setAddedPlayers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  const handlePickContactName = async () => {
+    try {
+      const isAvailable = await Contacts.isAvailableAsync();
+      if (!isAvailable) {
+        showGlobalAlert({
+          title: "Not Available",
+          message: "Contact picker is only supported on mobile devices.",
+          type: "warning",
+        });
+        return;
+      }
+
+      const { status, canAskAgain } = await Contacts.requestPermissionsAsync();
+      if (status !== "granted") {
+        showGlobalAlert({
+          title: "Permission Required",
+          message: canAskAgain
+            ? "Contact permission is required to choose names from contacts."
+            : "Contact permission is disabled. Please enable it in device settings.",
+          type: "warning",
+        });
+        return;
+      }
+
+      const contact = await Contacts.presentContactPickerAsync();
+      if (!contact) return;
+
+      const contactName =
+        contact.name ||
+        [contact.firstName, contact.middleName, contact.lastName].filter(Boolean).join(" ") ||
+        contact.nickname ||
+        "";
+
+      if (contactName) {
+        setUsername(contactName);
+      }
+    } catch (err) {
+      console.warn("[UploadWithoutNumber] Error picking contact:", err);
+    }
+  };
 
   const handleAddMore = () => {
     const trimmed = username.trim();
@@ -699,11 +766,23 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
             >
               Player Name #{addedPlayers.length + 1} *
             </ThemedText>
-            {addedPlayers.length > 0 && (
-              <ThemedText className="text-xs text-blue-500 font-semibold">
-                {addedPlayers.length} added so far
-              </ThemedText>
-            )}
+            <View className="flex-row items-center gap-2">
+              <TouchableOpacity
+                onPress={handlePickContactName}
+                className="flex-row items-center"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="people-outline" size={13} color="#D97706" />
+                <ThemedText className="text-xs text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                  From Contacts
+                </ThemedText>
+              </TouchableOpacity>
+              {addedPlayers.length > 0 && (
+                <ThemedText className="text-xs text-blue-500 font-semibold">
+                  • {addedPlayers.length} added
+                </ThemedText>
+              )}
+            </View>
           </View>
           <TextInput
             ref={nameInputRef}
@@ -806,6 +885,486 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Multi-Contact Picker Modal (Select Multiple Players from Contacts at Once)
+// ─────────────────────────────────────────────────────────────────────────────
+function MultiContactPickerModal({
+  visible,
+  onClose,
+  onAddContacts,
+  alreadyAddedMobiles = [],
+}) {
+  const colorScheme = useColorScheme();
+  const isDarkMode = colorScheme === "dark";
+
+  const [contacts, setContacts] = useState([]);
+  const [filteredContacts, setFilteredContacts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedMap, setSelectedMap] = useState(new Map());
+  const [isLoading, setIsLoading] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState(true);
+
+  const existingMobileSet = useMemo(() => {
+    return new Set(
+      (alreadyAddedMobiles || []).map((m) => cleanMobileNumber(m)).filter(Boolean)
+    );
+  }, [alreadyAddedMobiles]);
+
+  useEffect(() => {
+    if (visible) {
+      loadContacts();
+    } else {
+      setSearchTerm("");
+      setSelectedMap(new Map());
+    }
+  }, [visible]);
+
+  const loadContacts = async () => {
+    try {
+      setIsLoading(true);
+      const isAvailable = await Contacts.isAvailableAsync();
+      if (!isAvailable) {
+        showGlobalAlert({
+          title: "Not Supported",
+          message: "Contact picker is only supported on mobile devices (Android & iOS).",
+          type: "warning",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const { status, canAskAgain } = await Contacts.requestPermissionsAsync();
+      if (status !== "granted") {
+        setPermissionGranted(false);
+        setIsLoading(false);
+        showGlobalAlert({
+          title: "Permission Required",
+          message: canAskAgain
+            ? "Please grant contact permission to view and select contacts."
+            : "Contacts permission is disabled. Please enable it in device settings.",
+          type: "warning",
+        });
+        return;
+      }
+
+      setPermissionGranted(true);
+      const { data } = await Contacts.getContactsAsync({
+        fields: [
+          Contacts.Fields.Name,
+          Contacts.Fields.FirstName,
+          Contacts.Fields.LastName,
+          Contacts.Fields.PhoneNumbers,
+          Contacts.Fields.Emails,
+        ],
+        sort: Contacts.SortTypes.FirstName,
+      });
+
+      const list = [];
+      if (Array.isArray(data)) {
+        for (const c of data) {
+          const rawPhones = (c.phoneNumbers || []).filter(
+            (p) => p && (p.number || p.digits)
+          );
+          if (rawPhones.length === 0) continue;
+
+          const name =
+            c.name ||
+            [c.firstName, c.middleName, c.lastName].filter(Boolean).join(" ") ||
+            c.nickname ||
+            "Unknown";
+
+          let bestMobile = "";
+          let bestRaw = "";
+          for (const p of rawPhones) {
+            const cleaned = cleanMobileNumber(p.number || p.digits);
+            if (/^[6-9]\d{9}$/.test(cleaned)) {
+              bestMobile = cleaned;
+              bestRaw = p.number || p.digits;
+              break;
+            }
+          }
+          if (!bestMobile && rawPhones.length > 0) {
+            bestMobile = cleanMobileNumber(rawPhones[0].number || rawPhones[0].digits);
+            bestRaw = rawPhones[0].number || rawPhones[0].digits;
+          }
+
+          if (!bestMobile) continue;
+
+          list.push({
+            id: c.id || `${name}_${bestMobile}`,
+            name: name.trim(),
+            mobile: bestMobile,
+            rawMobile: bestRaw,
+            email: c.emails?.[0]?.email || "",
+            phoneCount: rawPhones.length,
+          });
+        }
+      }
+
+      setContacts(list);
+      setFilteredContacts(list);
+    } catch (err) {
+      console.warn("[MultiContactPicker] Error loading contacts:", err);
+      showGlobalAlert({
+        title: "Error",
+        message: "Failed to load contacts. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearch = (text) => {
+    setSearchTerm(text);
+    if (!text || !text.trim()) {
+      setFilteredContacts(contacts);
+      return;
+    }
+    const query = text.toLowerCase().trim();
+    const filtered = contacts.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.mobile.includes(query) ||
+        (item.rawMobile && item.rawMobile.includes(query))
+      );
+    });
+    setFilteredContacts(filtered);
+  };
+
+  const toggleSelect = (item) => {
+    setSelectedMap((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.id)) {
+        next.delete(item.id);
+      } else {
+        next.set(item.id, item);
+      }
+      return next;
+    });
+  };
+
+  const selectableContacts = useMemo(() => {
+    return filteredContacts.filter((c) => !existingMobileSet.has(c.mobile));
+  }, [filteredContacts, existingMobileSet]);
+
+  const toggleSelectAll = () => {
+    if (selectedMap.size >= selectableContacts.length && selectableContacts.length > 0) {
+      setSelectedMap(new Map());
+    } else {
+      const next = new Map(selectedMap);
+      selectableContacts.forEach((item) => next.set(item.id, item));
+      setSelectedMap(next);
+    }
+  };
+
+  const handleConfirm = () => {
+    const selectedList = Array.from(selectedMap.values());
+    if (selectedList.length === 0) {
+      showGlobalAlert({
+        title: "No Contacts Selected",
+        message: "Please select at least one contact to add.",
+        type: "info",
+      });
+      return;
+    }
+    onAddContacts(selectedList);
+  };
+
+  const getAvatarBg = (name) => {
+    const colors = [
+      "#2563EB", "#7C3AED", "#DB2777", "#D97706",
+      "#059669", "#DC2626", "#0891B2", "#4F46E5"
+    ];
+    let hash = 0;
+    for (let i = 0; i < (name || "").length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "?";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const renderContactItem = ({ item }) => {
+    const isSelected = selectedMap.has(item.id);
+    const isAlreadyAdded = existingMobileSet.has(item.mobile);
+
+    return (
+      <TouchableOpacity
+        onPress={() => !isAlreadyAdded && toggleSelect(item)}
+        activeOpacity={isAlreadyAdded ? 1 : 0.7}
+        className={`flex-row items-center p-3 mb-2 rounded-2xl border ${
+          isAlreadyAdded
+            ? isDarkMode
+              ? "bg-gray-800/40 border-gray-700/50 opacity-60"
+              : "bg-gray-100 border-gray-200 opacity-60"
+            : isSelected
+            ? isDarkMode
+              ? "bg-blue-600/20 border-blue-500"
+              : "bg-blue-50 border-blue-300"
+            : isDarkMode
+            ? "bg-gray-800 border-gray-700"
+            : "bg-white border-gray-200"
+        } shadow-sm`}
+      >
+        {/* Avatar */}
+        <View
+          className="w-11 h-11 rounded-full items-center justify-center mr-3"
+          style={{ backgroundColor: getAvatarBg(item.name) }}
+        >
+          <ThemedText className="text-white font-bold text-sm">
+            {getInitials(item.name)}
+          </ThemedText>
+        </View>
+
+        {/* Info */}
+        <View className="flex-1 mr-2">
+          <View className="flex-row items-center">
+            <ThemedText
+              className="font-bold text-base text-gray-900 dark:text-white"
+              numberOfLines={1}
+            >
+              {item.name}
+            </ThemedText>
+            {isAlreadyAdded && (
+              <View className="ml-2 bg-gray-500/20 px-2 py-0.5 rounded-full">
+                <ThemedText className="text-[10px] text-gray-400 font-semibold">
+                  Already Added
+                </ThemedText>
+              </View>
+            )}
+          </View>
+          <View className="flex-row items-center mt-0.5">
+            <ThemedText className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+              {item.mobile}
+            </ThemedText>
+            {item.phoneCount > 1 && (
+              <ThemedText className="text-[11px] text-blue-500 ml-2">
+                +{item.phoneCount - 1} more
+              </ThemedText>
+            )}
+          </View>
+        </View>
+
+        {/* Checkbox */}
+        <View className="items-center justify-center pl-2">
+          {isAlreadyAdded ? (
+            <Ionicons name="checkmark-circle" size={24} color="#9CA3AF" />
+          ) : isSelected ? (
+            <Ionicons name="checkbox" size={24} color="#2563EB" />
+          ) : (
+            <Ionicons
+              name="square-outline"
+              size={24}
+              color={isDarkMode ? "#6B7280" : "#D1D5DB"}
+            />
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView
+        className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
+      >
+        {/* Header */}
+        <View
+          className={`px-4 py-3 border-b flex-row items-center justify-between ${
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+          }`}
+        >
+          <View className="flex-row items-center flex-1 mr-2">
+            <TouchableOpacity onPress={onClose} className="p-2 mr-2">
+              <Ionicons name="arrow-back" size={24} color="#2563EB" />
+            </TouchableOpacity>
+            <View className="flex-1">
+              <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+                Select Contacts
+              </ThemedText>
+              <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                Choose multiple players at once
+              </ThemedText>
+            </View>
+          </View>
+
+          {selectableContacts.length > 0 && (
+            <TouchableOpacity
+              onPress={toggleSelectAll}
+              className={`px-3 py-1.5 rounded-lg border ${
+                isDarkMode
+                  ? "border-gray-700 bg-gray-750"
+                  : "border-blue-200 bg-blue-50"
+              }`}
+            >
+              <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                {selectedMap.size > 0 && selectedMap.size >= selectableContacts.length
+                  ? "Clear All"
+                  : "Select All"}
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Search Bar */}
+        <View className="p-4 pb-2">
+          <View
+            className={`flex-row items-center px-3 py-2.5 rounded-xl border ${
+              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+            } shadow-sm`}
+          >
+            <Ionicons
+              name="search"
+              size={20}
+              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+            <TextInput
+              className={`flex-1 ml-2.5 text-base ${
+                isDarkMode ? "text-white" : "text-gray-900"
+              }`}
+              placeholder="Search by name or phone..."
+              placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+              value={searchTerm}
+              onChangeText={handleSearch}
+              autoCorrect={false}
+            />
+            {searchTerm.length > 0 && (
+              <TouchableOpacity onPress={() => handleSearch("")}>
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Status strip */}
+          <View className="flex-row items-center justify-between px-1 mt-2.5">
+            <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+              {filteredContacts.length}{" "}
+              {filteredContacts.length === 1 ? "contact" : "contacts"} found
+            </ThemedText>
+            {selectedMap.size > 0 && (
+              <View className="bg-blue-600 px-2.5 py-0.5 rounded-full">
+                <ThemedText className="text-xs font-bold text-white">
+                  {selectedMap.size} selected
+                </ThemedText>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Contact List */}
+        {isLoading ? (
+          <View className="flex-1 justify-center items-center py-12">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+              Loading your contacts...
+            </ThemedText>
+          </View>
+        ) : !permissionGranted ? (
+          <View className="flex-1 justify-center items-center p-6">
+            <View className="w-16 h-16 rounded-full bg-amber-500/15 items-center justify-center mb-4">
+              <Ionicons name="lock-closed" size={32} color="#D97706" />
+            </View>
+            <ThemedText className="font-bold text-lg text-center mb-1 text-gray-900 dark:text-white">
+              Contact Permission Required
+            </ThemedText>
+            <ThemedText className="text-xs text-center text-gray-500 dark:text-gray-400 mb-6">
+              Please grant contacts permission to select players from your contact list.
+            </ThemedText>
+            <TouchableOpacity
+              onPress={loadContacts}
+              className="bg-blue-600 px-6 py-3 rounded-xl"
+            >
+              <ThemedText className="text-white font-bold text-sm">
+                Grant Permission
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        ) : filteredContacts.length === 0 ? (
+          <View className="flex-1 justify-center items-center p-6">
+            <Ionicons
+              name="search"
+              size={40}
+              color={isDarkMode ? "#6B7280" : "#9CA3AF"}
+            />
+            <ThemedText className="text-base font-semibold text-gray-700 dark:text-gray-300 mt-3">
+              {searchTerm ? "No contacts found" : "No contacts available"}
+            </ThemedText>
+            <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center">
+              {searchTerm
+                ? `No contact matches "${searchTerm}"`
+                : "No contacts with valid phone numbers were found on your device."}
+            </ThemedText>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredContacts}
+            renderItem={renderContactItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={10}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+
+        {/* Bottom Sticky Action Bar */}
+        <View
+          className={`p-4 border-t flex-row items-center gap-3 ${
+            isDarkMode
+              ? "bg-gray-800 border-gray-700"
+              : "bg-white border-gray-200"
+          }`}
+        >
+          <TouchableOpacity
+            onPress={onClose}
+            className={`py-3.5 px-5 rounded-xl items-center border ${
+              isDarkMode
+                ? "border-gray-700 bg-gray-700/50"
+                : "border-gray-300 bg-gray-100"
+            }`}
+          >
+            <ThemedText className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Cancel
+            </ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleConfirm}
+            disabled={selectedMap.size === 0}
+            className={`flex-1 py-3.5 rounded-xl items-center justify-center flex-row shadow-md ${
+              selectedMap.size > 0 ? "bg-blue-600" : "bg-gray-400 opacity-60"
+            }`}
+          >
+            <Ionicons
+              name="person-add"
+              size={18}
+              color="#FFFFFF"
+              style={{ marginRight: 6 }}
+            />
+            <ThemedText className="text-white font-bold text-sm">
+              Add {selectedMap.size > 0 ? `(${selectedMap.size}) ` : ""}Selected Players
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Add with Phone Number Component (Asks Name, Mobile Number, Email, Location)
 // ─────────────────────────────────────────────────────────────────────────────
 function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
@@ -819,9 +1378,125 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   const [location, setLocation] = useState("");
   const [addedPlayers, setAddedPlayers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPickingContact, setIsPickingContact] = useState(false);
+  const [showMultiPicker, setShowMultiPicker] = useState(false);
+  const [multipleNumbersData, setMultipleNumbersData] = useState(null);
+
+  const handleAddMultipleContacts = (selectedList) => {
+    if (!selectedList || selectedList.length === 0) return;
+    const newPlayers = selectedList.map((c) => {
+      const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      return {
+        id: pId,
+        _id: pId,
+        name: c.name,
+        username: c.name,
+        mobile: c.mobile,
+        email: c.email || "",
+        location: "",
+      };
+    });
+    setAddedPlayers((prev) => [...prev, ...newPlayers]);
+    setShowMultiPicker(false);
+    showGlobalAlert({
+      title: "Success",
+      message: `${newPlayers.length} ${
+        newPlayers.length === 1 ? "player" : "players"
+      } added from contacts. Tap 'Done' to finish!`,
+      type: "success",
+    });
+  };
+
+  const handlePickContact = async () => {
+    try {
+      setIsPickingContact(true);
+      const isAvailable = await Contacts.isAvailableAsync();
+      if (!isAvailable) {
+        showGlobalAlert({
+          title: "Not Supported",
+          message: "Contact picker is only supported on mobile devices (Android & iOS).",
+          type: "warning",
+        });
+        return;
+      }
+
+      const { status, canAskAgain } = await Contacts.requestPermissionsAsync();
+      if (status !== "granted") {
+        showGlobalAlert({
+          title: "Permission Required",
+          message: canAskAgain
+            ? "Please grant contacts permission to select players from your phone contacts."
+            : "Contacts permission is disabled. Please enable it in your phone settings to use this feature.",
+          type: "warning",
+        });
+        return;
+      }
+
+      const contact = await Contacts.presentContactPickerAsync();
+      if (!contact) {
+        // User cancelled or dismissed picker
+        return;
+      }
+
+      const contactName =
+        contact.name ||
+        [contact.firstName, contact.middleName, contact.lastName].filter(Boolean).join(" ") ||
+        contact.nickname ||
+        "";
+
+      const contactEmail = contact.emails?.[0]?.email || "";
+
+      const rawPhones = (contact.phoneNumbers || []).filter(
+        (p) => p && (p.number || p.digits)
+      );
+
+      if (rawPhones.length === 0) {
+        if (contactName) setUsername(contactName);
+        if (contactEmail) setEmail(contactEmail);
+        showGlobalAlert({
+          title: "No Phone Number",
+          message: `No phone number found for "${contactName || "this contact"}". Name has been filled, please enter the phone number manually.`,
+          type: "info",
+        });
+        return;
+      }
+
+      if (rawPhones.length === 1) {
+        const cleaned = cleanMobileNumber(rawPhones[0].number || rawPhones[0].digits);
+        if (contactName) setUsername(contactName);
+        if (cleaned) setMobile(cleaned);
+        if (contactEmail) setEmail(contactEmail);
+      } else {
+        // Multiple numbers found -> show selection modal
+        setMultipleNumbersData({
+          name: contactName,
+          email: contactEmail,
+          phones: rawPhones,
+        });
+      }
+    } catch (err) {
+      console.warn("[AddPlayer] Error picking contact:", err);
+      showGlobalAlert({
+        title: "Error",
+        message: "Could not open contacts. Please try again or enter details manually.",
+        type: "error",
+      });
+    } finally {
+      setIsPickingContact(false);
+    }
+  };
+
+  const handleSelectMultipleNumber = (phoneObj) => {
+    if (!multipleNumbersData) return;
+    const cleaned = cleanMobileNumber(phoneObj.number || phoneObj.digits);
+    if (multipleNumbersData.name) setUsername(multipleNumbersData.name);
+    if (cleaned) setMobile(cleaned);
+    if (multipleNumbersData.email) setEmail(multipleNumbersData.email);
+    setMultipleNumbersData(null);
+  };
 
   const handleAddMore = () => {
-    const cleanMobile = mobile.replace(/\D/g, "");
+    const cleanMobile = cleanMobileNumber(mobile);
     if (!username.trim() || !cleanMobile) {
       showGlobalAlert({
         title: "Required",
@@ -865,7 +1540,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   };
 
   const handleSave = async () => {
-    const cleanCurrentMobile = mobile.replace(/\D/g, "");
+    const cleanCurrentMobile = cleanMobileNumber(mobile);
     if (!username.trim() && addedPlayers.length === 0) {
       showGlobalAlert({
         title: "Required",
@@ -968,19 +1643,94 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
       contentContainerStyle={{ padding: 16, flexGrow: 1 }}
       showsVerticalScrollIndicator={false}
     >
+      {/* Choose from Contact List Options */}
+      <View className="mb-4">
+        {/* Primary Option: Select Multiple Contacts (Batch) */}
+        <TouchableOpacity
+          onPress={() => setShowMultiPicker(true)}
+          activeOpacity={0.7}
+          className={`p-4 mb-2.5 rounded-2xl border ${
+            isDarkMode
+              ? "bg-blue-600/15 border-blue-500/30"
+              : "bg-blue-50/90 border-blue-200"
+          } shadow-sm`}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center flex-1 mr-2">
+              <View className="w-11 h-11 rounded-2xl bg-blue-600/20 items-center justify-center mr-3">
+                <Ionicons name="people" size={24} color="#2563EB" />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center">
+                  <ThemedText className="font-bold text-base text-blue-600 dark:text-blue-400">
+                    Select Multiple Contacts
+                  </ThemedText>
+                  <View className="ml-2 bg-blue-600 px-1.5 py-0.5 rounded-md">
+                    <ThemedText className="text-[10px] font-extrabold text-white">
+                      BATCH
+                    </ThemedText>
+                  </View>
+                </View>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Pick multiple players at once with checkboxes
+                </ThemedText>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+          </View>
+        </TouchableOpacity>
+
+        {/* Secondary Option: Pick a single contact */}
+        <TouchableOpacity
+          onPress={handlePickContact}
+          disabled={isPickingContact}
+          activeOpacity={0.7}
+          className={`flex-row items-center justify-between py-2.5 px-3.5 rounded-xl border ${
+            isDarkMode
+              ? "bg-gray-800/80 border-gray-700"
+              : "bg-white border-gray-200"
+          }`}
+        >
+          <View className="flex-row items-center flex-1 mr-2">
+            <Ionicons name="person-add-outline" size={16} color="#2563EB" style={{ marginRight: 8 }} />
+            <ThemedText className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Or pick a single contact directly from phone
+            </ThemedText>
+          </View>
+          {isPickingContact ? (
+            <ActivityIndicator size="small" color="#2563EB" />
+          ) : (
+            <Ionicons name="chevron-forward" size={14} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+          )}
+        </TouchableOpacity>
+      </View>
+
       <View
         className={`rounded-2xl p-4 mb-4 border ${
           isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
         } shadow-sm`}
       >
         <View className="mb-4">
-          <ThemedText
-            className={`text-xs font-bold uppercase tracking-wider mb-1.5 ${
-              isDarkMode ? "text-gray-300" : "text-gray-700"
-            }`}
-          >
-            Player Name *
-          </ThemedText>
+          <View className="flex-row items-center justify-between mb-1.5">
+            <ThemedText
+              className={`text-xs font-bold uppercase tracking-wider ${
+                isDarkMode ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
+              Player Name *
+            </ThemedText>
+            <TouchableOpacity
+              onPress={handlePickContact}
+              disabled={isPickingContact}
+              className="flex-row items-center"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="people-outline" size={13} color="#2563EB" />
+              <ThemedText className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-1">
+                From Contacts
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
           <TextInput
             className={`border-b py-2 text-base font-semibold ${
               isDarkMode
@@ -995,13 +1745,26 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
         </View>
 
         <View className="mb-4">
-          <ThemedText
-            className={`text-xs font-bold uppercase tracking-wider mb-1.5 ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            Phone Number *
-          </ThemedText>
+          <View className="flex-row items-center justify-between mb-1.5">
+            <ThemedText
+              className={`text-xs font-bold uppercase tracking-wider ${
+                isDarkMode ? "text-gray-400" : "text-gray-600"
+              }`}
+            >
+              Phone Number *
+            </ThemedText>
+            <TouchableOpacity
+              onPress={handlePickContact}
+              disabled={isPickingContact}
+              className="flex-row items-center"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="call-outline" size={13} color="#2563EB" />
+              <ThemedText className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-1">
+                Pick Contact
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
           <TextInput
             className={`border-b py-2 text-base ${
               isDarkMode
@@ -1099,7 +1862,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
       <View className="flex-row">
         <TouchableOpacity
           onPress={handleAddMore}
-          className={`flex-1 py-3 rounded-l-xl items-center ${
+          className={`flex-1 py-3.5 rounded-l-xl items-center ${
             isDarkMode ? "bg-gray-700" : "bg-gray-200"
           }`}
         >
@@ -1107,18 +1870,110 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
         </TouchableOpacity>
         <TouchableOpacity
           onPress={handleSave}
-          className="flex-1 py-3 rounded-r-xl items-center bg-blue-600"
+          className="flex-1 py-3.5 rounded-r-xl items-center bg-blue-600 shadow-md"
           disabled={isLoading}
         >
           {isLoading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <ThemedText className="text-white font-semibold text-sm">
+            <ThemedText className="text-white font-bold text-sm">
               Done
             </ThemedText>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Modal for selecting multiple phone numbers */}
+      <Modal
+        visible={Boolean(multipleNumbersData)}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setMultipleNumbersData(null)}
+      >
+        <View className="flex-1 justify-center items-center bg-black/60 px-6">
+          <View
+            className={`w-full max-w-sm rounded-2xl p-5 ${
+              isDarkMode ? "bg-gray-800 border border-gray-700" : "bg-white"
+            } shadow-xl`}
+          >
+            <View className="flex-row items-center justify-between mb-2">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-8 h-8 rounded-full bg-blue-500/15 items-center justify-center mr-2.5">
+                  <Ionicons name="call" size={16} color="#2563EB" />
+                </View>
+                <ThemedText className="font-bold text-base text-gray-900 dark:text-white" numberOfLines={1}>
+                  Select Phone Number
+                </ThemedText>
+              </View>
+              <TouchableOpacity
+                onPress={() => setMultipleNumbersData(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={20} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+              </TouchableOpacity>
+            </View>
+
+            <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {multipleNumbersData?.name
+                ? `Choose which number to use for ${multipleNumbersData.name}:`
+                : "Choose a phone number to use:"}
+            </ThemedText>
+
+            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+              {multipleNumbersData?.phones?.map((item, idx) => {
+                const rawNum = item.number || item.digits || "";
+                const cleaned = cleanMobileNumber(rawNum);
+                const label = item.label || (idx === 0 ? "primary" : "other");
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => handleSelectMultipleNumber(item)}
+                    className={`p-3 mb-2 rounded-xl border flex-row items-center justify-between ${
+                      isDarkMode
+                        ? "bg-gray-700/60 border-gray-600 active:bg-gray-700"
+                        : "bg-gray-50 border-gray-200 active:bg-blue-50"
+                    }`}
+                  >
+                    <View className="flex-1 mr-2">
+                      <ThemedText className="text-[11px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider">
+                        {label}
+                      </ThemedText>
+                      <ThemedText className="text-base font-semibold text-gray-900 dark:text-white mt-0.5">
+                        {cleaned || rawNum}
+                      </ThemedText>
+                      {cleaned && cleaned !== rawNum && (
+                        <ThemedText className="text-[11px] text-gray-400">
+                          {rawNum}
+                        </ThemedText>
+                      )}
+                    </View>
+                    <Ionicons name="checkmark-circle-outline" size={20} color="#2563EB" />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={() => setMultipleNumbersData(null)}
+              className={`mt-3 py-2.5 rounded-xl items-center border ${
+                isDarkMode ? "border-gray-700 bg-gray-700/40" : "border-gray-300 bg-gray-100"
+              }`}
+            >
+              <ThemedText className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Cancel
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Multi-Contact Batch Picker Modal */}
+      <MultiContactPickerModal
+        visible={showMultiPicker}
+        onClose={() => setShowMultiPicker(false)}
+        onAddContacts={handleAddMultipleContacts}
+        alreadyAddedMobiles={addedPlayers.map((p) => p.mobile)}
+      />
     </AppKeyboardAwareScrollView>
   );
 }
