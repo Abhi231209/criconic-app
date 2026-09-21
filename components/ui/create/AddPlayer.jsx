@@ -7,7 +7,6 @@ import {
   TextInput,
   Alert,
   Modal,
-  FlatList,
   Image,
   useColorScheme,
   ActivityIndicator,
@@ -219,11 +218,10 @@ export default function AddPlayer({
               </View>
 
               {searchPlayer.length > 0 ? (
-                <FlatList
-                  data={searchPlayer}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => (
+                <View>
+                  {searchPlayer.map((item) => (
                     <TouchableOpacity
+                      key={item.id || item._id}
                       onPress={() => handlePlayerOnClick(item)}
                       className={`p-3 border-b ${
                         isDarkMode
@@ -262,8 +260,8 @@ export default function AddPlayer({
                         />
                       </View>
                     </TouchableOpacity>
-                  )}
-                />
+                  ))}
+                </View>
               ) : (
                 <View className="py-8 items-center justify-center">
                   <ThemedText

@@ -29,6 +29,33 @@ import useRequireAuth from "@/hooks/useRequireAuth";
 
 const MATCHES_CONDITION = { items: 10 };
 
+const DEFAULT_HOLDINGS = [
+  {
+    id: "default-1",
+    tag: "Live Cricket",
+    heading: "Live Cricket Arena",
+    buttonText: "Follow real-time ball-by-ball commentary & live scores",
+    isMatch: true,
+    callToAction: "AllMatches",
+  },
+  {
+    id: "default-2",
+    tag: "Tournaments",
+    heading: "Tournaments & Leagues",
+    buttonText: "Explore featured tournaments, team standings & fixtures",
+    isMatch: false,
+    callToAction: "AllTournaments",
+  },
+  {
+    id: "default-3",
+    tag: "Host Match",
+    heading: "Start Your Own Match",
+    buttonText: "Create teams, score live balls, and broadcast matches",
+    isMatch: false,
+    callToAction: "CreateMatch",
+  },
+];
+
 export default function Home({}) {
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
@@ -198,6 +225,36 @@ export default function Home({}) {
     </View>
   );
 
+  const banners = useMemo(() => {
+    return homeConfig?.holding?.length > 0
+      ? homeConfig.holding
+      : DEFAULT_HOLDINGS;
+  }, [homeConfig]);
+
+  const handleBannerPress = useCallback(
+    (item) => {
+      if (!item?.callToAction) {
+        if (item?.isMatch) navigation.navigate(SCREENS.AllMatches);
+        return;
+      }
+      const target = item.callToAction.trim();
+      if (target.startsWith("http://") || target.startsWith("https://")) {
+        Linking.openURL(target).catch(() => {});
+      } else if (SCREENS[target]) {
+        if (
+          target === SCREENS.CreateMatch ||
+          target === SCREENS.CreateTournament ||
+          target === SCREENS.CreateTeam
+        ) {
+          requireAuth(() => navigation.navigate(SCREENS[target]));
+        } else {
+          navigation.navigate(SCREENS[target]);
+        }
+      }
+    },
+    [navigation, requireAuth]
+  );
+
   return (
     <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
       <NavBar />
@@ -339,15 +396,15 @@ export default function Home({}) {
           </View>
 
           {/* Hero Highlights Carousel */}
-          {homeConfig?.holding?.length > 0 && (
+          {banners?.length > 0 && (
             <View className="my-2">
               <Carousel
-                loop={homeConfig.holding.length > 1}
+                loop={banners.length > 1}
                 width={width - 32}
                 height={width * 0.48}
-                autoPlay={homeConfig.holding.length > 1}
+                autoPlay={banners.length > 1}
                 autoPlayInterval={5000}
-                data={homeConfig.holding}
+                data={banners}
                 scrollAnimationDuration={800}
                 mode="parallax"
                 parallaxScrollingScale={0.92}
@@ -355,12 +412,7 @@ export default function Home({}) {
                 renderItem={({ item, index }) => (
                   <TouchableOpacity
                     activeOpacity={0.9}
-                    disabled={!item?.callToAction}
-                    onPress={() => {
-                      if (item?.callToAction) {
-                        Linking.openURL(item.callToAction).catch(() => {});
-                      }
-                    }}
+                    onPress={() => handleBannerPress(item)}
                     className="rounded-2xl overflow-hidden border border-slate-700/20"
                     style={{
                       shadowColor: "#000",
@@ -391,7 +443,7 @@ export default function Home({}) {
                         <View className="flex-row justify-between items-center pt-3">
                           <View className="px-2.5 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/20">
                             <ThemedText className="text-[11px] font-bold text-white uppercase tracking-wider">
-                              Match Highlights • #{index + 1}
+                              {item?.tag || `Match Highlights • #${index + 1}`}
                             </ThemedText>
                           </View>
                           {item?.isMatch && (

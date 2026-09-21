@@ -57,3 +57,28 @@ export async function clearQueue(matchId) {
     console.warn("[offlineActionQueue] Failed to clear queue:", e);
   }
 }
+
+/**
+ * Purges actions created before or at minTimestamp (e.g. server match.updatedAt).
+ * Stale actions that were already saved/applied to the database are removed so
+ * they are never replayed upon screen load.
+ */
+export async function purgeStaleActions(matchId, minTimestamp) {
+  if (!matchId) return [];
+  const queue = await loadQueue(matchId);
+  if (!queue.length) return [];
+
+  const filtered = queue.filter((item) => {
+    const itemTs = item.createdAt || parseInt(item.actionId?.split("-")?.[0], 10);
+    if (!itemTs || isNaN(itemTs)) return false;
+    return itemTs > minTimestamp;
+  });
+
+  if (filtered.length !== queue.length) {
+    console.log(
+      `[offlineActionQueue] Purged ${queue.length - filtered.length} stale actions from queue for match ${matchId}`
+    );
+    await saveQueue(matchId, filtered);
+  }
+  return filtered;
+}

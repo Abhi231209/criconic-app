@@ -43,6 +43,8 @@ import {
   loadQueue as loadPendingActionQueue,
   enqueueAction as enqueuePendingAction,
   removeAction as removePendingAction,
+  purgeStaleActions,
+  clearQueue,
 } from "@/utils/offlineActionQueue";
 
 // ─── Offline Action Queue Helpers ────────────────────────────────────────────
@@ -144,26 +146,53 @@ export default function ScorerScreen() {
   // snapshot) so it naturally coalesces with a live tap's own send attempt —
   // `isFlushingQueueRef` ensures only one of them is ever actively emitting
   // for this match at a time, avoiding a double-send race between the two.
-  // Stops at the first failure/timeout and leaves the rest queued for the
-  // next reconnect (or app relaunch) to retry.
+  // Stops only on network timeouts, removes completed/rejected items,
+  // and requests a single consolidated score update once complete.
   const flushPendingActionQueue = useCallback(async () => {
     if (!matchID || isFlushingQueueRef.current) return;
     isFlushingQueueRef.current = true;
     try {
-      for (;;) {
-        const queue = await loadPendingActionQueue(matchID);
-        setPendingActionCount(queue.length);
-        const item = queue[0];
-        if (!item || !socketRef.current?.connected) break;
-        const response = await emitWithAck("update-score", {
-          userId: item.userId,
-          matchId: matchID,
-          action: item.action,
-          data: item.data,
-          actionId: item.actionId,
-        });
-        if (!response?.success) break; // stop; preserve order for the retry
-        await removePendingAction(matchID, item.actionId);
+      const queue = await loadPendingActionQueue(matchID);
+      if (!queue.length) {
+        setPendingActionCount(0);
+        return;
+      }
+
+      console.log(`[OFFLINE-QUEUE] Flushing ${queue.length} pending actions for match ${matchID}...`);
+      for (const item of queue) {
+        if (!socketRef.current?.connected) break;
+        try {
+          const response = await emitWithAck(
+            "update-score",
+            {
+              userId: item.userId,
+              matchId: matchID,
+              action: item.action,
+              data: item.data,
+              actionId: item.actionId,
+            },
+            5000
+          );
+
+          // Remove the action if it succeeded, or if the server responded (avoiding permanent stuck queues).
+          // Only preserve the item if the socket timed out without reaching the server.
+          if (response?.success || response?.timedOut === false) {
+            await removePendingAction(matchID, item.actionId);
+          } else {
+            break;
+          }
+        } catch (e) {
+          console.warn("[OFFLINE-QUEUE] Error flushing item:", e);
+          break;
+        }
+      }
+
+      const remaining = await loadPendingActionQueue(matchID);
+      setPendingActionCount(remaining.length);
+
+      // Once the backlog is flushed, fetch the authoritative score once
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("score", { matchId: matchID, matchID });
       }
     } finally {
       isFlushingQueueRef.current = false;
@@ -654,6 +683,13 @@ export default function ScorerScreen() {
     (data) => {
       console.log("[SOCKET-SCORE] 📡 Received 'score' event");
 
+      // While actively flushing a backlog of offline actions, suppress
+      // intermediate per-ball renders so the UI does not visually replay the match.
+      if (isFlushingQueueRef.current) {
+        console.log("[SOCKET-SCORE] Suppressing intermediate score update during queue flush");
+        return;
+      }
+
       if (!data || typeof data !== "object") {
         console.warn("[SOCKET-SCORE] ⚠️ data is null or not an object");
         return;
@@ -995,8 +1031,9 @@ export default function ScorerScreen() {
 
   const handleSelectStriker = (player) => {
     const strikerId = player.id || player._id || player.playerId;
+    const strikerName = player?.name;
     const data = {
-      userId,
+      userId: userId || User?.id,
       matchId: matchID,
       action: "SET_STRIKER",
       data: {
@@ -1006,15 +1043,24 @@ export default function ScorerScreen() {
     emit("set-striker", data);
     setSelectStrikerModalVisible(false);
 
-    // Optimistically update isStrikeEnd so strike indicator appears immediately
-    setScore((prev) => {
-      if (!prev || !prev.batsman) return prev;
+    setScore((prevScore) => {
+      if (!prevScore || !Array.isArray(prevScore?.batsman)) return prevScore;
       const targetIdStr = String(strikerId);
-      const updated = prev.batsman.map((b) => ({
-        ...b,
-        isStrikeEnd: String(b.id || b.playerId || b._id) === targetIdStr,
-      }));
-      return { ...prev, batsman: updated };
+      const updatedBatsman = prevScore.batsman.map((b) => {
+        const matchesId =
+          strikerId &&
+          (String(b?.playerId || "") === targetIdStr ||
+            String(b?.id || "") === targetIdStr ||
+            String(b?._id || "") === targetIdStr);
+        const matchesName = strikerName && b?.name && b.name === strikerName;
+        return {
+          ...b,
+          isStrikeEnd: Boolean(matchesId || matchesName),
+        };
+      });
+      const newScore = { ...prevScore, batsman: updatedBatsman };
+      scoreRef.current = newScore;
+      return newScore;
     });
   };
 
@@ -1540,6 +1586,16 @@ export default function ScorerScreen() {
           } else {
             console.warn("[MOUNT] ⚠️ score response missing batting/batsman/bowler. Keys:", Object.keys(formatted));
           }
+
+          // Purge any stale offline actions that the server has already applied/saved
+          const serverUpdatedTs = new Date(
+            formatted?.modifiedTime || formatted?.updatedAt || matchRes?.data?.updatedAt || 0
+          ).getTime();
+          if (serverUpdatedTs > 0) {
+            purgeStaleActions(matchID, serverUpdatedTs).then((remaining) => {
+              setPendingActionCount(remaining.length);
+            });
+          }
         } else {
           console.warn("[MOUNT] ⚠️ score response invalid. success:", formatted?.success, "message:", formatted?.message);
         }
@@ -1562,8 +1618,14 @@ export default function ScorerScreen() {
   useEffect(() => {
     if (!matchID) return;
 
-    // Reset previous match score immediately so stale match data never renders
-    setScore({});
+    // Reset previous match score only if navigating to a different match
+    setScore((prev) => {
+      const prevMatchId = prev?.matchId || prev?.matchID || prev?._id || prev?.id;
+      if (prevMatchId && String(prevMatchId) === String(matchID)) {
+        return prev;
+      }
+      return {};
+    });
     setMatchDetails(null);
     setIsStatusChecked(false);
 
@@ -1671,7 +1733,7 @@ export default function ScorerScreen() {
 
 
 
-  const updateScore = (action, data = {}) => {
+  const updateScore = async (action, data = {}) => {
     const effectiveUserId = userId || User.id;
     if (!matchID) {
       Alert.alert("Match not ready", "Please reopen this match and try again.");
@@ -1699,36 +1761,33 @@ export default function ScorerScreen() {
       data,
       actionId,
     };
-    console.log("[UPDATE-SCORE] 🟢 Emitting 'update-score' event:");
-    console.log("[UPDATE-SCORE] action:", action);
-    console.log("[UPDATE-SCORE] matchId:", matchID);
-    console.log("[UPDATE-SCORE] userId:", effectiveUserId);
-    console.log("[UPDATE-SCORE] data:", JSON.stringify(data));
+    console.log("[UPDATE-SCORE] action:", action, "matchId:", matchID);
 
-    // Persist to disk before attempting to send, so this action survives the
-    // app being killed while offline — removed once the server confirms it.
-    enqueuePendingAction(matchID, {
-      actionId,
-      userId: effectiveUserId,
-      action,
-      data,
-    }).then((queue) => setPendingActionCount(queue.length));
-
-    // If a queue flush is already in flight, let it pick this action up on
-    // its next pass (it re-reads the queue fresh each iteration) rather than
-    // also sending it here — avoids two in-flight sends for the same match.
+    // 1. If connected and not flushing, send directly over the socket
     if (!isFlushingQueueRef.current && socketRef.current?.connected) {
-      emitWithAck("update-score", payload).then((response) => {
+      try {
+        const response = await emitWithAck("update-score", payload, 5000);
         if (response?.success) {
-          removePendingAction(matchID, actionId).then((queue) =>
-            setPendingActionCount(queue.length)
-          );
-        } else {
-          // Ack failed/timed out while nominally connected — hand off to the
-          // queue flush to retry rather than leaving it silently stuck.
-          flushPendingActionQueue();
+          // Successfully acknowledged and recorded by server! No disk write needed.
+          return;
         }
+      } catch (err) {
+        console.warn("[UPDATE-SCORE] Online emit failed, will queue offline:", err);
+      }
+    }
+
+    // 2. Offline or ack failed/timed out: persist to offline queue in AsyncStorage
+    console.log("[UPDATE-SCORE] Queueing action offline:", action, actionId);
+    try {
+      const queue = await enqueuePendingAction(matchID, {
+        actionId,
+        userId: effectiveUserId,
+        action,
+        data,
       });
+      setPendingActionCount(queue.length);
+    } catch (queueErr) {
+      console.warn("[UPDATE-SCORE] Error queueing pending action:", queueErr);
     }
   };
 
@@ -1755,8 +1814,10 @@ export default function ScorerScreen() {
     const activeStriker =
       latestScore?.batsman?.find((b) => b?.isStrikeEnd)?.playerId ||
       latestScore?.batsman?.find((b) => b?.isStrikeEnd)?.id ||
+      latestScore?.batsman?.find((b) => b?.isStrikeEnd)?._id ||
       latestScore?.batsman?.[0]?.playerId ||
       latestScore?.batsman?.[0]?.id ||
+      latestScore?.batsman?.[0]?._id ||
       route.params?.striker?.id ||
       route.params?.striker?._id ||
       route.params?.striker?.playerId;
@@ -1943,8 +2004,91 @@ export default function ScorerScreen() {
     updateScore(MATCH_ACTION.UNDO_LAST_BALL, {});
   };
 
-  const handleChangeStrike = () => {
-    updateScore(MATCH_ACTION.CHANGE_STRIKE, {});
+  const handleChangeStrike = (targetPlayer = null) => {
+    // Prevent React Native GestureResponderEvent from being treated as a player object
+    const isPlayer =
+      targetPlayer &&
+      typeof targetPlayer === "object" &&
+      !targetPlayer.nativeEvent &&
+      !targetPlayer._dispatchInstances &&
+      Boolean(targetPlayer.playerId || targetPlayer.id || targetPlayer._id || targetPlayer.name);
+
+    const currentBatsmen = scoreRef.current?.batsman || score?.batsman || [];
+    if (!currentBatsmen || currentBatsmen.length < 2) {
+      console.warn("[CHANGE-STRIKE] Need at least 2 batsmen to change strike, got:", currentBatsmen?.length);
+      return;
+    }
+
+    let nextStriker;
+    if (isPlayer) {
+      nextStriker = targetPlayer;
+    } else {
+      // Toggle mode: switch to the other batsman
+      const currentStriker = currentBatsmen.find((b) => b?.isStrikeEnd);
+      if (currentStriker) {
+        nextStriker =
+          currentBatsmen.find((b) => b !== currentStriker && !b?.isStrikeEnd) ||
+          currentBatsmen.find((b) => b !== currentStriker) ||
+          currentBatsmen[1];
+      } else {
+        nextStriker = currentBatsmen[1] || currentBatsmen[0];
+      }
+    }
+
+    if (!nextStriker) return;
+
+    const nextStrikerId =
+      nextStriker?.playerId || nextStriker?.id || nextStriker?._id;
+    const nextStrikerName = nextStriker?.name;
+
+    console.log("[CHANGE-STRIKE] Switching strike to:", nextStrikerName, nextStrikerId);
+
+    // 1. Optimistic UI update so scorer immediately sees the bat icon move
+    setScore((prevScore) => {
+      if (!prevScore || !Array.isArray(prevScore?.batsman)) return prevScore;
+      const updatedBatsman = prevScore.batsman.map((b) => {
+        const matchesId =
+          nextStrikerId &&
+          (String(b?.playerId || "") === String(nextStrikerId) ||
+            String(b?.id || "") === String(nextStrikerId) ||
+            String(b?._id || "") === String(nextStrikerId));
+        const matchesName =
+          nextStrikerName && b?.name && b.name === nextStrikerName;
+        const matchesRef = b === nextStriker;
+
+        const isThisNewStriker = Boolean(matchesId || matchesName || matchesRef);
+        return {
+          ...b,
+          isStrikeEnd: isThisNewStriker,
+        };
+      });
+      const newScore = {
+        ...prevScore,
+        batsman: updatedBatsman,
+      };
+      scoreRef.current = newScore;
+      return newScore;
+    });
+
+    // 2. Send MATCH_ACTION.CHANGE_STRIKE with target striker
+    const payloadData = nextStrikerId
+      ? { striker: nextStrikerId }
+      : nextStrikerName
+      ? { striker: nextStrikerName }
+      : {};
+    updateScore(MATCH_ACTION.CHANGE_STRIKE, payloadData);
+
+    // 3. Also send dedicated 'set-striker' socket event to ensure DB sync
+    if (nextStrikerId) {
+      emit("set-striker", {
+        userId: userId || User?.id,
+        matchId: matchID,
+        action: "SET_STRIKER",
+        data: {
+          striker: nextStrikerId,
+        },
+      });
+    }
   };
 
   const leftButtons = [
@@ -2281,7 +2425,7 @@ export default function ScorerScreen() {
               Current Batsmen (🏏 On Strike)
             </ThemedText>
             <TouchableOpacity
-              onPress={handleChangeStrike}
+              onPress={() => handleChangeStrike()}
               className="px-3 py-1 bg-blue-600 rounded-full flex-row items-center"
               activeOpacity={0.7}
             >
@@ -2305,7 +2449,22 @@ export default function ScorerScreen() {
                 const hasStriker = arr.some((item) => item?.isStrikeEnd);
                 const showStrikeIcon = b?.isStrikeEnd || (!hasStriker && idx === 0);
                 return (
-                  <View key={idx} className="flex-1 p-3 items-center">
+                  <TouchableOpacity
+                    key={idx}
+                    className={`flex-1 p-3 items-center ${
+                      showStrikeIcon
+                        ? isDarkMode
+                          ? "bg-blue-900/20 border-b-2 border-blue-500"
+                          : "bg-blue-50 border-b-2 border-blue-500"
+                        : ""
+                    }`}
+                    activeOpacity={showStrikeIcon ? 1 : 0.6}
+                    onPress={() => {
+                      if (!showStrikeIcon) {
+                        handleChangeStrike(b);
+                      }
+                    }}
+                  >
                     <ThemedText
                       className={`text-xl font-semibold ${
                         isDarkMode ? "text-white" : "text-gray-800"
@@ -2314,53 +2473,61 @@ export default function ScorerScreen() {
                       {showStrikeIcon ? "🏏 " : ""}
                       {b?.name}
                     </ThemedText>
-                {b?.ballsFaced === 0 ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
-                    <ThemedText
-                      className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
-                    >
-                      0 (0)
-                    </ThemedText>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const bTeamId =
-                          score?.batting?.battingId ||
-                          score?.batting?.teamId ||
-                          battingTeamData?.teamId ||
-                          battingTeamData?.id ||
-                          battingTeamData?._id;
-                        navigation.navigate(SCREENS.ChangeBowler, {
-                          teamId: bTeamId,
-                          matchId: matchID,
-                          playerId: b?.playerId || b?.id || b?._id,
-                          playerName: b?.name || b?.username,
-                          squad: battingTeamData?.players || battingTeamData?.squad || [],
-                          cb: onRefresh,
-                        });
-                      }}
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 2,
-                        borderRadius: 6,
-                        backgroundColor: isDarkMode ? "#374151" : "#e5e7eb",
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <ThemedText style={{ fontSize: 11, color: "#3b82f6", fontWeight: "600" }}>
-                        Replace
+                    {b?.ballsFaced === 0 ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                        <ThemedText
+                          className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
+                        >
+                          0 (0)
+                        </ThemedText>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const bTeamId =
+                              score?.batting?.battingId ||
+                              score?.batting?.teamId ||
+                              battingTeamData?.teamId ||
+                              battingTeamData?.id ||
+                              battingTeamData?._id;
+                            navigation.navigate(SCREENS.ChangeBowler, {
+                              teamId: bTeamId,
+                              matchId: matchID,
+                              playerId: b?.playerId || b?.id || b?._id,
+                              playerName: b?.name || b?.username,
+                              squad: battingTeamData?.players || battingTeamData?.squad || [],
+                              cb: onRefresh,
+                            });
+                          }}
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                            backgroundColor: isDarkMode ? "#374151" : "#e5e7eb",
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <ThemedText style={{ fontSize: 11, color: "#3b82f6", fontWeight: "600" }}>
+                            Replace
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <ThemedText
+                        className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
+                      >
+                        {b?.runs || 0} ({b?.ballsFaced || 0})
                       </ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <ThemedText
-                    className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
-                  >
-                    {b?.runs || 0} ({b?.ballsFaced || 0})
-                  </ThemedText>
-                )}
-              </View>
-            );
-          })}
+                    )}
+                    {!showStrikeIcon && (
+                      <ThemedText
+                        style={{ fontSize: 10, marginTop: 2 }}
+                        className="text-blue-500 font-medium"
+                      >
+                        (tap for strike)
+                      </ThemedText>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
           </View>
 
           {/* Bowler / Current Over */}

@@ -6,7 +6,6 @@ import {
   Image,
   ImageBackground,
   useColorScheme,
-  FlatList,
   ActivityIndicator,
   Modal,
   Share,
@@ -1586,28 +1585,25 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
     >
       {teamsList.length > 0 ? (
-        <FlatList
-          data={teamsList}
-          keyExtractor={(item, index) => item.teamId?._id || item._id || item.id || String(index)}
-          scrollEnabled={false}
-          renderItem={({ item }) => {
-            const targetTeamId = item.teamId?._id || item._id || item.id;
-            const teamTitle = item.teamId?.title || item.title || item.name || "Team";
-            const teamShort = item.teamId?.shortName || item.shortName || (typeof teamTitle === 'string' ? teamTitle.substring(0, 3).toUpperCase() : "TM");
-            const teamLogo = item.teamId?.teamLogo || item.teamLogo || item.logo || null;
-            const teamLoc = item.location || item.teamId?.location || "";
+        teamsList.map((item, index) => {
+          const targetTeamId = item.teamId?._id || item._id || item.id;
+          const teamTitle = item.teamId?.title || item.title || item.name || "Team";
+          const teamShort = item.teamId?.shortName || item.shortName || (typeof teamTitle === 'string' ? teamTitle.substring(0, 3).toUpperCase() : "TM");
+          const teamLogo = item.teamId?.teamLogo || item.teamLogo || item.logo || null;
+          const teamLoc = item.location || item.teamId?.location || "";
 
-            // O(1) lookup of backend-computed points table stats
-            const stats =
-              (targetTeamId && pointsMap.get(String(targetTeamId))) ||
-              (typeof teamTitle === "string" && pointsMap.get(teamTitle.trim().toLowerCase())) || {
-                wins: item.wins ?? item.totalWins ?? 0,
-                losses: item.losses ?? item.totalLosses ?? 0,
-                matches: item.matches ?? item.totalMatches ?? 0,
-              };
+          // O(1) lookup of backend-computed points table stats
+          const stats =
+            (targetTeamId && pointsMap.get(String(targetTeamId))) ||
+            (typeof teamTitle === "string" && pointsMap.get(teamTitle.trim().toLowerCase())) || {
+              wins: item.wins ?? item.totalWins ?? 0,
+              losses: item.losses ?? item.totalLosses ?? 0,
+              matches: item.matches ?? item.totalMatches ?? 0,
+            };
 
-            return (
-              <TouchableOpacity
+          return (
+            <TouchableOpacity
+              key={item.teamId?._id || item._id || item.id || String(index)}
                 onPress={() => {
                   if (targetTeamId) {
                     const unnestedItem =
@@ -1679,8 +1675,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                 </View>
               </TouchableOpacity>
             );
-          }}
-        />
+          })
       ) : (
         <View className="py-12 items-center justify-center">
           <Ionicons name="people-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
@@ -1701,12 +1696,8 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 }}
       >
         {standingsData.length > 0 ? (
-          <FlatList
-            data={standingsData}
-            keyExtractor={(item, index) => item.team?._id || item.teamId?._id || item._id || item.id || item.teamName || String(index)}
-            scrollEnabled={false}
-            renderItem={({ item, index }) => {
-              const teamName = item.teamName || item.team?.title || item.teamId?.title || item.title || item.name || "Team";
+          standingsData.map((item, index) => {
+            const teamName = item.teamName || item.team?.title || item.teamId?.title || item.title || item.name || "Team";
               const shortName = item.team?.shortName || item.teamId?.shortName || item.shortName || (typeof teamName === 'string' ? teamName.substring(0, 3).toUpperCase() : "TM");
               const pts = item.points ?? item.pts ?? ((item.totalWins ?? item.wins ?? 0) * 2);
               const matchesPlayed = item.totalMatches ?? item.matches ?? item.played ?? item.p ?? 0;
@@ -1744,6 +1735,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
 
               return (
                 <View
+                  key={item.team?._id || item.teamId?._id || item._id || item.id || item.teamName || String(index)}
                   className={`p-4 rounded-lg mb-3 ${
                     isDarkMode ? "bg-gray-800" : "bg-white"
                   }`}
@@ -1866,8 +1858,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                   </View>
                 </View>
               );
-            }}
-          />
+            })
         ) : (
           <View className="py-12 items-center justify-center">
             <Ionicons name="trophy-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />

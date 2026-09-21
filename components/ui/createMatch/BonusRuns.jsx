@@ -13,6 +13,7 @@ import { X } from "lucide-react-native";
 import { useSocket } from "@/contexts/SocketContext";
 import { useSelector } from "react-redux";
 import { COLORS } from "@/theme/colors";
+import { matchesApi } from "@/utils/api";
 
 // Custom Radio Button Component
 const RadioButtonItem = ({ 
@@ -62,7 +63,7 @@ export default function BonusRuns({
 }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  const { emit } = useSocket();
+  const { emit, socket } = useSocket();
   const authUser = useSelector((state) => state.auth?.user);
   const userId = authUser?._id || authUser?.id || "USER_ID";
   
@@ -71,6 +72,7 @@ export default function BonusRuns({
     runs: "",
   });
   const [isLoading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const handleData = (field, value) => {
     setData((prev) => ({ ...prev, [field]: value }));
@@ -83,7 +85,8 @@ export default function BonusRuns({
       return;
     }
 
-    if (!data.runs || isNaN(data.runs) || parseInt(data.runs) <= 0) {
+    const runsNum = parseInt(data.runs, 10);
+    if (!data.runs || isNaN(runsNum) || runsNum <= 0) {
       Alert.alert("Error", "Please enter valid runs");
       return;
     }
@@ -91,30 +94,52 @@ export default function BonusRuns({
     setLoading(true);
 
     try {
+      const payloadData = {
+        type: data.info.type,
+        team: data.info.team,
+        runs: runsNum,
+      };
+
       const payload = {
         userId,
         matchId: matchID,
         action: "BONUS_RUNS",
-        data: {
-          type: data.info.type,
-          team: data.info.team,
-          runs: parseInt(data.runs),
-        },
+        data: payloadData,
       };
 
-      // Scored the same way as every other ball: over the socket only.
-      // A parallel REST call used to run alongside this (belt-and-braces),
-      // but that endpoint applies the same mutation again without
-      // broadcasting the result — so bonus runs could get double-counted,
-      // and if the socket call ever failed silently the total wouldn't
-      // refresh until the next ball's own score broadcast came in.
-      emit("update-score", payload);
+      // 1. Try socket emit with ack callback (2.5s timeout)
+      let updatedViaSocket = false;
+      if (socket?.connected) {
+        try {
+          const res = await new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), 2500);
+            socket.emit("update-score", payload, (response) => {
+              clearTimeout(timer);
+              resolve(response);
+            });
+          });
+          if (res && res.success !== false) {
+            updatedViaSocket = true;
+          }
+        } catch (sockErr) {
+          console.warn("Socket update-score failed:", sockErr);
+        }
+      }
+
+      // 2. If socket ack didn't confirm or socket disconnected, fall back to REST API
+      if (!updatedViaSocket) {
+        await matchesApi.updateScore(matchID, {
+          action: "BONUS_RUNS",
+          data: payloadData,
+          userId,
+        });
+      }
 
       onSuccess?.();
       handleClose();
     } catch (error) {
-      console.warn("Error updating bonus runs:", error);
-      handleClose();
+      console.error("Error updating bonus runs:", error);
+      Alert.alert("Error", "Could not add bonus runs. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -122,6 +147,7 @@ export default function BonusRuns({
 
   const handleClose = () => {
     setData({ info: {}, runs: "" });
+    setIsFocused(false);
     onClose();
   };
 
@@ -208,19 +234,36 @@ export default function BonusRuns({
               ]}>
                 Enter Runs
               </ThemedText>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  isDarkMode ? styles.darkTextInput : styles.lightTextInput,
-                  isDarkMode ? styles.darkText : styles.lightText
-                ]}
-                placeholder="0"
-                placeholderTextColor={isDarkMode ? COLORS.dark.textSecondary : COLORS.light.textSecondary}
-                value={data.runs}
-                onChangeText={(value) => handleData("runs", value.replace(/[^0-9]/g, ''))}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
+              <View style={styles.inputWrapper}>
+                {!data.runs && !isFocused && (
+                  <View style={styles.placeholderContainer} pointerEvents="none">
+                    <ThemedText
+                      style={[
+                        styles.placeholderText,
+                        isDarkMode ? styles.darkTextSecondary : styles.lightTextSecondary
+                      ]}
+                    >
+                      0
+                    </ThemedText>
+                  </View>
+                )}
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    isDarkMode ? styles.darkTextInput : styles.lightTextInput,
+                    isDarkMode ? styles.darkText : styles.lightText
+                  ]}
+                  value={data.runs}
+                  onChangeText={(value) => handleData("runs", value.replace(/[^0-9]/g, ''))}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  textAlign="center"
+                  textAlignVertical="center"
+                  selectionColor={COLORS.primary}
+                />
+              </View>
             </View>
           </View>
 
@@ -396,13 +439,37 @@ const styles = {
     color: COLORS.primary,
     fontWeight: '600',
   },
-  textInput: {
-    borderWidth: 2,
-    borderRadius: 12,
-    padding: 16,
+  inputWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  placeholderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  placeholderText: {
     fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  textInput: {
+    width: '100%',
+    borderWidth: 2,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    textAlignVertical: 'center',
   },
   lightTextInput: {
     borderColor: COLORS.light.border,

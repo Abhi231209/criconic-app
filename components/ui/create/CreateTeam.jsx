@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Image,
   useColorScheme,
@@ -34,11 +35,21 @@ const InputField = ({
   multiline = false, 
   numberOfLines = 1, 
   keyboardType = 'default',
-  maxLength
+  maxLength,
+  onFocus,
+  onBlur,
+  returnKeyType,
+  onSubmitEditing,
 }) => {
   const isDarkMode = useColorScheme() === 'dark';
+  const containerRef = useRef(null);
+
+  const handleFocus = (e) => {
+    onFocus?.(containerRef);
+  };
+
   return (
-    <View className="mb-4">
+    <View ref={containerRef} collapsable={false} className="mb-4">
       <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
         {label}
       </ThemedText>
@@ -56,6 +67,10 @@ const InputField = ({
         numberOfLines={numberOfLines}
         keyboardType={keyboardType}
         maxLength={maxLength}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        onFocus={handleFocus}
+        onBlur={onBlur}
         style={{ minHeight: multiline ? 80 : 48 }}
       />
     </View>
@@ -123,6 +138,17 @@ export default function CreateTeam() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+
+  const scrollRef = useRef(null);
+  const activeInputRef = useRef(null);
+  const cityContainerRef = useRef(null);
+
+  const handleInputFocus = (targetRef) => {
+    activeInputRef.current = targetRef;
+    if (scrollRef.current?.scrollToFocusedInput) {
+      scrollRef.current.scrollToFocusedInput(targetRef, 90);
+    }
+  };
 
   const teamTypes = [
     { label: 'Club Team', value: 'club' },
@@ -296,8 +322,9 @@ export default function CreateTeam() {
       </View>
 
       <AppKeyboardAwareScrollView
+        ref={scrollRef}
         className="flex-1 px-4 py-4"
-        extraHeight={80}
+        extraHeight={90}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Logo Upload */}
@@ -314,6 +341,7 @@ export default function CreateTeam() {
                 label="Team Name *"
                 value={formData.teamName}
                 onChange={(text) => setFormData({ ...formData, teamName: text })}
+                onFocus={handleInputFocus}
                 placeholder="Enter team name"
               />
             </View>
@@ -322,6 +350,7 @@ export default function CreateTeam() {
                 label="Short Name *"
                 value={formData.shortName}
                 onChange={(text) => setFormData({ ...formData, shortName: text })}
+                onFocus={handleInputFocus}
                 placeholder="e.g., MI, CSK"
                 maxLength={10}
               />
@@ -337,7 +366,10 @@ export default function CreateTeam() {
               <Dropdown
                 options={teamTypes}
                 selectedValue={formData.teamType}
-                onValueChange={(value) => setFormData({ ...formData, teamType: value })}
+                onValueChange={(value) => {
+                  Keyboard.dismiss();
+                  setFormData({ ...formData, teamType: value });
+                }}
                 placeholder="Select team type"
                 iconColor="#2563EB"
               />
@@ -350,7 +382,10 @@ export default function CreateTeam() {
               <Dropdown
                 options={yearOptions}
                 selectedValue={formData.establishedYear}
-                onValueChange={(value) => setFormData({ ...formData, establishedYear: value })}
+                onValueChange={(value) => {
+                  Keyboard.dismiss();
+                  setFormData({ ...formData, establishedYear: value });
+                }}
                 placeholder="Select year"
                 iconColor="#2563EB"
               />
@@ -358,7 +393,7 @@ export default function CreateTeam() {
           </View>
 
           {/* City (Google Location Search) */}
-          <View style={{ zIndex: 1000 }} className="mb-2">
+          <View ref={cityContainerRef} collapsable={false} style={{ zIndex: 1000 }} className="mb-2">
             <LocationSearch
               label="City"
               locationType="city"
@@ -372,6 +407,7 @@ export default function CreateTeam() {
                   "";
                 setFormData({ ...formData, city: cityText, cityLocationId: loc?.place_id || "" });
               }}
+              onFocus={() => handleInputFocus(cityContainerRef)}
               placeholder="Search or enter city"
               isDarkMode={isDarkMode}
             />
@@ -382,6 +418,7 @@ export default function CreateTeam() {
             label="Home Ground"
             value={formData.homeGround}
             onChange={(text) => setFormData({ ...formData, homeGround: text })}
+            onFocus={handleInputFocus}
             placeholder="Home ground name"
           />
 
@@ -390,6 +427,7 @@ export default function CreateTeam() {
             label="Jersey Color"
             value={formData.jerseyColor}
             onChange={(text) => setFormData({ ...formData, jerseyColor: text })}
+            onFocus={handleInputFocus}
             placeholder="e.g., Blue, Red, etc."
           />
 
@@ -402,6 +440,7 @@ export default function CreateTeam() {
             label="Captain Name *"
             value={formData.captainName}
             onChange={(text) => setFormData({ ...formData, captainName: text })}
+            onFocus={handleInputFocus}
             placeholder="Enter captain name"
           />
 
@@ -409,6 +448,7 @@ export default function CreateTeam() {
             label="Captain Phone"
             value={formData.captainPhone}
             onChange={(text) => setFormData({ ...formData, captainPhone: text })}
+            onFocus={handleInputFocus}
             placeholder="Enter phone number"
             keyboardType="phone-pad"
           />
@@ -422,6 +462,7 @@ export default function CreateTeam() {
             label="Coach Name"
             value={formData.coachName}
             onChange={(text) => setFormData({ ...formData, coachName: text })}
+            onFocus={handleInputFocus}
             placeholder="Enter coach name"
           />
 
@@ -429,6 +470,7 @@ export default function CreateTeam() {
             label="Coach Phone"
             value={formData.coachPhone}
             onChange={(text) => setFormData({ ...formData, coachPhone: text })}
+            onFocus={handleInputFocus}
             placeholder="Enter phone number"
             keyboardType="phone-pad"
           />
@@ -438,6 +480,7 @@ export default function CreateTeam() {
             label="Team Description"
             value={formData.description}
             onChange={(text) => setFormData({ ...formData, description: text })}
+            onFocus={handleInputFocus}
             placeholder="Describe your team, achievements, etc."
             multiline
             numberOfLines={4}

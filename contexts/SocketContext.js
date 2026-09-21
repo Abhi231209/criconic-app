@@ -66,12 +66,19 @@ export const SocketProvider = ({ children }) => {
     };
   }, []);
 
-  const emit = useCallback((event, data) => {
+  const emit = useCallback((event, data, callback) => {
     if (socketRef.current) {
-      console.log(`📡 [Socket EMIT] ${event}:`, data);
-      socketRef.current.emit(event, data);
+      console.log(`📡 [Socket EMIT] ${event}`);
+      if (typeof callback === "function") {
+        socketRef.current.emit(event, data, callback);
+      } else {
+        socketRef.current.emit(event, data);
+      }
     } else {
       console.warn(`⚠️ [Socket EMIT] Failed, socket not initialized for ${event}`);
+      if (typeof callback === "function") {
+        callback({ success: false, message: "Socket not initialized" });
+      }
     }
   }, []);
 

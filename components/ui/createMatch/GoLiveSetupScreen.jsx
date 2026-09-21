@@ -35,6 +35,7 @@ import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
 import { THEME_STRIP_PREVIEWS } from "../themeConfig/DesktopOverlayPreview";
+import SponsorAdEditor from "./SponsorAdEditor";
 
 // ---- Authentic Broadcast Scorecard Preview Component ----
 function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
@@ -688,51 +689,15 @@ export default function GoLiveSetupScreen() {
         {adSlots.map((slot) => {
           const cfg = adsConfig[slot.key] || {};
           return (
-            <View
+            <SponsorAdEditor
               key={slot.key}
-              style={[styles.adCard, { backgroundColor: C.card, borderColor: C.border }]}
-            >
-              <View style={styles.adHeader}>
-                <View style={{ flex: 1, marginRight: 10 }}>
-                  <ThemedText className="font-bold text-sm" style={{ color: C.text }}>
-                    {slot.title}
-                  </ThemedText>
-                  <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
-                    {slot.desc}
-                  </ThemedText>
-                </View>
-                <Switch
-                  value={!!cfg.isEnabled}
-                  onValueChange={(val) => handleAdChange(slot.key, "isEnabled", val)}
-                  thumbColor={cfg.isEnabled ? COLORS.primary : "#CBD5E1"}
-                  trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
-                />
-              </View>
-
-              {cfg.isEnabled && (
-                <View style={{ marginTop: 10 }}>
-                  <ThemedText className="font-medium text-xs" style={{ color: C.textSecondary, marginBottom: 4 }}>
-                    HTML or Text Content:
-                  </ThemedText>
-                  <TextInput
-                    style={[
-                      styles.adInput,
-                      {
-                        backgroundColor: C.inputBg,
-                        borderColor: C.border,
-                        color: C.text,
-                      },
-                    ]}
-                    multiline
-                    numberOfLines={3}
-                    placeholder={slot.placeholder}
-                    placeholderTextColor={C.textSecondary}
-                    value={cfg.html || ""}
-                    onChangeText={(txt) => handleAdChange(slot.key, "html", txt)}
-                  />
-                </View>
-              )}
-            </View>
+              slot={slot}
+              config={cfg}
+              onToggle={(val) => handleAdChange(slot.key, "isEnabled", val)}
+              onChangeHtml={(html) => handleAdChange(slot.key, "html", html)}
+              isDarkMode={isDarkMode}
+              colors={C}
+            />
           );
         })}
       </View>

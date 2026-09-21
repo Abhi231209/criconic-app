@@ -24,6 +24,8 @@ export default function LocationSearch({
   containerStyle,
   inputContainerStyle,
   locationType, // "city" restricts results to cities only, excluding stadiums/venues
+  onFocus,
+  onBlur,
 }) {
   const colorScheme = useColorScheme();
   const isDarkMode = propDarkMode !== undefined ? propDarkMode : colorScheme === "dark";
@@ -185,9 +187,11 @@ export default function LocationSearch({
         <TextInput
           value={query}
           onChangeText={handleTextChange}
-          onFocus={() => {
+          onFocus={(e) => {
             if (results.length > 0) setIsOpen(true);
+            onFocus?.(e);
           }}
+          onBlur={onBlur}
           placeholder={placeholder}
           placeholderTextColor={isDarkMode ? "#9CA3AF" : "#9CA3AF"}
           style={[
