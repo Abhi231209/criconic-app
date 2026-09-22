@@ -19,6 +19,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useAxiosGet } from "@/hooks/useApi";
 import ScoreCard from "@/components/ui/ScoreCard";
+import { matchesApi } from "@/utils/api";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -65,11 +66,39 @@ export default function Home({}) {
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [matchDetailsMap, setMatchDetailsMap] = useState({});
   const lastFocusFetch = React.useRef(Date.now());
 
   const { matchesIds, setMatchesIds, refresh: refreshMatches } = useMatches({
     initialCondition: MATCHES_CONDITION,
   });
+
+  // useMatches only returns bare ids ({_id, startDate, createdAt, address}) with
+  // no teams/score, so ScoreCard would otherwise start empty and depend entirely
+  // on the socket "score" round-trip to show anything. Fetch the full match list
+  // (same call AllMatches makes) so cards render real data immediately and the
+  // socket only has to layer live updates on top, not populate from scratch.
+  const fetchMatchDetails = useCallback(async () => {
+    try {
+      const res = await matchesApi.getMatches(
+        { limit: MATCHES_CONDITION.items },
+        { errorAlert: false }
+      );
+      const list = res?.data?.matches || res?.data?.content || [];
+      const map = {};
+      list.forEach((m) => {
+        const id = String(m?._id || m?.id || m?.matchId || "");
+        if (id) map[id] = m;
+      });
+      setMatchDetailsMap(map);
+    } catch (err) {
+      console.log("[Home] fetchMatchDetails error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMatchDetails();
+  }, [fetchMatchDetails]);
 
   // Listen for match deletion globally to immediately prune it from home view
   useEffect(() => {
@@ -174,6 +203,7 @@ export default function Home({}) {
     try {
       await Promise.all([
         refreshMatches ? Promise.resolve(refreshMatches()) : Promise.resolve(),
+        fetchMatchDetails(),
         getConfig(),
       ]);
     } catch (err) {
@@ -181,7 +211,7 @@ export default function Home({}) {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshMatches]);
+  }, [refreshMatches, fetchMatchDetails]);
 
   useEffect(() => {
     getConfig();
@@ -489,18 +519,22 @@ export default function Home({}) {
               keyExtractor={(item, index) =>
                 String(item?._id || item?.id || item || index)
               }
-              renderItem={({ item, index }) => (
-                <View
-                  style={{
-                    marginRight: index !== matchesIds.length - 1 ? 12 : 0,
-                  }}
-                >
-                  <ScoreCard
-                    matchId={item?._id || item?.id || item}
-                    startDate={item?.startDate || item?.createdAt}
-                  />
-                </View>
-              )}
+              renderItem={({ item, index }) => {
+                const id = String(item?._id || item?.id || item || "");
+                return (
+                  <View
+                    style={{
+                      marginRight: index !== matchesIds.length - 1 ? 12 : 0,
+                    }}
+                  >
+                    <ScoreCard
+                      matchId={id}
+                      match={matchDetailsMap[id]}
+                      startDate={item?.startDate || item?.createdAt}
+                    />
+                  </View>
+                );
+              }}
               initialNumToRender={3}
               maxToRenderPerBatch={3}
               windowSize={3}
