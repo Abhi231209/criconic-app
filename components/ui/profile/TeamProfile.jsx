@@ -697,7 +697,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     }
   };
 
-  // Squad details: synchronously hydrated from teamData.players, then enriched in background
+  // Squad details: hydrated directly from teamData.players (populated by backend in single request)
   useEffect(() => {
     const rawPlayers = Array.isArray(teamData?.players) ? teamData.players : [];
     if (rawPlayers.length === 0) {
@@ -706,93 +706,23 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
       return;
     }
 
-    // 1. Immediately hydrate squadPlayers synchronously from teamData.players
-    // Provides instant 0ms render for names, roles, batting/bowling styles, and existing profile images
-    const initialSquad = rawPlayers.map((p, idx) => {
-      const pId = p.id || p._id || p.playerId;
-      const phone = p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null;
+    const squad = rawPlayers.map((p, idx) => {
+      const u = p.id && typeof p.id === "object" ? p.id : {};
+      const pId = u._id || u.id || p.id || p._id || p.playerId;
+      const phone = p.mobile || u.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null;
       return {
         id: String(pId || idx),
-        name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
-        profileImg: p.profileImage || p.profileImg || null,
-        role: p.playerRole || p.role || null,
-        battingStyle: p.battingStyle || null,
-        bowlingStyle: p.bowlingStyle || null,
+        name: toDisplayText(p.name || u.name || p.username || u.username || p.playerName || p.title, `Player ${idx + 1}`),
+        profileImg: p.profileImg || p.profileImage || u.profileImg || u.profileImage || null,
+        role: p.role || p.playerRole || u.role || u.playerRole || null,
+        battingStyle: p.battingStyle || p.batStyle || u.battingStyle || u.batStyle || null,
+        bowlingStyle: p.bowlingStyle || p.ballStyle || u.bowlingStyle || u.ballStyle || null,
         mobile: phone,
       };
     });
 
-    setSquadPlayers(initialSquad);
+    setSquadPlayers(squad);
     setLoadingSquad(false);
-
-    // 2. Non-blocking background enrichment:
-    // Only query api/users/profile for valid 24-char hex MongoDB ObjectIds
-    // Skip local/offline temporary IDs (e.g. p_172...) and numeric indices to avoid 404/500 errors
-    const isValidMongoId = (id) => /^[0-9a-fA-F]{24}$/.test(String(id || ""));
-    const playersToEnrich = rawPlayers.filter((p) => {
-      const pId = p.id || p._id || p.playerId;
-      return isValidMongoId(pId);
-    });
-
-    if (playersToEnrich.length === 0) return;
-
-    let isMounted = true;
-
-    // Use Promise.allSettled so no single player request can fail or delay the rest
-    Promise.allSettled(
-      playersToEnrich.map(async (p) => {
-        const pId = String(p.id || p._id || p.playerId);
-        try {
-          const res = await request(`api/users/profile/${pId}`, {
-            method: "GET",
-            errorAlert: false,
-          });
-          const u = res?.data?.data;
-          if (u) {
-            return {
-              id: pId,
-              name: toDisplayText(u.name || u.username),
-              profileImg: u.profileImage || u.profileImg || u.photo || null,
-              role: u.playerRole || u.role || null,
-              battingStyle: u.battingStyle || null,
-              bowlingStyle: u.bowlingStyle || null,
-              mobile: u.mobile || u.phoneNumber || u.phone || u.mobileNumber || u.contact || null,
-            };
-          }
-        } catch (e) {}
-        return null;
-      })
-    ).then((results) => {
-      if (!isMounted) return;
-      const enrichedMap = new Map();
-      results.forEach((r) => {
-        if (r.status === "fulfilled" && r.value && r.value.id) {
-          enrichedMap.set(r.value.id, r.value);
-        }
-      });
-
-      if (enrichedMap.size > 0) {
-        setSquadPlayers((prev) =>
-          prev.map((existing) => {
-            const enriched = enrichedMap.get(existing.id);
-            if (!enriched) return existing;
-            return {
-              ...existing,
-              name: enriched.name || existing.name,
-              profileImg: enriched.profileImg || existing.profileImg,
-              role: enriched.role || existing.role,
-              battingStyle: enriched.battingStyle || existing.battingStyle,
-              bowlingStyle: enriched.bowlingStyle || existing.bowlingStyle,
-              mobile: enriched.mobile || existing.mobile,
-            };
-          })
-        );
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
   }, [teamData?.players]);
 
   const squad = squadPlayers.length > 0
