@@ -8,7 +8,10 @@
 
 // Primary API Base URL - Change this single value to switch environments:
 
-export const DEFAULT_API_URL = "https://devapi.criconic.com";
+export const DEFAULT_API_URL =  "https://devapi.criconic.com/"
+// "https://api.criconic.com/"; // Production API URL
+// "http://192.168.31.38:8000/"
+// "https://devapi.criconic.com/";
 
 // Resolve API base URL (supports EXPO_PUBLIC_API_URL from Expo environment if provided)
 const envApiUrl =
@@ -29,6 +32,8 @@ export const SOCKET_URL = API_URL;
 
 // Public Web Application URL (for sharing live matches, go-live links)
 export const DEFAULT_WEB_URL = "https://dev.criconic.com";
+// "https://criconic.com";
+// "https://dev.criconic.com";
 const envWebUrl =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_WEB_URL) ||
   DEFAULT_WEB_URL;

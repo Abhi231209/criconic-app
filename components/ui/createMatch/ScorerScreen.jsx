@@ -1633,14 +1633,15 @@ export default function ScorerScreen() {
     console.log("🔌 [ScorerScreen] Initializing dedicated match socket for:", matchID);
 
     const socketConn = io(socketUrl, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: true,
       reconnection: true,
       // Keep retrying indefinitely — a scorer at a ground with a longer
       // outage shouldn't have their socket give up and go silent after ~15s.
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 15000,
+      timeout: 20000,
     });
     socketRef.current = socketConn;
 
@@ -1649,6 +1650,25 @@ export default function ScorerScreen() {
       socketConn.emit("score", { matchId: matchID, matchID });
       setIsConnected(true);
       flushPendingActionQueue();
+    };
+
+    const handleConnectError = (error) => {
+      console.warn("⚠️ [ScorerScreen Dedicated Socket] Connection error:", {
+        url: socketUrl,
+        matchID,
+        message: error?.message || String(error),
+        description: error?.description,
+      });
+      setIsConnected(false);
+    };
+
+    const handleDisconnect = (reason) => {
+      console.log("❌ [ScorerScreen Dedicated Socket] Disconnected:", reason);
+      setIsConnected(false);
+      if (reason === "io server disconnect") {
+        console.log("🔄 [ScorerScreen Dedicated Socket] Server initiated disconnect, reconnecting manually...");
+        socketConn.connect();
+      }
     };
 
     const handleInningsStartSocket = () => {
@@ -1704,7 +1724,8 @@ export default function ScorerScreen() {
 
     socketConn.on("connect", joinRoom);
     socketConn.on("reconnect", joinRoom);
-    socketConn.on("disconnect", () => setIsConnected(false));
+    socketConn.on("connect_error", handleConnectError);
+    socketConn.on("disconnect", handleDisconnect);
     socketConn.on("score", scoreHandler);
     socketConn.on("over-complete", stableOverComplete);
     socketConn.on("innings-complete", stableInningsComplete);
@@ -1720,6 +1741,8 @@ export default function ScorerScreen() {
       console.log("🔌 [ScorerScreen] Disconnecting dedicated socket for match:", matchID);
       socketConn.off("connect", joinRoom);
       socketConn.off("reconnect", joinRoom);
+      socketConn.off("connect_error", handleConnectError);
+      socketConn.off("disconnect", handleDisconnect);
       socketConn.off("score", scoreHandler);
       socketConn.off("over-complete", stableOverComplete);
       socketConn.off("innings-complete", stableInningsComplete);
