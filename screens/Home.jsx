@@ -27,6 +27,10 @@ import NavBar from "@/components/ui/NavBar";
 import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
 import useRequireAuth from "@/hooks/useRequireAuth";
+import GreetingHeader from "@/components/ui/home/GreetingHeader";
+import FeatureHighlights from "@/components/ui/home/FeatureHighlights";
+import TopPlayersSpotlight from "@/components/ui/home/TopPlayersSpotlight";
+import CtaBanner from "@/components/ui/home/CtaBanner";
 
 const MATCHES_CONDITION = { items: 10 };
 
@@ -303,6 +307,9 @@ export default function Home({}) {
             />
           }
         >
+          {/* Personalized Greeting Header */}
+          <GreetingHeader />
+
           {/* Quick-Start Actions Row */}
           <View className="mt-3 mb-2">
             <ScrollView
@@ -548,6 +555,9 @@ export default function Home({}) {
             </View>
           )}
 
+          {/* Why Criconic — Feature Highlights */}
+          <FeatureHighlights />
+
           {/* Live Streaming & Broadcast Banner */}
           <SectionHeader title="Live Cricket Arena" />
           <TouchableOpacity
@@ -599,6 +609,12 @@ export default function Home({}) {
               </View>
             </ImageBackground>
           </TouchableOpacity>
+
+          {/* Top Players Spotlight */}
+          <TopPlayersSpotlight />
+
+          {/* High-Impact Call-To-Action */}
+          <CtaBanner />
 
           {/* Tournaments Section */}
           {tournaments?.map((tournament, index) => (
