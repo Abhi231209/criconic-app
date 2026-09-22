@@ -31,6 +31,7 @@ import GreetingHeader from "@/components/ui/home/GreetingHeader";
 import FeatureHighlights from "@/components/ui/home/FeatureHighlights";
 import TopPlayersSpotlight from "@/components/ui/home/TopPlayersSpotlight";
 import CtaBanner from "@/components/ui/home/CtaBanner";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MATCHES_CONDITION = { items: 10 };
 
@@ -63,6 +64,7 @@ const DEFAULT_HOLDINGS = [
 
 export default function Home({}) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const { requireAuth } = useRequireAuth(navigation);
@@ -296,7 +298,7 @@ export default function Home({}) {
       <View className="flex-1">
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
+          contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
           className="px-4"
           refreshControl={
             <RefreshControl

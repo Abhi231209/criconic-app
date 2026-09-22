@@ -567,7 +567,7 @@ export default function MyCricket() {
       }
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ paddingBottom: 80 }}
+      contentContainerStyle={{ paddingBottom: 110 }}
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={5}
@@ -595,7 +595,7 @@ export default function MyCricket() {
     <ScrollView
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 80 }}
+      contentContainerStyle={{ alignItems: "center", paddingBottom: 110 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -772,7 +772,7 @@ export default function MyCricket() {
     <ScrollView
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 80 }}
+      contentContainerStyle={{ alignItems: "center", paddingBottom: 110 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -943,6 +943,7 @@ export default function MyCricket() {
 
   return (
     <SafeAreaView
+      edges={["top", "left", "right"]}
       className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
     >
       {/* Header with Back Button */}

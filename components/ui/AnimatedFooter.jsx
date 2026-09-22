@@ -36,7 +36,7 @@ import { BlurView } from "expo-blur";
 import ThemedText from "./custom/ThemedText";
 import useAppTheme from "@/hooks/useAppTheme";
 import { useSelector } from "react-redux";
-import { request, tournamentsApi, teamsApi } from "@/utils/api";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import CurrentUser from "@/utils/User";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import analytics from "@/utils/analytics";
@@ -134,6 +134,10 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
 
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom || 0, 0);
+  const baseFooterHeight = 70;
+  const totalFooterHeight = baseFooterHeight + bottomInset;
   const { theme, isDark } = useAppTheme();
   const { requireAuth } = useRequireAuth(navigation);
   const [activeTab, setActiveTab] = useState(currentTab || "Home");
@@ -333,7 +337,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   // Create the custom footer shape with circular cutout
   const createFooterPath = () => {
     const footerWidth = width;
-    const footerHeight = 70;
+    const footerHeight = totalFooterHeight;
     const centerX = footerWidth / 2;
 
     const notchWidth = 80; // total width of cutout
@@ -453,6 +457,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
         style={[
           styles.createMenuContainer,
           {
+            bottom: 90 + bottomInset,
             opacity: fadeAnim,
             transform: [{ scale: scaleAnim }],
             backgroundColor: isDark ? "#111827" : "#FFFFFF",
@@ -599,11 +604,11 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
       </Animated.View>
 
       {/* Custom Shaped Footer */}
-      <View style={styles.footerContainer}>
+      <View style={[styles.footerContainer, { height: totalFooterHeight }]}>
         <Svg
           width={width}
-          height={70}
-          viewBox={`0 0 ${width} 70`}
+          height={totalFooterHeight}
+          viewBox={`0 0 ${width} ${totalFooterHeight}`}
           style={styles.footerSvg}
         >
           <Path
@@ -615,7 +620,15 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
         </Svg>
 
         {/* Footer Content */}
-        <View style={styles.footerContent}>
+        <View
+          style={[
+            styles.footerContent,
+            {
+              height: totalFooterHeight,
+              paddingBottom: bottomInset,
+            },
+          ]}
+        >
           <HStack style={styles.footerItemsContainer}>
             {footerItems.map((item, index) => renderFooterItem(item, index))}
           </HStack>
@@ -632,7 +645,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 70,
     zIndex: 1,
   },
   footerSvg: {
@@ -652,7 +664,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 70,
   },
   footerItemsContainer: {
     flex: 1,

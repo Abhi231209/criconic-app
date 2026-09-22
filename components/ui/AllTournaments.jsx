@@ -398,6 +398,7 @@ export default function AllTournaments() {
 
   return (
     <SafeAreaView
+      edges={["top", "left", "right"]}
       className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
     >
       {/* Header */}
@@ -483,7 +484,7 @@ export default function AllTournaments() {
         data={filteredTournaments}
         keyExtractor={(item) => item.id}
         renderItem={renderTournamentCard}
-        contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         ListFooterComponent={
