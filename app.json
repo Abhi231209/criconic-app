@@ -14,15 +14,19 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.criconic.app"
+      "bundleIdentifier": "com.criconic.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.criconic.app",
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.criconic.app",
       "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.CAMERA",
@@ -35,9 +39,20 @@
     "plugins": [
       "expo-font",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
+      ],
+      [
         "expo-camera",
         {
-          "cameraPermission": "Criconic uses your camera to scan QR codes for quickly joining teams and matches."
+          "cameraPermission": "Criconic uses your camera to scan QR codes for quickly joining teams and matches.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       [
@@ -47,6 +62,12 @@
         }
       ],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "55c4f28e-018e-41ca-8ba2-8e4cc12fea94"
+      }
+    },
+    "owner": "criconics-team"
   }
 }

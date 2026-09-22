@@ -39,9 +39,11 @@
     "date-fns": "^4.1.0",
     "expo": "~53.0.27",
     "expo-blur": "~14.1.5",
+    "expo-build-properties": "~0.14.8",
     "expo-camera": "~16.1.11",
     "expo-checkbox": "^4.1.4",
     "expo-clipboard": "~7.1.5",
+    "expo-contacts": "~14.2.6",
     "expo-crypto": "^14.1.5",
     "expo-device": "^7.1.4",
     "expo-font": "~13.3.1",
@@ -71,8 +73,7 @@
     "react-redux": "^9.2.0",
     "redux-persist": "^6.0.0",
     "socket.io-client": "^4.8.1",
-    "three": "^0.160.0",
-    "expo-contacts": "~14.2.6"
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
