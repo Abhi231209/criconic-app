@@ -56,6 +56,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Criconic to access your photos to select player profile pictures.",
+          "cameraPermission": "Allow Criconic to access your camera to take player profile photos.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-contacts",
         {
           "contactsPermission": "Allow Criconic to access your contacts to easily add players to your team."

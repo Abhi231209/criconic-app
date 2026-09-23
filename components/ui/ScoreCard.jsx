@@ -72,6 +72,18 @@ function ScoreCard({
   }, [effectiveMatchId, onDeleteSuccess]);
 
   useEffect(() => {
+    if (match) {
+      if (!matchDetails || (!matchDetails?.teams?.length && match?.teams?.length)) {
+        setMatchDetails(match);
+      }
+      if (match?.score && !liveScore) {
+        setLiveScore(match.score);
+      }
+      setLoading(false);
+    }
+  }, [match]);
+
+  useEffect(() => {
     if (!effectiveMatchId) return;
 
     const idStr = String(effectiveMatchId);
