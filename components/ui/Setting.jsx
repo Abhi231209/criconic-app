@@ -6,7 +6,6 @@ import {
   Image,
   useColorScheme,
   Switch,
-  Alert,
   Linking,
   StyleSheet,
 } from "react-native";
@@ -84,7 +83,6 @@ export default function Settings() {
   };
 
   // Settings states
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(isDarkMode);
 
   const handleLogout = () => {
@@ -121,7 +119,11 @@ export default function Settings() {
     if (pId) {
       navigation.navigate(SCREENS.PlayerProfile, { playerId: String(pId) });
     } else {
-      Alert.alert("Notice", "User profile ID not found.");
+      showGlobalAlert({
+        title: "Notice",
+        message: "User profile ID not found.",
+        type: "info",
+      });
     }
   };
 
@@ -153,19 +155,22 @@ export default function Settings() {
     Linking.openURL("mailto:support@cricketapp.com");
   };
 
-  const handleRateApp = async () => {
-    Alert.alert("Rate App", "Would you like to rate our app?", [
-      {
-        text: "Not Now",
-        style: "cancel",
+  const handleRateApp = () => {
+    showGlobalAlert({
+      title: "Rate Criconic",
+      message: "Enjoying the app? Would you like to rate us?",
+      type: "info",
+      confirmText: "Rate Now",
+      cancelText: "Not Now",
+      onConfirm: () => {
+        showGlobalAlert({
+          title: "Thank You!",
+          message: "We appreciate your feedback and support!",
+          type: "success",
+          confirmText: "Close",
+        });
       },
-      {
-        text: "Rate Now",
-        onPress: () => {
-          Alert.alert("Thank you!", "We appreciate your feedback!");
-        },
-      },
-    ]);
+    });
   };
 
   const SettingsItem = ({
@@ -339,14 +344,6 @@ export default function Settings() {
 
         {/* App Settings */}
         <SettingsSection title="APP PREFERENCES">
-          <SettingsItem
-            icon="notifications-outline"
-            title="Notifications"
-            isSwitch
-            value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
-            color="#EF4444"
-          />
           {/* Theme Preference Row */}
           <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
             <View

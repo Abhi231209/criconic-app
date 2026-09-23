@@ -8,15 +8,28 @@ const AlertContext = createContext({
 });
 
 let globalAlertHandler = null;
+const originalAlert = Alert.alert;
 
 export const showGlobalAlert = (options) => {
   if (!options) return;
 
   let normalized = { ...options };
   if (Array.isArray(options.buttons) && options.buttons.length > 0) {
-    const confirmBtn =
-      options.buttons.find((b) => b.style !== "cancel") || options.buttons[0];
-    const cancelBtn = options.buttons.find((b) => b.style === "cancel");
+    let confirmBtn = null;
+    let cancelBtn = null;
+
+    if (options.buttons.length === 1) {
+      confirmBtn = options.buttons[0];
+    } else {
+      cancelBtn = options.buttons.find((b) => b.style === "cancel");
+      confirmBtn = options.buttons.find((b) => b.style !== "cancel");
+
+      // If neither has style: "cancel", treat first as cancel/secondary and second as confirm
+      if (!cancelBtn && options.buttons.length >= 2) {
+        cancelBtn = options.buttons[0];
+        confirmBtn = options.buttons[1];
+      }
+    }
 
     if (!normalized.onConfirm && confirmBtn?.onPress) {
       normalized.onConfirm = confirmBtn.onPress;
@@ -49,7 +62,31 @@ export const showGlobalAlert = (options) => {
       style: normalized.type === "danger" ? "destructive" : "default",
       onPress: normalized.onConfirm,
     });
-    Alert.alert(normalized.title || "Notice", normalized.message || "", buttons);
+    originalAlert.call(Alert, normalized.title || "Notice", normalized.message || "", buttons);
+  }
+};
+
+// Intercept Alert.alert across the entire app so all popups match app design
+Alert.alert = (title, message, buttons, options) => {
+  if (globalAlertHandler) {
+    const lowerTitle = String(title || "").toLowerCase();
+    const type =
+      lowerTitle.includes("error") || lowerTitle.includes("fail") || lowerTitle.includes("delete") || lowerTitle.includes("danger")
+        ? "danger"
+        : lowerTitle.includes("warn") || lowerTitle.includes("required") || lowerTitle.includes("mismatch") || lowerTitle.includes("weak")
+        ? "warning"
+        : lowerTitle.includes("success") || lowerTitle.includes("done") || lowerTitle.includes("thank")
+        ? "success"
+        : "info";
+
+    showGlobalAlert({
+      title: title || "Notice",
+      message: message || "",
+      buttons,
+      type,
+    });
+  } else {
+    originalAlert.call(Alert, title, message, buttons, options);
   }
 };
 

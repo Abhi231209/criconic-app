@@ -1,8 +1,8 @@
 import { useCallback } from "react";
-import { Alert } from "react-native";
 import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
 import User from "@/utils/User";
+import { showGlobalAlert } from "@/contexts/AlertContext";
 
 export default function useRequireAuth(passedNav) {
   const navigation = passedNav;
@@ -21,24 +21,16 @@ export default function useRequireAuth(passedNav) {
       if (isLoggedIn) {
         actionCallback?.();
       } else {
-        Alert.alert(
-          "Login Required",
+        showGlobalAlert({
+          title: "Sign In Required",
           message,
-          [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Log In",
-              style: "default",
-              onPress: () => {
-                navigation?.navigate?.(SCREENS.LoginScreen);
-              },
-            },
-          ],
-          { cancelable: true }
-        );
+          type: "info",
+          confirmText: "Sign In",
+          cancelText: "Cancel",
+          onConfirm: () => {
+            navigation?.navigate?.(SCREENS.LoginScreen);
+          },
+        });
       }
     },
     [isLoggedIn, navigation]

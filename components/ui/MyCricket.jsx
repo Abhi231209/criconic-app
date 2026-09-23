@@ -11,7 +11,7 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -23,8 +23,9 @@ import { getImageFullUrl } from "@/utils";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
 
-export default function MyCricket() {
+export default function MyCricket({ route: propRoute }) {
   const navigation = useNavigation();
+  const route = propRoute || useRoute();
   const authUser = useSelector((state) => state.auth?.user);
   const userId = User.id || authUser?._id || authUser?.id;
   const isAdmin = Boolean(
@@ -37,7 +38,18 @@ export default function MyCricket() {
 
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  const [activeTab, setActiveTab] = useState("matches");
+
+  const resolveTab = (val) => {
+    if (!val) return null;
+    const lower = String(val).toLowerCase().trim();
+    if (lower === "tournament" || lower === "tournaments") return "tournaments";
+    if (lower === "team" || lower === "teams") return "teams";
+    if (lower === "match" || lower === "matches") return "matches";
+    return null;
+  };
+
+  const incomingTab = resolveTab(route?.params?.initialTab || route?.params?.tab);
+  const [activeTab, setActiveTab] = useState(incomingTab || "matches");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const lastFetchRef = useRef(0);
@@ -48,12 +60,6 @@ export default function MyCricket() {
   const [matchPage, setMatchPage] = useState(1);
   const [hasMoreMatches, setHasMoreMatches] = useState(true);
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
-
-  // Admin-only: every match in the system, separate from the user's own "My Matches"
-  const [allMatches, setAllMatches] = useState([]);
-  const [allMatchesPage, setAllMatchesPage] = useState(1);
-  const [hasMoreAllMatches, setHasMoreAllMatches] = useState(true);
-  const [loadingMoreAllMatches, setLoadingMoreAllMatches] = useState(false);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
@@ -128,8 +134,6 @@ export default function MyCricket() {
     try {
       setMatchPage(1);
       setHasMoreMatches(true);
-      setAllMatchesPage(1);
-      setHasMoreAllMatches(true);
 
       // Scoped user matches: matches where user is creator/organizer (self=1) or participating player
       const matchPromises = [];
@@ -159,13 +163,10 @@ export default function MyCricket() {
         ? `api/users/withTeam/${userId}?isAdmin=${isAdmin ? 1 : 0}`
         : `api/users/withTeam?isAdmin=${isAdmin ? 1 : 0}`;
 
-      const [matchesResList, tourResList, teamRes, allMatchesRes] = await Promise.all([
+      const [matchesResList, tourResList, teamRes] = await Promise.all([
         Promise.all(matchPromises),
         Promise.all(tourPromises),
         request(teamEndpoint, { method: "GET", errorAlert: false }).catch(() => null),
-        isAdmin
-          ? matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
-          : null,
       ]);
 
       // Process user matches
@@ -182,13 +183,6 @@ export default function MyCricket() {
 
       setRecentMatches(uniqueMatches.map(mapMatchItem));
       setHasMoreMatches(uniqueMatches.length >= 6);
-
-      // Process every match in the system (admin-only "All Matches" tab)
-      if (isAdmin) {
-        const rawAllMatches = extractArray(allMatchesRes);
-        setAllMatches(rawAllMatches.map(mapMatchItem));
-        setHasMoreAllMatches(rawAllMatches.length >= 6);
-      }
 
       // Process user tournaments
       const rawTourList = tourResList.flatMap(extractArray);
@@ -294,38 +288,12 @@ export default function MyCricket() {
     }
   };
 
-  // Admin-only: paginate the "All Matches" tab
-  const loadMoreAllMatches = async () => {
-    if (!isAdmin || loading || loadingMoreAllMatches || !hasMoreAllMatches) return;
-    try {
-      setLoadingMoreAllMatches(true);
-      const nextPage = allMatchesPage + 1;
-      const res = await matchesApi
-        .getMatches({ page: nextPage, limit: 30, isAdmin: 1 }, { errorAlert: false })
-        .catch(() => null);
-      const rawMatches = extractArray(res);
-      if (rawMatches.length > 0) {
-        setAllMatches((prev) => {
-          const seen = new Set(prev.map((item) => item.id));
-          const newItems = rawMatches
-            .filter((m) => {
-              const id = String(m?._id || m?.id || m?.matchId || "");
-              return id && !seen.has(id);
-            })
-            .map(mapMatchItem);
-          return [...prev, ...newItems];
-        });
-        setAllMatchesPage(nextPage);
-        setHasMoreAllMatches(rawMatches.length >= 6);
-      } else {
-        setHasMoreAllMatches(false);
-      }
-    } catch (e) {
-      console.warn("[MyCricket] Failed to load more all-matches:", e);
-    } finally {
-      setLoadingMoreAllMatches(false);
+  useEffect(() => {
+    const tab = resolveTab(route?.params?.initialTab || route?.params?.tab);
+    if (tab) {
+      setActiveTab(tab);
     }
-  };
+  }, [route?.params?.initialTab, route?.params?.tab]);
 
   useEffect(() => {
     lastFetchRef.current = Date.now();
@@ -334,12 +302,16 @@ export default function MyCricket() {
 
   useFocusEffect(
     useCallback(() => {
+      const tab = resolveTab(route?.params?.initialTab || route?.params?.tab);
+      if (tab) {
+        setActiveTab(tab);
+      }
       // Throttle tab focus fetch to 45s to avoid freezing UI or re-fetching repeatedly
       if (Date.now() - lastFetchRef.current > 45000) {
         lastFetchRef.current = Date.now();
         fetchData();
       }
-    }, [userId])
+    }, [userId, route?.params?.initialTab, route?.params?.tab])
   );
 
   const onRefresh = () => {
@@ -470,73 +442,6 @@ export default function MyCricket() {
     />
   );
 
-  // Admin-only: every match in the system, not just the admin's own
-  const renderAllMatchesTab = () => (
-    <FlatList
-      data={allMatches}
-      keyExtractor={(item, index) => item?.id || String(index)}
-      renderItem={({ item }) => (
-        <View className="mb-4 w-full max-w-md self-center">
-          <ScoreCard
-            matchId={item.id}
-            match={item.raw || item}
-          />
-        </View>
-      )}
-      ListHeaderComponent={
-        <View className="flex-row justify-between items-center w-full max-w-md self-center mb-4 mt-2">
-          <ThemedText
-            className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
-          >
-            All Matches
-          </ThemedText>
-        </View>
-      }
-      ListEmptyComponent={
-        loading ? (
-          <View className="items-center py-16 w-full">
-            <ActivityIndicator size="large" color="#3B82F6" />
-          </View>
-        ) : (
-          <View className="items-center py-8 w-full">
-            <Ionicons
-              name="trophy-outline"
-              size={48}
-              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-            />
-            <ThemedText
-              className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
-            >
-              No matches found
-            </ThemedText>
-          </View>
-        )
-      }
-      showsVerticalScrollIndicator={false}
-      className="px-4"
-      contentContainerStyle={{ paddingBottom: 110 }}
-      initialNumToRender={4}
-      maxToRenderPerBatch={4}
-      windowSize={5}
-      onEndReached={loadMoreAllMatches}
-      onEndReachedThreshold={0.5}
-      ListFooterComponent={
-        loadingMoreAllMatches ? (
-          <View className="py-4 items-center">
-            <ActivityIndicator size="small" color="#2563EB" />
-          </View>
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#2563EB"]}
-          tintColor="#2563EB"
-        />
-      }
-    />
-  );
 
   const renderTournamentsTab = () => (
     <ScrollView
@@ -931,13 +836,6 @@ export default function MyCricket() {
             icon="trophy-outline"
           />
           <TabButton title="Teams" tabName="teams" icon="people-outline" />
-          {isAdmin && (
-            <TabButton
-              title="All Matches"
-              tabName="allMatches"
-              icon="globe-outline"
-            />
-          )}
         </View>
       </View>
 
@@ -946,7 +844,6 @@ export default function MyCricket() {
         {activeTab === "matches" && renderMatchesTab()}
         {activeTab === "tournaments" && renderTournamentsTab()}
         {activeTab === "teams" && renderTeamsTab()}
-        {activeTab === "allMatches" && isAdmin && renderAllMatchesTab()}
       </View>
 
       <AnimatedFooter currentTab="My Cricket" />

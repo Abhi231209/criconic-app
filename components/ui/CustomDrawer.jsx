@@ -449,20 +449,44 @@ export default function CustomDrawer(props) {
           }
         />
 
-        <SectionHeading title="My Cricket" />
+        <SectionHeading title="Explore" />
         <MenuItem
           icon="cricket"
-          title="My Matches"
+          title="All Matches"
           iconComponent={MaterialCommunityIcons}
+          onPress={() => navigateTo(SCREENS.AllMatches)}
+        />
+        <MenuItem
+          icon="trophy-outline"
+          title="All Tournaments"
+          onPress={() => navigateTo(SCREENS.AllTournaments)}
+        />
+        <MenuItem
+          icon="podium-outline"
+          title="Local Rankings"
+          onPress={() => navigateTo(SCREENS.PlayerRankings)}
+        />
+
+        <SectionHeading title="My Cricket" />
+        <MenuItem
+          icon="calendar-outline"
+          title="My Matches"
           onPress={() =>
-            requireAuth(() => navigateTo(SCREENS.MyCricket))
+            requireAuth(() => navigateTo(SCREENS.MyCricket, { initialTab: "matches" }))
           }
         />
         <MenuItem
           icon="trophy-outline"
           title="My Tournaments"
           onPress={() =>
-            requireAuth(() => navigateTo(SCREENS.AllTournaments))
+            requireAuth(() => navigateTo(SCREENS.MyCricket, { initialTab: "tournaments" }))
+          }
+        />
+        <MenuItem
+          icon="people-outline"
+          title="My Teams"
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.MyCricket, { initialTab: "teams" }))
           }
         />
         <MenuItem
@@ -471,11 +495,6 @@ export default function CustomDrawer(props) {
           onPress={() =>
             requireAuth(() => navigateTo(SCREENS.PlayerProfile))
           }
-        />
-        <MenuItem
-          icon="podium-outline"
-          title="Local Rankings"
-          onPress={() => navigateTo(SCREENS.PlayerRankings)}
         />
 
         <SectionHeading title="Preferences" />

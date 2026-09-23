@@ -256,7 +256,11 @@ export default function AllMatches() {
           />
         </TouchableOpacity>
 
-        <ThemedText className="text-lg font-bold">
+        <ThemedText
+          className={`text-lg font-bold ${
+            isDarkMode ? "text-white" : "text-gray-900"
+          }`}
+        >
           All Matches
         </ThemedText>
 
