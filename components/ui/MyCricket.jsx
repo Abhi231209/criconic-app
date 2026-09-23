@@ -72,115 +72,15 @@ export default function MyCricket() {
     return () => sub.remove();
   }, []);
 
-  const isUserMatch = (m, uId) => {
-    if (!uId) return false;
-    const uidStr = String(uId);
-    if (String(m?.createdBy || m?.userId || m?.user?._id || m?.user?.id || m?.user || "") === uidStr) return true;
-    if (Array.isArray(m?.teams)) {
-      for (const t of m.teams) {
-        if (String(t?.createdBy || t?.captain || t?.userId || "") === uidStr) return true;
-        if (Array.isArray(t?.players)) {
-          for (const p of t.players) {
-            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || p?.user || "");
-            if (pid === uidStr) return true;
-          }
-        }
-      }
-    }
-    return false;
-  };
-
-  const isUserTournament = (t, uId) => {
-    if (!uId) return true;
-    const uidStr = String(uId).trim();
-    const uMobile = String(authUser?.mobile || authUser?.phoneNumber || User.mobile || "").replace(/[^0-9]/g, "").slice(-10);
-    const uName = String(authUser?.username || authUser?.name || User.name || "").toLowerCase().trim();
-
-    // Check createdBy (can be string, ObjectId, or populated user object)
-    const createdById = String(t?.createdBy?._id || t?.createdBy?.id || t?.createdBy || "").trim();
-    if (createdById && createdById === uidStr) return true;
-
-    // Check userId / organizerId
-    const tourUserId = String(t?.userId || t?.user?._id || t?.user?.id || t?.user || t?.organizerId || "").trim();
-    if (tourUserId && tourUserId === uidStr) return true;
-
-    // Check organizer (can be array of strings, ObjectIds, or populated user objects)
-    if (Array.isArray(t?.organizer)) {
-      for (const org of t.organizer) {
-        const orgId = String(org?._id || org?.id || org || "").trim();
-        if (orgId && orgId === uidStr) return true;
-        const orgMobile = String(org?.mobile || org?.phoneNumber || "").replace(/[^0-9]/g, "").slice(-10);
-        if (uMobile && orgMobile && orgMobile === uMobile) return true;
-        const orgName = String(org?.username || org?.name || "").toLowerCase().trim();
-        if (uName && orgName && orgName === uName) return true;
-      }
-    } else if (t?.organizer) {
-      const orgId = String(t.organizer?._id || t.organizer?.id || t.organizer || "").trim();
-      if (orgId && orgId === uidStr) return true;
-      const orgMobile = String(t.organizer?.mobile || t.organizer?.phoneNumber || "").replace(/[^0-9]/g, "").slice(-10);
-      if (uMobile && orgMobile && orgMobile === uMobile) return true;
-      const orgName = String(t.organizer?.username || t.organizer?.name || "").toLowerCase().trim();
-      if (uName && orgName && orgName === uName) return true;
-    }
-
-    // Check organizerNumber / organizerPhone
-    const tMobile = String(t?.organizerNumber || t?.organizerPhone || "").replace(/[^0-9]/g, "").slice(-10);
-    if (uMobile && tMobile && tMobile === uMobile) {
-      return true;
-    }
-
-    // Check organizerName
-    const tOrgName = String(t?.organizerName || "").toLowerCase().trim();
-    if (uName && tOrgName && tOrgName === uName) {
-      return true;
-    }
-
-    // Check teams and squad players
-    if (Array.isArray(t?.teams)) {
-      for (const tm of t.teams) {
-        const teamObj = tm?.teamId || tm;
-        const tmCreatedBy = String(teamObj?.createdBy?._id || teamObj?.createdBy?.id || teamObj?.createdBy || "").trim();
-        const tmCaptain = String(teamObj?.captain?._id || teamObj?.captain?.id || teamObj?.captain || "").trim();
-        const tmUserId = String(teamObj?.userId || "").trim();
-        if ((tmCreatedBy && tmCreatedBy === uidStr) || (tmCaptain && tmCaptain === uidStr) || (tmUserId && tmUserId === uidStr)) return true;
-
-        if (Array.isArray(teamObj?.players)) {
-          for (const p of teamObj.players) {
-            const pid = String(p?.id || p?._id || p?.playerId || p?.userId || p?.user || "").trim();
-            if (pid && pid === uidStr) return true;
-          }
-        }
-      }
-    }
-    return false;
-  };
-
   const deriveTournamentStatus = (t) => {
-    const rawStatus = String(t?.status || "").toLowerCase().trim();
-    if (rawStatus === "cancelled" || rawStatus === "abandoned") return "Cancelled";
-    if (rawStatus === "completed" || rawStatus === "finished") return "Completed";
-
-    const rawStart = t?.date?.start || t?.startDate;
-    const rawEnd = t?.date?.end || t?.endDate;
-    const start = rawStart ? new Date(rawStart) : null;
-    const end = rawEnd ? new Date(rawEnd) : null;
-    const now = new Date();
-
-    if (end && !isNaN(end.getTime())) {
-      const endOfDay = new Date(end.getTime());
-      endOfDay.setHours(23, 59, 59, 999);
-      if (now > endOfDay) return "Completed";
-    }
-    if (start && !isNaN(start.getTime())) {
-      const startOfDay = new Date(start.getTime());
-      startOfDay.setHours(0, 0, 0, 0);
-      if (now < startOfDay) return "Upcoming";
-      return "Ongoing";
-    }
-
-    if (rawStatus === "upcoming") return "Upcoming";
-    if (rawStatus === "ongoing") return "Ongoing";
-    return "Ongoing";
+    const rawStatus = String(t?.status || "").trim();
+    if (!rawStatus) return "Ongoing";
+    const lower = rawStatus.toLowerCase();
+    if (lower === "cancelled" || lower === "abandoned") return "Cancelled";
+    if (lower === "completed" || lower === "finished") return "Completed";
+    if (lower === "upcoming") return "Upcoming";
+    if (lower === "ongoing") return "Ongoing";
+    return rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
   };
 
   const mapMatchItem = (m) => ({
@@ -231,14 +131,11 @@ export default function MyCricket() {
       setAllMatchesPage(1);
       setHasMoreAllMatches(true);
 
-      // "My Matches" is always scoped to the logged-in user, admin or not.
+      // Scoped user matches: matches where user is creator/organizer (self=1) or participating player
       const matchPromises = [];
       if (userId) {
         matchPromises.push(
           matchesApi.getMatches({ self: 1, userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
-        );
-        matchPromises.push(
-          matchesApi.getMatches({ playerId: userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
         matchPromises.push(
           request(`api/matches/ids?playerId=${userId}&page=1&items=12`, { method: "GET", errorAlert: false }).catch(() => null)
@@ -249,56 +146,29 @@ export default function MyCricket() {
         );
       }
 
-      // Admin-only: every match in the system, for the separate "All Matches" tab
-      const allMatchesPromise = isAdmin
-        ? matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
-        : null;
-
-      const userMobile = authUser?.mobile || authUser?.phoneNumber || User.mobile;
-      const cleanMob = String(userMobile || "").replace(/[^0-9]/g, "").slice(-10);
-
-      // User-based tournaments only (matching web PreviewPage: api/tournaments/withUser & self=1)
+      // Scoped tournaments: tournaments organized by user or where user's team participates
       const tourPromises = [
         tournamentsApi.getMyTournaments({ errorAlert: false }).catch(() => null),
-        request(
-          userId ? `api/tournaments/withUser?userId=${userId}&limit=50` : "api/tournaments/withUser",
-          { method: "GET", errorAlert: false }
-        ).catch(() => null),
-        request(
-          `api/tournaments?self=1&limit=50${userId ? `&userId=${userId}` : ""}${cleanMob ? `&mobile=${cleanMob}` : ""}`,
-          { method: "GET", errorAlert: false }
-        ).catch(() => null),
-        ...(cleanMob
-          ? [
-              request(`api/tournaments/withUser?mobile=${cleanMob}&limit=50`, {
-                method: "GET",
-                errorAlert: false,
-              }).catch(() => null),
-            ]
+        ...(userId
+          ? [request(`api/tournaments/withUser?userId=${userId}&limit=50`, { method: "GET", errorAlert: false }).catch(() => null)]
           : []),
       ];
 
-      // User-based teams only, or all teams if admin
-      const teamPromises = isAdmin
-        ? [
-            teamsApi.getAllTeams({ limit: 100, isAdmin: 1 }, { errorAlert: false }).catch(() => null),
-            teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
-            request("api/users/withTeam?isAdmin=1", { method: "GET", errorAlert: false }).catch(() => null),
-            request("api/teams?limit=100&isAdmin=1", { method: "GET", errorAlert: false }).catch(() => null),
-          ]
-        : [
-            request("api/users/withTeam", { method: "GET", errorAlert: false }).catch(() => null),
-            teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
-          ];
+      // Scoped teams: enriched with matches and wins directly from backend
+      const teamEndpoint = userId
+        ? `api/users/withTeam/${userId}?isAdmin=${isAdmin ? 1 : 0}`
+        : `api/users/withTeam?isAdmin=${isAdmin ? 1 : 0}`;
 
-      const [matchesResList, tourResList, teamsResList, allMatchesRes] = await Promise.all([
+      const [matchesResList, tourResList, teamRes, allMatchesRes] = await Promise.all([
         Promise.all(matchPromises),
         Promise.all(tourPromises),
-        Promise.all(teamPromises),
-        allMatchesPromise,
+        request(teamEndpoint, { method: "GET", errorAlert: false }).catch(() => null),
+        isAdmin
+          ? matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
+          : null,
       ]);
 
-      // Process user matches - always scoped to this user, even for admins
+      // Process user matches
       const rawMatchesCombined = matchesResList.flatMap(extractArray);
       const seenMatchIds = new Set();
       const uniqueMatches = [];
@@ -310,12 +180,8 @@ export default function MyCricket() {
         }
       }
 
-      const userMatches = userId
-        ? uniqueMatches.filter((m) => isUserMatch(m, userId))
-        : uniqueMatches;
-
-      setRecentMatches(userMatches.map(mapMatchItem));
-      setHasMoreMatches(userMatches.length >= 6);
+      setRecentMatches(uniqueMatches.map(mapMatchItem));
+      setHasMoreMatches(uniqueMatches.length >= 6);
 
       // Process every match in the system (admin-only "All Matches" tab)
       if (isAdmin) {
@@ -337,12 +203,8 @@ export default function MyCricket() {
         }
       }
 
-      const userTournaments = userId
-        ? uniqueTournaments.filter((t) => isUserTournament(t, userId))
-        : uniqueTournaments;
-
       setTournaments(
-        userTournaments.map((t) => {
+        uniqueTournaments.map((t) => {
           const rawEntryFee = t?.entryFee;
           const entryFee = (rawEntryFee !== undefined && rawEntryFee !== null && rawEntryFee !== "" && Number(rawEntryFee) !== 0 && rawEntryFee !== "0")
             ? (String(rawEntryFee).startsWith("₹") ? String(rawEntryFee) : `₹${rawEntryFee}`)
@@ -361,8 +223,8 @@ export default function MyCricket() {
         })
       );
 
-      // Process user teams with live match & win statistics from backend
-      const rawTeamList = teamsResList.flatMap(extractArray);
+      // Process user teams (read stats directly from backend without N+1 calls)
+      const rawTeamList = extractArray(teamRes);
       const seenTeamIds = new Set();
       const uniqueTeams = [];
       for (const tm of rawTeamList) {
@@ -370,48 +232,27 @@ export default function MyCricket() {
         const id = String(raw?._id || raw?.id || "");
         if (id && !seenTeamIds.has(id)) {
           seenTeamIds.add(id);
-          uniqueTeams.push(raw);
-        }
-      }
+          const matches = Array.isArray(raw.matches)
+            ? raw.matches.length
+            : (raw.matches || raw.stat?.totalMatches || raw.stats?.matches || 0);
+          const wins = raw.wins || raw.stat?.matchesWon || raw.stats?.won || 0;
 
-      const teamsWithStats = await Promise.all(
-        uniqueTeams.map(async (raw) => {
-          const id = String(raw._id || raw.id);
-          let matches = Array.isArray(raw.matches) ? raw.matches.length : (raw.matches || raw.stat?.totalMatches || 0);
-          let wins = raw.wins || raw.stat?.matchesWon || 0;
-          try {
-            const statRes = await request(`api/teams/getTeamStat/${id}`, {
-              method: "GET",
-              errorAlert: false,
-            });
-            if (statRes?.data?.stats) {
-              const sMatches = Number(statRes.data.stats.matches);
-              const sWon = Number(statRes.data.stats.won);
-              if (sMatches === 285 && sWon === 135) {
-                matches = 95;
-                wins = 21;
-              } else {
-                matches = statRes.data.stats.matches ?? matches;
-                wins = statRes.data.stats.won ?? wins;
-              }
-            }
-          } catch (e) {}
-          return {
+          uniqueTeams.push({
             id,
             name: raw.title || raw.name || "Team",
             shortName:
               raw.shortName ||
               (raw.title ? raw.title.slice(0, 3).toUpperCase() : "TM"),
-            logo: raw.teamLogo || null,
+            logo: raw.teamLogo || raw.logo || null,
             location: raw.location || null,
             players: Array.isArray(raw.players) ? raw.players.length : 0,
-            matches,
-            wins,
+            matches: Number(matches) || 0,
+            wins: Number(wins) || 0,
             raw,
-          };
-        })
-      );
-      setTeams(teamsWithStats);
+          });
+        }
+      }
+      setTeams(uniqueTeams);
     } catch (error) {
       console.warn("[MyCricket] Failed to fetch data:", error);
     } finally {
@@ -427,15 +268,13 @@ export default function MyCricket() {
       const nextPage = matchPage + 1;
       const resList = await Promise.all([
         matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-        matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
         request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
       ]);
       const rawCombined = resList.flatMap(extractArray);
-      const userMatches = rawCombined.filter((m) => isUserMatch(m, userId));
-      if (userMatches.length > 0) {
+      if (rawCombined.length > 0) {
         setRecentMatches((prev) => {
           const seen = new Set(prev.map((item) => item.id));
-          const newItems = userMatches
+          const newItems = rawCombined
             .filter((m) => {
               const id = String(m?._id || m?.id || m?.matchId || "");
               return id && !seen.has(id);
@@ -444,7 +283,7 @@ export default function MyCricket() {
           return [...prev, ...newItems];
         });
         setMatchPage(nextPage);
-        setHasMoreMatches(userMatches.length >= 6);
+        setHasMoreMatches(rawCombined.length >= 6);
       } else {
         setHasMoreMatches(false);
       }

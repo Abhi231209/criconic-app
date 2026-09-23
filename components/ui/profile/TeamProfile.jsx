@@ -1159,6 +1159,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                 }}
                 className={`mb-2.5 rounded-2xl ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"} border`}
                 activeOpacity={0.75}
+                onLongPress={isTeamOwner ? () => handleOpenEditNumberModal(item) : undefined}
               >
                 <View className="flex-row items-center p-3">
                   <ThemedText className={`w-6 text-xs text-center mr-2 font-bold ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
@@ -1189,35 +1190,10 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                       </ThemedText>
                     )}
 
-                    {/* Phone Number / Add Number section */}
-                    <View className="mt-1">
-                      {item.mobile ? (
-                        isTeamOwner ? (
-                          <TouchableOpacity
-                            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                            onPress={() => handleOpenEditNumberModal(item)}
-                            className={`flex-row items-center self-start px-2 py-0.5 rounded-full border ${
-                              isDarkMode
-                                ? "bg-gray-700/60 border-gray-600"
-                                : "bg-gray-50 border-gray-200"
-                            }`}
-                          >
-                            <Ionicons name="call" size={11} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
-                            <ThemedText className={`text-[11px] ml-1 font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                              {String(item.mobile)}
-                            </ThemedText>
-                            <Ionicons name="pencil" size={10} color={isDarkMode ? "#9CA3AF" : "#6B7280"} style={{ marginLeft: 4 }} />
-                          </TouchableOpacity>
-                        ) : (
-                          <View className="flex-row items-center self-start px-2 py-0.5 rounded-full">
-                            <Ionicons name="call-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
-                            <ThemedText className={`text-[11px] ml-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                              {String(item.mobile).length > 4 ? `••••••${String(item.mobile).slice(-4)}` : String(item.mobile)}
-                            </ThemedText>
-                          </View>
-                        )
-                      ) : (
-                        isTeamOwner ? (
+                    {/* Add Number section (only shown when player has not added a number) */}
+                    {!item.mobile ? (
+                      <View className="mt-1">
+                        {isTeamOwner ? (
                           <TouchableOpacity
                             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                             onPress={() => handleOpenEditNumberModal(item)}
@@ -1227,21 +1203,21 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                                 : "bg-amber-50 border-amber-300"
                             }`}
                           >
-                            <Ionicons name="alert-circle" size={12} color={isDarkMode ? "#FBBF24" : "#D97706"} />
-                            <ThemedText className={`text-[11px] ml-1 font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
-                              Phone number required
+                            <Ionicons name="add" size={12} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+                            <ThemedText className={`text-[11px] ml-0.5 font-semibold ${isDarkMode ? "text-amber-400" : "text-amber-800"}`}>
+                              Add number
                             </ThemedText>
                           </TouchableOpacity>
                         ) : (
-                          <View className="flex-row items-center">
-                            <Ionicons name="alert-circle-outline" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
-                            <ThemedText className={`text-[11px] ml-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                              Phone number required
+                          <View className="flex-row items-center self-start px-2 py-0.5 rounded-full">
+                            <Ionicons name="add" size={11} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
+                            <ThemedText className={`text-[11px] ml-0.5 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                              Add number
                             </ThemedText>
                           </View>
-                        )
-                      )}
-                    </View>
+                        )}
+                      </View>
+                    ) : null}
                   </View>
 
                   {item.role ? (
