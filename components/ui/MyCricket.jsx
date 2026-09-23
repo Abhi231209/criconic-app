@@ -49,6 +49,12 @@ export default function MyCricket() {
   const [hasMoreMatches, setHasMoreMatches] = useState(true);
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
 
+  // Admin-only: every match in the system, separate from the user's own "My Matches"
+  const [allMatches, setAllMatches] = useState([]);
+  const [allMatchesPage, setAllMatchesPage] = useState(1);
+  const [hasMoreAllMatches, setHasMoreAllMatches] = useState(true);
+  const [loadingMoreAllMatches, setLoadingMoreAllMatches] = useState(false);
+
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
       "MATCH_DELETED",
@@ -67,7 +73,6 @@ export default function MyCricket() {
   }, []);
 
   const isUserMatch = (m, uId) => {
-    if (isAdmin) return true;
     if (!uId) return false;
     const uidStr = String(uId);
     if (String(m?.createdBy || m?.userId || m?.user?._id || m?.user?.id || m?.user || "") === uidStr) return true;
@@ -223,14 +228,12 @@ export default function MyCricket() {
     try {
       setMatchPage(1);
       setHasMoreMatches(true);
+      setAllMatchesPage(1);
+      setHasMoreAllMatches(true);
 
-      // User-based match queries only, or all matches if admin
+      // "My Matches" is always scoped to the logged-in user, admin or not.
       const matchPromises = [];
-      if (isAdmin) {
-        matchPromises.push(
-          matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
-        );
-      } else if (userId) {
+      if (userId) {
         matchPromises.push(
           matchesApi.getMatches({ self: 1, userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
@@ -245,6 +248,11 @@ export default function MyCricket() {
           matchesApi.getMatches({ self: 1, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
         );
       }
+
+      // Admin-only: every match in the system, for the separate "All Matches" tab
+      const allMatchesPromise = isAdmin
+        ? matchesApi.getMatches({ page: 1, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null)
+        : null;
 
       const userMobile = authUser?.mobile || authUser?.phoneNumber || User.mobile;
       const cleanMob = String(userMobile || "").replace(/[^0-9]/g, "").slice(-10);
@@ -283,13 +291,14 @@ export default function MyCricket() {
             teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
           ];
 
-      const [matchesResList, tourResList, teamsResList] = await Promise.all([
+      const [matchesResList, tourResList, teamsResList, allMatchesRes] = await Promise.all([
         Promise.all(matchPromises),
         Promise.all(tourPromises),
         Promise.all(teamPromises),
+        allMatchesPromise,
       ]);
 
-      // Process user matches
+      // Process user matches - always scoped to this user, even for admins
       const rawMatchesCombined = matchesResList.flatMap(extractArray);
       const seenMatchIds = new Set();
       const uniqueMatches = [];
@@ -301,12 +310,19 @@ export default function MyCricket() {
         }
       }
 
-      const userMatches = (userId && !isAdmin)
+      const userMatches = userId
         ? uniqueMatches.filter((m) => isUserMatch(m, userId))
         : uniqueMatches;
 
       setRecentMatches(userMatches.map(mapMatchItem));
       setHasMoreMatches(userMatches.length >= 6);
+
+      // Process every match in the system (admin-only "All Matches" tab)
+      if (isAdmin) {
+        const rawAllMatches = extractArray(allMatchesRes);
+        setAllMatches(rawAllMatches.map(mapMatchItem));
+        setHasMoreAllMatches(rawAllMatches.length >= 6);
+      }
 
       // Process user tournaments
       const rawTourList = tourResList.flatMap(extractArray);
@@ -405,26 +421,17 @@ export default function MyCricket() {
   };
 
   const loadMoreMatches = async () => {
-    if (loading || loadingMoreMatches || !hasMoreMatches || (!userId && !isAdmin)) return;
+    if (loading || loadingMoreMatches || !hasMoreMatches || !userId) return;
     try {
       setLoadingMoreMatches(true);
       const nextPage = matchPage + 1;
-      let resList = [];
-      if (isAdmin) {
-        resList = await Promise.all([
-          matchesApi.getMatches({ page: nextPage, limit: 30, isAdmin: 1 }, { errorAlert: false }).catch(() => null),
-        ]);
-      } else {
-        resList = await Promise.all([
-          matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-          matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-          request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
-        ]);
-      }
+      const resList = await Promise.all([
+        matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+        matchesApi.getMatches({ playerId: userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
+        request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
+      ]);
       const rawCombined = resList.flatMap(extractArray);
-      const userMatches = (userId && !isAdmin)
-        ? rawCombined.filter((m) => isUserMatch(m, userId))
-        : rawCombined;
+      const userMatches = rawCombined.filter((m) => isUserMatch(m, userId));
       if (userMatches.length > 0) {
         setRecentMatches((prev) => {
           const seen = new Set(prev.map((item) => item.id));
@@ -445,6 +452,39 @@ export default function MyCricket() {
       console.warn("[MyCricket] Failed to load more matches:", e);
     } finally {
       setLoadingMoreMatches(false);
+    }
+  };
+
+  // Admin-only: paginate the "All Matches" tab
+  const loadMoreAllMatches = async () => {
+    if (!isAdmin || loading || loadingMoreAllMatches || !hasMoreAllMatches) return;
+    try {
+      setLoadingMoreAllMatches(true);
+      const nextPage = allMatchesPage + 1;
+      const res = await matchesApi
+        .getMatches({ page: nextPage, limit: 30, isAdmin: 1 }, { errorAlert: false })
+        .catch(() => null);
+      const rawMatches = extractArray(res);
+      if (rawMatches.length > 0) {
+        setAllMatches((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          const newItems = rawMatches
+            .filter((m) => {
+              const id = String(m?._id || m?.id || m?.matchId || "");
+              return id && !seen.has(id);
+            })
+            .map(mapMatchItem);
+          return [...prev, ...newItems];
+        });
+        setAllMatchesPage(nextPage);
+        setHasMoreAllMatches(rawMatches.length >= 6);
+      } else {
+        setHasMoreAllMatches(false);
+      }
+    } catch (e) {
+      console.warn("[MyCricket] Failed to load more all-matches:", e);
+    } finally {
+      setLoadingMoreAllMatches(false);
     }
   };
 
@@ -575,6 +615,74 @@ export default function MyCricket() {
       onEndReachedThreshold={0.5}
       ListFooterComponent={
         loadingMoreMatches ? (
+          <View className="py-4 items-center">
+            <ActivityIndicator size="small" color="#2563EB" />
+          </View>
+        ) : null
+      }
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#2563EB"]}
+          tintColor="#2563EB"
+        />
+      }
+    />
+  );
+
+  // Admin-only: every match in the system, not just the admin's own
+  const renderAllMatchesTab = () => (
+    <FlatList
+      data={allMatches}
+      keyExtractor={(item, index) => item?.id || String(index)}
+      renderItem={({ item }) => (
+        <View className="mb-4 w-full max-w-md self-center">
+          <ScoreCard
+            matchId={item.id}
+            match={item.raw || item}
+          />
+        </View>
+      )}
+      ListHeaderComponent={
+        <View className="flex-row justify-between items-center w-full max-w-md self-center mb-4 mt-2">
+          <ThemedText
+            className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
+          >
+            All Matches
+          </ThemedText>
+        </View>
+      }
+      ListEmptyComponent={
+        loading ? (
+          <View className="items-center py-16 w-full">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        ) : (
+          <View className="items-center py-8 w-full">
+            <Ionicons
+              name="trophy-outline"
+              size={48}
+              color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+            <ThemedText
+              className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
+            >
+              No matches found
+            </ThemedText>
+          </View>
+        )
+      }
+      showsVerticalScrollIndicator={false}
+      className="px-4"
+      contentContainerStyle={{ paddingBottom: 110 }}
+      initialNumToRender={4}
+      maxToRenderPerBatch={4}
+      windowSize={5}
+      onEndReached={loadMoreAllMatches}
+      onEndReachedThreshold={0.5}
+      ListFooterComponent={
+        loadingMoreAllMatches ? (
           <View className="py-4 items-center">
             <ActivityIndicator size="small" color="#2563EB" />
           </View>
@@ -984,6 +1092,13 @@ export default function MyCricket() {
             icon="trophy-outline"
           />
           <TabButton title="Teams" tabName="teams" icon="people-outline" />
+          {isAdmin && (
+            <TabButton
+              title="All Matches"
+              tabName="allMatches"
+              icon="globe-outline"
+            />
+          )}
         </View>
       </View>
 
@@ -992,6 +1107,7 @@ export default function MyCricket() {
         {activeTab === "matches" && renderMatchesTab()}
         {activeTab === "tournaments" && renderTournamentsTab()}
         {activeTab === "teams" && renderTeamsTab()}
+        {activeTab === "allMatches" && isAdmin && renderAllMatchesTab()}
       </View>
 
       <AnimatedFooter currentTab="My Cricket" />
