@@ -208,6 +208,7 @@ function ScoreCard({
   const resolveTeamId = (team) => {
     if (!team) return "";
     if (typeof team.teamId === "object" && team.teamId?._id) return String(team.teamId._id);
+    if (typeof team.teamId === "object" && team.teamId?.id) return String(team.teamId.id);
     if (team.teamId) return String(team.teamId);
     if (team._id) return String(team._id);
     if (team.id) return String(team.id);
@@ -221,21 +222,36 @@ function ScoreCard({
   const teamAId = resolveTeamId(rawTeamA) || "team1";
   const teamBId = resolveTeamId(rawTeamB) || "team2";
 
-  const teamAName =
-    rawTeamA.title ||
-    rawTeamA.teamName ||
-    rawTeamA.name ||
-    combinedMatch?.team1?.name ||
-    combinedMatch?.team1 ||
-    "Team 1";
+  // Helper to resolve team name from title, name, teamId object, or match title
+  const resolveTeamName = (rawTeam, fallback, index) => {
+    if (!rawTeam) return fallback;
+    if (typeof rawTeam === "string" && rawTeam.trim()) return rawTeam.trim();
+    if (rawTeam.title) return String(rawTeam.title).trim();
+    if (rawTeam.teamName) return String(rawTeam.teamName).trim();
+    if (rawTeam.name) return String(rawTeam.name).trim();
+    if (typeof rawTeam.teamId === "object" && rawTeam.teamId) {
+      if (rawTeam.teamId.title) return String(rawTeam.teamId.title).trim();
+      if (rawTeam.teamId.teamName) return String(rawTeam.teamId.teamName).trim();
+      if (rawTeam.teamId.name) return String(rawTeam.teamId.name).trim();
+    }
+    if (combinedMatch?.title && typeof combinedMatch.title === "string" && combinedMatch.title.includes(" vs ")) {
+      const parts = combinedMatch.title.split(/\s+vs\s+/i);
+      if (parts[index]?.trim()) return parts[index].trim();
+    }
+    return fallback;
+  };
 
-  const teamBName =
-    rawTeamB.title ||
-    rawTeamB.teamName ||
-    rawTeamB.name ||
-    combinedMatch?.team2?.name ||
-    combinedMatch?.team2 ||
-    "Team 2";
+  const teamAName = resolveTeamName(
+    rawTeamA,
+    combinedMatch?.team1?.name || combinedMatch?.team1?.title || combinedMatch?.team1 || "Team 1",
+    0
+  );
+
+  const teamBName = resolveTeamName(
+    rawTeamB,
+    combinedMatch?.team2?.name || combinedMatch?.team2?.title || combinedMatch?.team2 || "Team 2",
+    1
+  );
 
   // Check which team batted first (Innings 1) to ensure Inning 1 team is ALWAYS shown on top (Row 1)
   const inn1Source =

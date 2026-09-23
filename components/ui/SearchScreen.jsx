@@ -17,6 +17,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { searchApi } from "@/utils/api";
 import analytics from "@/utils/analytics";
+import ScoreCard from "@/components/ui/ScoreCard";
 
 export default function SearchScreen() {
   const navigation = useNavigation();
@@ -321,7 +322,12 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate(SCREENS.TournamentProfile, { tournament: item })}
+        onPress={() =>
+          navigation.navigate(SCREENS.TournamentProfile, {
+            tournament: item,
+            tournamentId: String(item._id || item.id || ""),
+          })
+        }
         className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
       >
         <View className="flex-row items-center justify-between mb-2">
@@ -348,33 +354,17 @@ export default function SearchScreen() {
   };
 
   const renderMatchItem = ({ item }) => {
-    const team1 = item.firstBattingTeam?.title || item.team1 || "Team 1";
-    const team2 = item.secondBattingTeam?.title || item.team2 || "Team 2";
-    const status = item.status || "upcoming";
-    const result = item.result?.resultString || item.result || (status ? `Status: ${status}` : "Scheduled");
-
+    const matchId = String(item?._id || item?.id || item?.matchId || "");
     return (
-      <TouchableOpacity
-        onPress={() => navigation.navigate(SCREENS.MatchDetails, { match: item })}
-        className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
-      >
-        {item.tournament?.title && (
-          <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"} mb-1`}>
-            {item.tournament?.title}
-          </ThemedText>
-        )}
-        <ThemedText className={`font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"} mb-2`}>
-          {team1} vs {team2}
-        </ThemedText>
-        <View className="flex-row justify-between items-center">
-          <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {status}
-          </ThemedText>
-          <ThemedText className="text-sm font-medium text-green-600">
-            {result}
-          </ThemedText>
-        </View>
-      </TouchableOpacity>
+      <View className="mb-2">
+        <ScoreCard
+          fullWidth={true}
+          match={typeof item === "object" ? item : null}
+          matchId={matchId}
+          startDate={item?.startDate || item?.createdAt}
+          navigation={navigation}
+        />
+      </View>
     );
   };
 

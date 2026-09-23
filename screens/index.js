@@ -11,6 +11,7 @@ const SCREENS = {
   NavBar: "NavBar",
   ScoreCard: "ScoreCard",
   MatchScoreCard: "MatchScoreCard",
+  MatchDetails: "MatchScoreCard",
   CreateTournament: "CreateTournament",
   CreateTeam: "CreateTeam",
   CreateMatch: "CreateMatch",
