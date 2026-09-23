@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   ScrollView,
@@ -16,34 +16,74 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
-import { useSelector } from "react-redux";
-import { request } from "@/utils/api";
+import { useSelector, useDispatch } from "react-redux";
+import { request, upload, userApi } from "@/utils/api";
+import { updateUser, login } from "@/redux/authSlice";
+import { setUser } from "@/redux/userSlice";
+import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import LocationSearch from "@/components/ui/custom/LocationSearch";
+
+const isCricketRole = (r) => {
+  if (!r || typeof r !== "string") return false;
+  const clean = r.trim().toLowerCase();
+  return [
+    "batsman",
+    "bowler",
+    "all-rounder",
+    "all rounder",
+    "allrounder",
+    "wicket-keeper",
+    "wicket keeper",
+    "wicketkeeper",
+    "wk-batsman",
+  ].includes(clean);
+};
+
+const normalizeCricketRole = (r) => {
+  if (!r || typeof r !== "string") return "Batsman";
+  const clean = r.trim().toLowerCase();
+  if (clean.includes("wicket") || clean.includes("keeper") || clean.includes("wk")) return "Wicket-keeper";
+  if (clean.includes("all")) return "All-rounder";
+  if (clean.includes("bowl")) return "Bowler";
+  if (clean.includes("bat")) return "Batsman";
+  return r;
+};
 
 export default function EditPlayerProfile() {
   const navigation = useNavigation();
   const route = useRoute();
+  const dispatch = useDispatch();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
   const routePlayer = route?.params?.player;
   const authUser = useSelector((state) => state?.auth?.user);
 
+  const initialRole = isCricketRole(routePlayer?.role)
+    ? normalizeCricketRole(routePlayer.role)
+    : isCricketRole(routePlayer?.playerRole)
+    ? normalizeCricketRole(routePlayer.playerRole)
+    : isCricketRole(authUser?.role)
+    ? normalizeCricketRole(authUser.role)
+    : isCricketRole(authUser?.playerRole)
+    ? normalizeCricketRole(authUser.playerRole)
+    : "Batsman";
+
   // Dynamic player data derived from route params or Redux auth user
-  const [player, setPlayer] = useState({
+  const initialPlayer = {
     id: routePlayer?._id || routePlayer?.id || authUser?._id || authUser?.id || "",
-    name: routePlayer?.username || routePlayer?.name || authUser?.username || "",
-    shortName: routePlayer?.shortName || "",
+    name: routePlayer?.username || routePlayer?.name || authUser?.username || authUser?.name || "",
+    shortName: routePlayer?.shortName || authUser?.shortName || "",
     team: routePlayer?.team || "",
     nationality: routePlayer?.nationality || routePlayer?.location || routePlayer?.city || authUser?.location || authUser?.city || "",
     locationId: routePlayer?.locationId || authUser?.locationId || "",
-    age: routePlayer?.age?.toString() || "",
-    role: routePlayer?.role || authUser?.role || "Batsman",
-    battingStyle: routePlayer?.battingStyle || "Right Handed",
-    bowlingStyle: routePlayer?.bowlingStyle || "Right Arm Medium",
-    photo: routePlayer?.profileImage || routePlayer?.photo || authUser?.profileImage || null,
-    debut: routePlayer?.debut || "",
+    age: routePlayer?.age?.toString() || authUser?.age?.toString() || "",
+    role: initialRole,
+    battingStyle: routePlayer?.battingStyle || routePlayer?.batStyle || authUser?.battingStyle || authUser?.batStyle || "Right Handed",
+    bowlingStyle: routePlayer?.bowlingStyle || routePlayer?.ballStyle || authUser?.bowlingStyle || authUser?.ballStyle || "Right Arm Medium",
+    photo: routePlayer?.profileImage || routePlayer?.profileImg || routePlayer?.photo || authUser?.profileImage || authUser?.profileImg || null,
+    debut: routePlayer?.debut || authUser?.debut || "",
     matches: routePlayer?.matches?.toString() || "0",
     runs: routePlayer?.runs?.toString() || "0",
     wickets: routePlayer?.wickets?.toString() || "0",
@@ -53,36 +93,45 @@ export default function EditPlayerProfile() {
     strikeRate: routePlayer?.strikeRate?.toString() || "0",
     economy: routePlayer?.economy?.toString() || "0",
     isPublic: true,
-  });
+  };
 
-  // HARDCODED SAMPLE PLAYER DATA - COMMENTED OUT (API ONLY)
-  /*
-  const [player, setPlayer] = useState({
-    id: "1",
-    name: "Virat Kohli",
-    shortName: "V Kohli",
-    team: "RCB",
-    nationality: "Indian",
-    age: "35",
-    role: "Batsman",
-    battingStyle: "Right Handed",
-    bowlingStyle: "Right Arm Medium",
-    photo: null,
-    debut: "2008-08-18",
-    matches: "237",
-    runs: "7263",
-    wickets: "4",
-    highestScore: "113",
-    bestBowling: "2/25",
-    average: "37.25",
-    strikeRate: "130.02",
-    economy: "8.52",
-    isPublic: true,
-  });
-  */
-
-  const [formData, setFormData] = useState({ ...player });
+  const [player, setPlayer] = useState(initialPlayer);
+  const [formData, setFormData] = useState({ ...initialPlayer });
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const targetUserId = player.id || authUser?._id || authUser?.id;
+    if (!targetUserId || String(targetUserId) === "1") return;
+
+    userApi
+      .getProfile(targetUserId)
+      .then((res) => {
+        const u = res?.data?.data || res?.data?.user || res?.data;
+        if (u && typeof u === "object") {
+          const freshRole = isCricketRole(u.role)
+            ? normalizeCricketRole(u.role)
+            : isCricketRole(u.playerRole)
+            ? normalizeCricketRole(u.playerRole)
+            : isCricketRole(u.playingRole)
+            ? normalizeCricketRole(u.playingRole)
+            : null;
+
+          setFormData((prev) => ({
+            ...prev,
+            name: prev.name || u.username || u.name || "",
+            shortName: prev.shortName || u.shortName || "",
+            nationality: prev.nationality || u.location || u.city || "",
+            locationId: prev.locationId || u.locationId || "",
+            age: prev.age || (u.age ? String(u.age) : ""),
+            role: prev.role || freshRole || "Batsman",
+            battingStyle: prev.battingStyle || u.batStyle || u.battingStyle || "Right Handed",
+            bowlingStyle: prev.bowlingStyle || u.ballStyle || u.bowlingStyle || "Right Arm Medium",
+            photo: prev.photo || u.profileImage || u.profileImg || null,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleInputChange = (field, value) => {
     setFormData({
@@ -170,28 +219,64 @@ export default function EditPlayerProfile() {
     setIsSaving(true);
     try {
       const playerId = player.id || authUser?._id || authUser?.id;
+
+      let uploadedPhoto = formData.photo;
+      if (formData.photo && !formData.photo.startsWith("http")) {
+        try {
+          const uploadRes = await upload(formData.photo, "profile");
+          uploadedPhoto =
+            uploadRes?.url ||
+            uploadRes?.data?.url ||
+            uploadRes?.data ||
+            (typeof uploadRes === "string" ? uploadRes : formData.photo);
+        } catch (uploadErr) {
+          console.warn("[EditPlayerProfile] Photo upload warning, keeping original:", uploadErr);
+        }
+      }
+
+      const updatePayload = {
+        username: formData.name.trim(),
+        name: formData.name.trim(),
+        shortName: formData.shortName ? formData.shortName.trim() : formData.name.trim(),
+        role: formData.role,
+        playerRole: formData.role,
+        playingRole: formData.role,
+        location: formData.nationality.trim(),
+        city: formData.nationality.trim(),
+        nationality: formData.nationality.trim(),
+        ...(formData.locationId ? { locationId: formData.locationId } : {}),
+        age: formData.age ? (Number(formData.age) || formData.age) : undefined,
+        batStyle: formData.battingStyle,
+        ballStyle: formData.bowlingStyle,
+        battingStyle: formData.battingStyle,
+        bowlingStyle: formData.bowlingStyle,
+        profileImage: uploadedPhoto,
+        profileImg: uploadedPhoto,
+      };
+
+      let apiResponseUser = null;
       if (playerId) {
-        const updatePayload = {
-          username: formData.name,
-          name: formData.name,
-          role: formData.role,
-          location: formData.nationality,
-          city: formData.nationality,
-          ...(formData.locationId ? { locationId: formData.locationId } : {}),
-          batStyle: formData.battingStyle,
-          ballStyle: formData.bowlingStyle,
-          battingStyle: formData.battingStyle,
-          bowlingStyle: formData.bowlingStyle,
-          profileImage: formData.photo,
-          profileImg: formData.photo,
-        };
-        await request(`api/users/edit/${playerId}`, {
+        const res = await request(`api/users/edit/${playerId}`, {
           method: "POST",
           data: { dataToChange: updatePayload },
         });
+        apiResponseUser = res?.data?.user || res?.data?.data || null;
       }
 
-      setPlayer({ ...formData });
+      // Update Redux state and User singleton
+      const updatedUser = {
+        ...(authUser || {}),
+        ...updatePayload,
+        ...(apiResponseUser && typeof apiResponseUser === "object" ? apiResponseUser : {}),
+        _id: playerId,
+        id: playerId,
+      };
+
+      dispatch(updateUser(updatedUser));
+      dispatch(setUser(updatedUser));
+      User.login(updatedUser);
+
+      setPlayer({ ...formData, photo: uploadedPhoto });
       showGlobalAlert({
         title: "Success",
         message: "Profile updated successfully",
@@ -199,7 +284,13 @@ export default function EditPlayerProfile() {
         buttons: [
           {
             text: "OK",
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate(SCREENS.PlayerProfile, { playerId });
+              }
+            },
           },
         ],
       });

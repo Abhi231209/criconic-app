@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -18,6 +18,32 @@ import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
 import request, { matchesApi, userApi } from "@/utils/api";
 import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
+
+const isCricketRole = (r) => {
+  if (!r || typeof r !== "string") return false;
+  const clean = r.trim().toLowerCase();
+  return [
+    "batsman",
+    "bowler",
+    "all-rounder",
+    "all rounder",
+    "allrounder",
+    "wicket-keeper",
+    "wicket keeper",
+    "wicketkeeper",
+    "wk-batsman",
+  ].includes(clean);
+};
+
+const normalizeCricketRole = (r) => {
+  if (!r || typeof r !== "string") return "Batsman";
+  const clean = r.trim().toLowerCase();
+  if (clean.includes("wicket") || clean.includes("keeper") || clean.includes("wk")) return "Wicket-keeper";
+  if (clean.includes("all")) return "All-rounder";
+  if (clean.includes("bowl")) return "Bowler";
+  if (clean.includes("bat")) return "Batsman";
+  return r;
+};
 
 export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
@@ -91,10 +117,12 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       routePlayer?.username,
       authUser?.username,
       authUser?.name,
+      fetchedPlayer?.username,
+      fetchedPlayer?.name,
     ]
       .filter(Boolean)
       .map((n) => String(n).trim().toLowerCase());
-  }, [sanitizedRoutePlayer, routePlayer, authUser]);
+  }, [sanitizedRoutePlayer, routePlayer, authUser, fetchedPlayer]);
 
   // Helper to ensure a match actually belongs to this player
   const isMatchForPlayer = useCallback(
@@ -185,43 +213,51 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     [targetId, candidateNames]
   );
 
+  // 1. Fetch Profile
+  const fetchProfile = useCallback(async () => {
+    if (!targetId || String(targetId) === "1") return;
+    try {
+      let user = null;
+      const res = await userApi.getProfile(targetId).catch(() => null);
+      user = res?.data?.data || res?.data?.user || res?.data;
+
+      if (!user || (!user._id && !user.id && !user.username)) {
+        const fbRes = await request(`api/users/profile/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
+        user = fbRes?.data?.data || fbRes?.data?.user || fbRes?.data;
+      }
+
+      if ((!user || (!user._id && !user.username)) && (!routePlayerId || String(targetId) === String(authUser?._id || authUser?.id))) {
+        const authRes = await request("api/auth/status", { method: "GET", errorAlert: false }).catch(() => null);
+        user = authRes?.data?.user;
+      }
+
+      // If user has no teams or unpopulated string team IDs or missing titles, enrich with withTeam endpoint
+      if (user && (!Array.isArray(user.teams) || user.teams.length === 0 || typeof user.teams[0] === "string" || (!user.teams[0]?.title && !user.teams[0]?.name))) {
+        const withTeamRes = await request(`api/users/withTeam/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
+        const tList = withTeamRes?.data?.content?.teams || withTeamRes?.data?.teams || withTeamRes?.data?.data?.teams;
+        if (Array.isArray(tList) && tList.length > 0) {
+          user = { ...user, teams: tList };
+        }
+      }
+
+      if (user && typeof user === "object") {
+        setFetchedPlayer(user);
+      }
+    } catch (err) {
+      console.log("[PlayerProfile] Profile fetch error:", err);
+    }
+  }, [targetId, routePlayerId, authUser?._id, authUser?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [fetchProfile])
+  );
+
   useEffect(() => {
     let isMounted = true;
     if (!targetId || String(targetId) === "1") return;
 
-    // 1. Fetch Profile
-    const fetchProfile = async () => {
-      try {
-        let user = null;
-        const res = await userApi.getProfile(targetId).catch(() => null);
-        user = res?.data?.data || res?.data?.user || res?.data;
-
-        if (!user || (!user._id && !user.id && !user.username)) {
-          const fbRes = await request(`api/users/profile/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
-          user = fbRes?.data?.data || fbRes?.data?.user || fbRes?.data;
-        }
-
-        if ((!user || (!user._id && !user.username)) && (!routePlayerId || String(targetId) === String(authUser?._id || authUser?.id))) {
-          const authRes = await request("api/auth/status", { method: "GET", errorAlert: false }).catch(() => null);
-          user = authRes?.data?.user;
-        }
-
-        // If user has no teams or unpopulated string team IDs or missing titles, enrich with withTeam endpoint
-        if (user && (!Array.isArray(user.teams) || user.teams.length === 0 || typeof user.teams[0] === "string" || (!user.teams[0]?.title && !user.teams[0]?.name))) {
-          const withTeamRes = await request(`api/users/withTeam/${targetId}`, { method: "GET", errorAlert: false }).catch(() => null);
-          const tList = withTeamRes?.data?.content?.teams || withTeamRes?.data?.teams || withTeamRes?.data?.data?.teams;
-          if (Array.isArray(tList) && tList.length > 0) {
-            user = { ...user, teams: tList };
-          }
-        }
-
-        if (isMounted && user && typeof user === "object") {
-          setFetchedPlayer(user);
-        }
-      } catch (err) {
-        console.log("[PlayerProfile] Profile fetch error:", err);
-      }
-    };
     fetchProfile();
 
     // 2. Fetch User Stats if available
@@ -341,14 +377,16 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     };
   }, [targetId, routePlayerId, authUser?._id, authUser?.id, route?.params?.matchId, isMatchForPlayer]);
 
-  const target = {
-    ...(sanitizedRoutePlayer || {}),
-    ...(fetchedPlayer || (routePlayerId ? null : authUser) || {}),
-  };
   const isSelf = Boolean(
     authUser &&
-    (String(target?._id || target?.id) === String(authUser?._id || authUser?.id) || (!routePlayer && !routePlayerId))
+    (String(targetId) === String(authUser?._id || authUser?.id) || (!routePlayer && !routePlayerId))
   );
+
+  const target = {
+    ...(sanitizedRoutePlayer || {}),
+    ...(isSelf ? authUser : {}),
+    ...(fetchedPlayer || {}),
+  };
 
   const bStats = target?.stats?.batting || target?.battingStats || userStats?.batting || {};
   const bowlStats = target?.stats?.bowling || target?.bowlingStats || userStats?.bowling || {};
@@ -724,19 +762,49 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     tennis: getBowlingStatsForType("tennis"),
   };
 
+  const resolvedRole = (() => {
+    // 1. If isSelf, priority to updated authUser if valid cricket role
+    if (isSelf) {
+      if (isCricketRole(authUser?.role)) return normalizeCricketRole(authUser.role);
+      if (isCricketRole(authUser?.playerRole)) return normalizeCricketRole(authUser.playerRole);
+      if (isCricketRole(authUser?.playingRole)) return normalizeCricketRole(authUser.playingRole);
+    }
+
+    // 2. Fresh fetched profile from server
+    if (isCricketRole(fetchedPlayer?.role)) return normalizeCricketRole(fetchedPlayer.role);
+    if (isCricketRole(fetchedPlayer?.playerRole)) return normalizeCricketRole(fetchedPlayer.playerRole);
+    if (isCricketRole(fetchedPlayer?.playingRole)) return normalizeCricketRole(fetchedPlayer.playingRole);
+
+    // 3. Merged target
+    if (isCricketRole(target?.role)) return normalizeCricketRole(target.role);
+    if (isCricketRole(target?.playerRole)) return normalizeCricketRole(target.playerRole);
+    if (isCricketRole(target?.playingRole)) return normalizeCricketRole(target.playingRole);
+
+    // 4. Initial route player
+    if (isCricketRole(sanitizedRoutePlayer?.role)) return normalizeCricketRole(sanitizedRoutePlayer.role);
+    if (isCricketRole(sanitizedRoutePlayer?.playerRole)) return normalizeCricketRole(sanitizedRoutePlayer.playerRole);
+
+    // 5. If target has a string role that is not a numeric string or "Player"
+    if (target?.role && typeof target.role === "string" && isNaN(Number(target.role)) && target.role.toLowerCase() !== "player") {
+      return normalizeCricketRole(target.role);
+    }
+
+    return "Batsman";
+  })();
+
   // Dynamic player data derived from fetched data, sanitized route params, or match derived stats
   const player = {
     id: target?._id || target?.id || target?.playerId || routePlayerId || authUser?._id || authUser?.id || "1",
-    name: target?.username || target?.name || target?.playerName || sanitizedRoutePlayer?.name || sanitizedRoutePlayer?.username || (isSelf ? authUser?.username : "Player"),
-    shortName: target?.shortName || target?.username || target?.name || sanitizedRoutePlayer?.name || (isSelf ? authUser?.username : "Player"),
+    name: (isSelf ? authUser?.username || authUser?.name : null) || target?.username || target?.name || target?.playerName || sanitizedRoutePlayer?.name || sanitizedRoutePlayer?.username || "Player",
+    shortName: (isSelf ? authUser?.shortName : null) || target?.shortName || target?.username || target?.name || sanitizedRoutePlayer?.name || "Player",
     team: target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || route?.params?.team?.title || route?.params?.team?.name || sanitizedRoutePlayer?.team || "Unassigned",
-    nationality: target?.nationality || target?.location || "India",
-    age: target?.age || "-",
-    role: target?.role && typeof target.role === "string" ? target.role : (isSelf && typeof authUser?.role === "string" ? authUser.role : (sanitizedRoutePlayer?.role || "Player")),
-    battingStyle: target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "Right Handed",
-    bowlingStyle: target?.bowlingStyle || target?.ballStyle || sanitizedRoutePlayer?.bowlingStyle || "Right Arm Medium",
-    photo: target?.profileImg || target?.profileImage || target?.photo || target?.image || target?.avatar || sanitizedRoutePlayer?.profileImg || sanitizedRoutePlayer?.image || (isSelf ? authUser?.profileImage || authUser?.profileImg : null),
-    debut: target?.debut || "-",
+    nationality: (isSelf ? authUser?.location || authUser?.city || authUser?.nationality : null) || target?.nationality || target?.location || target?.city || "India",
+    age: (isSelf && authUser?.age ? String(authUser.age) : null) || (target?.age ? String(target.age) : "-"),
+    role: resolvedRole,
+    battingStyle: (isSelf ? authUser?.battingStyle || authUser?.batStyle : null) || target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "Right Handed",
+    bowlingStyle: (isSelf ? authUser?.bowlingStyle || authUser?.ballStyle : null) || target?.bowlingStyle || target?.ballStyle || sanitizedRoutePlayer?.bowlingStyle || "Right Arm Medium",
+    photo: (isSelf ? authUser?.profileImage || authUser?.profileImg : null) || target?.profileImg || target?.profileImage || target?.photo || target?.image || target?.avatar || sanitizedRoutePlayer?.profileImg || sanitizedRoutePlayer?.image || null,
+    debut: target?.debut || (isSelf ? authUser?.debut : "") || "-",
     matches: battingStats.all.matches || bowlingStats.all.matches || 0,
     runs: battingStats.all.runs,
     wickets: bowlingStats.all.wickets,
@@ -970,57 +1038,8 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         seasons = `${curYr - 1} - ${curYr}`;
       }
 
-      // Determine Role
-      let role = "Player";
-      if (rawTeam?.role && typeof rawTeam.role === "string" && rawTeam.role !== "Player" && isNaN(Number(rawTeam.role))) {
-        role = rawTeam.role;
-      } else {
-        const isCapt = (
-          String(rawTeam?.captain?._id || rawTeam?.captain?.id || rawTeam?.captain || "") === String(targetId) ||
-          (Array.isArray(rawTeam?.players) && rawTeam.players.some((p) => {
-            const pId = String(p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || "");
-            const pName = (p?.username || p?.name || "").toLowerCase().trim();
-            const isThis = (pId && pId === String(targetId)) || (pName && targetNames.includes(pName));
-            return isThis && (p.isCaptain || p.captain);
-          }))
-        );
-
-        if (isCapt) {
-          role = "Captain";
-        } else {
-          const pInSquad = Array.isArray(rawTeam?.players) ? rawTeam.players.find((p) => {
-            const pId = String(p?.id?._id || p?.id?.id || p?.id || p?._id || p?.playerId || "");
-            const pName = (p?.username || p?.name || "").toLowerCase().trim();
-            return (pId && pId === String(targetId)) || (pName && targetNames.includes(pName));
-          }) : null;
-
-          if (pInSquad?.isKeeper || pInSquad?.wicketKeeper) {
-            role = "WK-Batsman";
-          } else if (pInSquad?.role && typeof pInSquad.role === "string" && pInSquad.role !== "Player" && isNaN(Number(pInSquad.role))) {
-            role = pInSquad.role;
-          } else if (target?.playingRole && target.playingRole !== "Player") {
-            role = target.playingRole;
-          } else if (sanitizedRoutePlayer?.role && sanitizedRoutePlayer.role !== "Player") {
-            role = sanitizedRoutePlayer.role;
-          } else if (target?.role && typeof target.role === "string" && target.role !== "Player" && isNaN(Number(target.role))) {
-            role = target.role;
-          } else if (wicketsCount >= 1 && runsCount >= 25) {
-            role = "All-Rounder";
-          } else if (wicketsCount >= 2) {
-            role = "Bowler";
-          } else if (runsCount > 0) {
-            role = "Batsman";
-          } else if (matchesCount > 0 && (target?.ballStyle || target?.bowlingStyle)) {
-            role = "Bowler";
-          } else if (matchesCount > 0 && (target?.batStyle || target?.battingStyle)) {
-            role = "Batsman";
-          } else if (matchesCount > 0) {
-            role = "All-Rounder";
-          } else {
-            role = "Player";
-          }
-        }
-      }
+      // A player should have 1 consistent role throughout the app
+      const role = resolvedRole;
 
       return {
         id: teamId,

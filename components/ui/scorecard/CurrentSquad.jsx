@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { View, ScrollView, Pressable, useWindowDimensions, useColorScheme } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useSelector } from "react-redux";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { 
   Ionicons, 
@@ -13,6 +14,7 @@ import SCREENS from "@/screens";
 
 export default function CurrentSquad({ matchId, score }) {
   const navigation = useNavigation();
+  const authUser = useSelector((state) => state?.auth?.user);
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const [activeTeam, setActiveTeam] = useState("team1");
@@ -386,7 +388,20 @@ export default function CurrentSquad({ matchId, score }) {
 
     const average = lbBat?.average ?? p?.average ?? teamPlayer?.average ?? 0;
 
-    const role = p?.role || teamPlayer?.role || teamPlayer?.position || (matchStat?.didBowl && matchStat?.didBat ? "All-rounder" : matchStat?.didBowl ? "Bowler" : matchStat?.didBat ? "Batsman" : "Player");
+    const rawRole =
+      (p?.id?.role && typeof p.id.role === "string" && isNaN(Number(p.id.role)) && p.id.role.toLowerCase() !== "player" ? p.id.role : null) ||
+      (p?.id?.playerRole && typeof p.id.playerRole === "string" && isNaN(Number(p.id.playerRole)) && p.id.playerRole.toLowerCase() !== "player" ? p.id.playerRole : null) ||
+      (teamPlayer?.id?.role && typeof teamPlayer.id.role === "string" && isNaN(Number(teamPlayer.id.role)) && teamPlayer.id.role.toLowerCase() !== "player" ? teamPlayer.id.role : null) ||
+      (teamPlayer?.id?.playerRole && typeof teamPlayer.id.playerRole === "string" && isNaN(Number(teamPlayer.id.playerRole)) && teamPlayer.id.playerRole.toLowerCase() !== "player" ? teamPlayer.id.playerRole : null) ||
+      (String(id) === String(authUser?._id || authUser?.id) && authUser?.role && typeof authUser.role === "string" && isNaN(Number(authUser.role)) ? authUser.role : null) ||
+      (String(id) === String(authUser?._id || authUser?.id) && authUser?.playerRole && typeof authUser.playerRole === "string" && isNaN(Number(authUser.playerRole)) ? authUser.playerRole : null) ||
+      (p?.role && typeof p.role === "string" && isNaN(Number(p.role)) && p.role.toLowerCase() !== "player" ? p.role : null) ||
+      (p?.playerRole && typeof p.playerRole === "string" && isNaN(Number(p.playerRole)) && p.playerRole.toLowerCase() !== "player" ? p.playerRole : null) ||
+      (teamPlayer?.role && typeof teamPlayer.role === "string" && isNaN(Number(teamPlayer.role)) && teamPlayer.role.toLowerCase() !== "player" ? teamPlayer.role : null) ||
+      (teamPlayer?.playerRole && typeof teamPlayer.playerRole === "string" && isNaN(Number(teamPlayer.playerRole)) && teamPlayer.playerRole.toLowerCase() !== "player" ? teamPlayer.playerRole : null) ||
+      (teamPlayer?.position && typeof teamPlayer.position === "string" && isNaN(Number(teamPlayer.position)) && teamPlayer.position.toLowerCase() !== "player" ? teamPlayer.position : null);
+
+    const role = rawRole || "Player";
     const isCaptain = Boolean(p?.isCaptain || teamPlayer?.isCaptain);
     const isWicketKeeper = Boolean(p?.isWicketKeeper || teamPlayer?.isWicketKeeper);
     const battingStyle = p?.battingStyle || teamPlayer?.battingStyle || "Right Handed";

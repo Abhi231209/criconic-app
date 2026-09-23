@@ -32,6 +32,32 @@ import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 
+const isCricketRole = (r) => {
+  if (!r || typeof r !== "string") return false;
+  const clean = r.trim().toLowerCase();
+  return [
+    "batsman",
+    "bowler",
+    "all-rounder",
+    "all rounder",
+    "allrounder",
+    "wicket-keeper",
+    "wicket keeper",
+    "wicketkeeper",
+    "wk-batsman",
+  ].includes(clean);
+};
+
+const normalizeCricketRole = (r) => {
+  if (!r || typeof r !== "string") return "Player";
+  const clean = r.trim().toLowerCase();
+  if (clean.includes("wicket") || clean.includes("keeper") || clean.includes("wk")) return "Wicket-Keeper";
+  if (clean.includes("all")) return "All-Rounder";
+  if (clean.includes("bowl")) return "Bowler";
+  if (clean.includes("bat")) return "Batsman";
+  return r;
+};
+
 export default function TeamProfile({ navigation, route = { params: {} } }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
@@ -158,15 +184,26 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     let base = Array.isArray(routeTeam) ? routeTeam[0] : routeTeam;
     const unnested = unnestTeam(base);
     const raw = Array.isArray(unnested?.players) ? unnested.players : [];
-    return raw.map((p, idx) => ({
-      id: String(p.id || p._id || p.playerId || idx),
-      name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
-      profileImg: p.profileImage || p.profileImg || null,
-      role: p.playerRole || p.role || null,
-      battingStyle: p.battingStyle || null,
-      bowlingStyle: p.bowlingStyle || null,
-      mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
-    }));
+    return raw.map((p, idx) => {
+      const u = p.id && typeof p.id === "object" ? p.id : {};
+      const pId = u._id || u.id || p.id || p._id || p.playerId;
+      const rawUserRole =
+        (isCricketRole(u.role) ? normalizeCricketRole(u.role) : null) ||
+        (isCricketRole(u.playerRole) ? normalizeCricketRole(u.playerRole) : null) ||
+        (isCricketRole(u.playingRole) ? normalizeCricketRole(u.playingRole) : null);
+      const rawSquadRole =
+        (isCricketRole(p.role) ? normalizeCricketRole(p.role) : null) ||
+        (isCricketRole(p.playerRole) ? normalizeCricketRole(p.playerRole) : null);
+      return {
+        id: String(pId || idx),
+        name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
+        profileImg: p.profileImage || p.profileImg || null,
+        role: rawUserRole || rawSquadRole || "Player",
+        battingStyle: p.battingStyle || null,
+        bowlingStyle: p.bowlingStyle || null,
+        mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
+      };
+    });
   });
   const [loadingSquad, setLoadingSquad] = useState(false);
   const [editNumberModalVisible, setEditNumberModalVisible] = useState(false);
@@ -710,11 +747,20 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
       const u = p.id && typeof p.id === "object" ? p.id : {};
       const pId = u._id || u.id || p.id || p._id || p.playerId;
       const phone = p.mobile || u.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null;
+      const rawUserRole =
+        (isCricketRole(u.role) ? normalizeCricketRole(u.role) : null) ||
+        (isCricketRole(u.playerRole) ? normalizeCricketRole(u.playerRole) : null) ||
+        (isCricketRole(u.playingRole) ? normalizeCricketRole(u.playingRole) : null) ||
+        (String(pId) === String(authUser?._id || authUser?.id) && isCricketRole(authUser?.role) ? normalizeCricketRole(authUser.role) : null) ||
+        (String(pId) === String(authUser?._id || authUser?.id) && isCricketRole(authUser?.playerRole) ? normalizeCricketRole(authUser.playerRole) : null);
+      const rawSquadRole =
+        (isCricketRole(p.role) ? normalizeCricketRole(p.role) : null) ||
+        (isCricketRole(p.playerRole) ? normalizeCricketRole(p.playerRole) : null);
       return {
         id: String(pId || idx),
         name: toDisplayText(p.name || u.name || p.username || u.username || p.playerName || p.title, `Player ${idx + 1}`),
         profileImg: p.profileImg || p.profileImage || u.profileImg || u.profileImage || null,
-        role: p.role || p.playerRole || u.role || u.playerRole || null,
+        role: rawUserRole || rawSquadRole || "Player",
         battingStyle: p.battingStyle || p.batStyle || u.battingStyle || u.batStyle || null,
         bowlingStyle: p.bowlingStyle || p.ballStyle || u.bowlingStyle || u.ballStyle || null,
         mobile: phone,
@@ -728,15 +774,27 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const squad = squadPlayers.length > 0
     ? squadPlayers
     : Array.isArray(teamData?.players)
-    ? teamData.players.map((p, idx) => ({
-        id: String(p.id || p._id || p.playerId || idx),
-        name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
-        profileImg: p.profileImage || p.profileImg || null,
-        role: p.playerRole || p.role || null,
-        battingStyle: p.battingStyle || null,
-        bowlingStyle: p.bowlingStyle || null,
-        mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
-      }))
+    ? teamData.players.map((p, idx) => {
+        const u = p.id && typeof p.id === "object" ? p.id : {};
+        const pId = u._id || u.id || p.id || p._id || p.playerId;
+        const rawUserRole =
+          (isCricketRole(u.role) ? normalizeCricketRole(u.role) : null) ||
+          (isCricketRole(u.playerRole) ? normalizeCricketRole(u.playerRole) : null) ||
+          (isCricketRole(u.playingRole) ? normalizeCricketRole(u.playingRole) : null) ||
+          (String(pId) === String(authUser?._id || authUser?.id) && isCricketRole(authUser?.role) ? normalizeCricketRole(authUser.role) : null);
+        const rawSquadRole =
+          (isCricketRole(p.role) ? normalizeCricketRole(p.role) : null) ||
+          (isCricketRole(p.playerRole) ? normalizeCricketRole(p.playerRole) : null);
+        return {
+          id: String(pId || idx),
+          name: toDisplayText(p.username || p.name || p.playerName || p.title, `Player ${idx + 1}`),
+          profileImg: p.profileImage || p.profileImg || null,
+          role: rawUserRole || rawSquadRole || "Player",
+          battingStyle: p.battingStyle || null,
+          bowlingStyle: p.bowlingStyle || null,
+          mobile: p.mobile || p.phoneNumber || p.phone || p.mobileNumber || p.contact || null,
+        };
+      })
     : [];
 
   // ─── Robust Player Name Resolution ─────────────────────────────────────────
@@ -1585,7 +1643,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                 teamId: teamId,
                 profileImg: fullImgUrl || resolvedSquadMember?.profileImg,
                 profileImage: fullImgUrl || resolvedSquadMember?.profileImg,
-                role: resolvedSquadMember?.role || "Batsman",
+                role: resolvedSquadMember?.role || "Player",
                 battingStyle: resolvedSquadMember?.battingStyle || "Right Handed",
                 bowlingStyle: resolvedSquadMember?.bowlingStyle || "Right Arm Medium",
                 mobile: resolvedSquadMember?.mobile,
@@ -1711,7 +1769,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                 teamId: teamId,
                 profileImg: fullImgUrl || resolvedSquadMember?.profileImg,
                 profileImage: fullImgUrl || resolvedSquadMember?.profileImg,
-                role: resolvedSquadMember?.role || "Bowler",
+                role: resolvedSquadMember?.role || "Player",
                 battingStyle: resolvedSquadMember?.battingStyle || "Right Handed",
                 bowlingStyle: resolvedSquadMember?.bowlingStyle || "Right Arm Medium",
                 mobile: resolvedSquadMember?.mobile,

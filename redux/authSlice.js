@@ -46,6 +46,22 @@ const authSlice = createSlice({
       User.logout();
     },
 
+    updateUser: (state, action) => {
+      const payload = action.payload || {};
+      const updatedUser = {
+        ...(state.user || {}),
+        ...payload,
+        id: payload._id || payload.id || state.user?._id || state.user?.id || null,
+        _id: payload._id || payload.id || state.user?._id || state.user?.id || null,
+        username: payload.username || payload.name || state.user?.username || state.user?.name || null,
+        name: payload.username || payload.name || state.user?.username || state.user?.name || null,
+      };
+      state.user = updatedUser;
+
+      // Synchronize User singleton
+      User.login(updatedUser);
+    },
+
     setLoading: (state, action) => {
       state.loading = action.payload;
     },
@@ -58,7 +74,7 @@ const authSlice = createSlice({
 });
 
 // Export actions
-export const { login, logout, reset, setLoading, setError } = authSlice.actions;
+export const { login, logout, updateUser, reset, setLoading, setError } = authSlice.actions;
 
 // Export reducer
 export default authSlice.reducer;
