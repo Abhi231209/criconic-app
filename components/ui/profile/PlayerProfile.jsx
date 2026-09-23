@@ -19,6 +19,7 @@ import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
 import request, { matchesApi, userApi } from "@/utils/api";
 import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
+import { toShortBattingStyle, toShortBowlingStyle } from "@/utils";
 
 const isCricketRole = (r) => {
   if (!r || typeof r !== "string") return false;
@@ -577,8 +578,8 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     nationality: (isSelf ? authUser?.location || authUser?.city || authUser?.nationality : null) || target?.nationality || target?.location || target?.city || "India",
     age: (isSelf && authUser?.age ? String(authUser.age) : null) || (target?.age ? String(target.age) : "-"),
     role: resolvedRole,
-    battingStyle: (isSelf ? authUser?.battingStyle || authUser?.batStyle : null) || target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "Right Handed",
-    bowlingStyle: (isSelf ? authUser?.bowlingStyle || authUser?.ballStyle : null) || target?.bowlingStyle || target?.ballStyle || sanitizedRoutePlayer?.bowlingStyle || "Right Arm Medium",
+    battingStyle: toShortBattingStyle((isSelf ? authUser?.battingStyle || authUser?.batStyle : null) || target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "RHB"),
+    bowlingStyle: toShortBowlingStyle((isSelf ? authUser?.bowlingStyle || authUser?.ballStyle : null) || target?.bowlingStyle || target?.ballStyle || sanitizedRoutePlayer?.bowlingStyle || "RAM"),
     photo: (isSelf ? authUser?.profileImage || authUser?.profileImg : null) || target?.profileImg || target?.profileImage || target?.photo || target?.image || target?.avatar || sanitizedRoutePlayer?.profileImg || sanitizedRoutePlayer?.image || null,
     debut: target?.debut || (isSelf ? authUser?.debut : "") || "-",
     matches: battingStats.all.matches || bowlingStats.all.matches || 0,

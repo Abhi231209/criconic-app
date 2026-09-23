@@ -24,6 +24,12 @@ import { login as loginAction } from "@/redux/authSlice";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import LocationSearch from "@/components/ui/custom/LocationSearch";
+import {
+  toShortBattingStyle,
+  toShortBowlingStyle,
+  SHORT_BATTING_STYLES,
+  SHORT_BOWLING_STYLES,
+} from "@/utils";
 
 const { width } = Dimensions.get("window");
 
@@ -34,18 +40,8 @@ const ROLES = [
   { id: "Wicket Keeper", title: "Wicket Keeper", icon: "sports-handball", desc: "Gloveman & batter" },
 ];
 
-const BATTING_STYLES = ["Right Handed", "Left Handed"];
-
-const BOWLING_STYLES = [
-  "Right Arm Fast",
-  "Right Arm Medium",
-  "Right Arm Off-Spin",
-  "Right Arm Leg-Spin",
-  "Left Arm Fast",
-  "Left Arm Medium",
-  "Left Arm Spin",
-  "None",
-];
+const BATTING_STYLES = SHORT_BATTING_STYLES;
+const BOWLING_STYLES = SHORT_BOWLING_STYLES;
 
 export default function CompleteProfileScreen() {
   const navigation = useNavigation();
@@ -64,8 +60,12 @@ export default function CompleteProfileScreen() {
 
   // Form State
   const [role, setRole] = useState(currentUser?.role || "All-rounder");
-  const [battingStyle, setBattingStyle] = useState(currentUser?.batStyle || currentUser?.battingStyle || "Right Handed");
-  const [bowlingStyle, setBowlingStyle] = useState(currentUser?.ballStyle || currentUser?.bowlingStyle || "Right Arm Medium");
+  const [battingStyle, setBattingStyle] = useState(
+    toShortBattingStyle(currentUser?.batStyle || currentUser?.battingStyle || "RHB")
+  );
+  const [bowlingStyle, setBowlingStyle] = useState(
+    toShortBowlingStyle(currentUser?.ballStyle || currentUser?.bowlingStyle || "RAM")
+  );
   const [avatarUri, setAvatarUri] = useState(currentUser?.profileImg || currentUser?.profileImage || null);
   const [city, setCity] = useState(currentUser?.city || currentUser?.location || "");
   const [locationId, setLocationId] = useState(currentUser?.locationId || "");
@@ -172,12 +172,15 @@ export default function CompleteProfileScreen() {
         }
       }
 
+      const cleanBatStyle = toShortBattingStyle(battingStyle);
+      const cleanBallStyle = toShortBowlingStyle(bowlingStyle);
+
       const payload = {
         role,
-        batStyle: battingStyle,
-        battingStyle,
-        ballStyle: bowlingStyle,
-        bowlingStyle,
+        batStyle: cleanBatStyle,
+        battingStyle: cleanBatStyle,
+        ballStyle: cleanBallStyle,
+        bowlingStyle: cleanBallStyle,
         city: city.trim(),
         location: city.trim(),
         ...(locationId ? { locationId } : {}),
@@ -364,11 +367,11 @@ export default function CompleteProfileScreen() {
               </ThemedText>
               <View className="flex-row gap-2.5 mb-6">
                 {BATTING_STYLES.map((s) => {
-                  const isSelected = battingStyle === s;
+                  const isSelected = toShortBattingStyle(battingStyle) === s.value;
                   return (
                     <TouchableOpacity
-                      key={s}
-                      onPress={() => setBattingStyle(s)}
+                      key={s.value}
+                      onPress={() => setBattingStyle(s.value)}
                       activeOpacity={0.8}
                       className="flex-1 py-3 px-4 rounded-xl border flex-row items-center justify-center"
                       style={{
@@ -402,7 +405,7 @@ export default function CompleteProfileScreen() {
                             : "#1F2937",
                         }}
                       >
-                        {s}
+                        {s.label}
                       </ThemedText>
                     </TouchableOpacity>
                   );
@@ -415,11 +418,11 @@ export default function CompleteProfileScreen() {
               </ThemedText>
               <View className="flex-row flex-wrap gap-2 mb-4">
                 {BOWLING_STYLES.map((s) => {
-                  const isSelected = bowlingStyle === s;
+                  const isSelected = toShortBowlingStyle(bowlingStyle) === s.value;
                   return (
                     <TouchableOpacity
-                      key={s}
-                      onPress={() => setBowlingStyle(s)}
+                      key={s.value}
+                      onPress={() => setBowlingStyle(s.value)}
                       activeOpacity={0.8}
                       className="py-2 px-3.5 rounded-full border items-center justify-center"
                       style={{
@@ -447,7 +450,7 @@ export default function CompleteProfileScreen() {
                             : "#4B5563",
                         }}
                       >
-                        {s}
+                        {s.label}
                       </ThemedText>
                     </TouchableOpacity>
                   );

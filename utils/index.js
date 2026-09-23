@@ -374,3 +374,75 @@ export const getImageFullUrl = (img) => {
   const cleanImg = trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
   return `${BASE_URL}${cleanImg}`;
 };
+
+/**
+ * Standard short options for batting styles
+ */
+export const SHORT_BATTING_STYLES = [
+  { value: "RHB", label: "Right Handed (RHB)" },
+  { value: "LHB", label: "Left Handed (LHB)" },
+];
+
+/**
+ * Standard short options for bowling styles
+ */
+export const SHORT_BOWLING_STYLES = [
+  { value: "RAF", label: "Right Arm Fast (RAF)" },
+  { value: "RAM", label: "Right Arm Medium (RAM)" },
+  { value: "RAO", label: "Right Arm Off-Spin (RAO)" },
+  { value: "RAL", label: "Right Arm Leg-Spin (RAL)" },
+  { value: "RAS", label: "Right Arm Spin (RAS)" },
+  { value: "LAF", label: "Left Arm Fast (LAF)" },
+  { value: "LAM", label: "Left Arm Medium (LAM)" },
+  { value: "LAS", label: "Left Arm Spin (LAS)" },
+  { value: "None", label: "None" },
+];
+
+/**
+ * Maps full/variant batting style names to standard short codes ("RHB", "LHB")
+ */
+export const toShortBattingStyle = (style) => {
+  if (!style) return "RHB";
+  const s = String(style).trim().toUpperCase();
+  if (s === "RHB" || s.includes("RIGHT")) return "RHB";
+  if (s === "LHB" || s.includes("LEFT")) return "LHB";
+  return s || "RHB";
+};
+
+/**
+ * Maps full/variant bowling style names to standard short codes:
+ * "RAF", "RAM", "RAO", "RAL", "RAS", "LAF", "LAM", "LAS", "None"
+ */
+export const toShortBowlingStyle = (style) => {
+  if (!style) return "RAM";
+  const s = String(style).trim();
+  const upper = s.toUpperCase().replace(/[-_]/g, " ");
+
+  if (["RAF", "RAM", "RAFM", "RAMF", "RAO", "RAL", "RAS", "LAF", "LAM", "LAFM", "LAMF", "LAS", "SLA", "OB", "LB"].includes(upper)) {
+    if (upper === "OB") return "RAO";
+    if (upper === "LB") return "RAL";
+    if (upper === "SLA") return "LAS";
+    if (upper === "RAFM" || upper === "RAMF") return "RAF";
+    if (upper === "LAFM" || upper === "LAMF") return "LAF";
+    return upper;
+  }
+
+  if (upper === "NONE" || upper === "NO" || upper === "NA") return "None";
+
+  const isLeft = upper.includes("LEFT");
+
+  if (isLeft) {
+    if (upper.includes("FAST")) return "LAF";
+    if (upper.includes("MEDIUM")) return "LAM";
+    if (upper.includes("SPIN") || upper.includes("ORTHODOX") || upper.includes("CHINAMAN")) return "LAS";
+    return "LAM";
+  }
+
+  if (upper.includes("FAST")) return "RAF";
+  if (upper.includes("OFF")) return "RAO";
+  if (upper.includes("LEG")) return "RAL";
+  if (upper.includes("SPIN")) return "RAS";
+  if (upper.includes("MEDIUM")) return "RAM";
+
+  return "RAM";
+};

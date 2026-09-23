@@ -23,6 +23,12 @@ import { setUser } from "@/redux/userSlice";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import LocationSearch from "@/components/ui/custom/LocationSearch";
+import {
+  toShortBattingStyle,
+  toShortBowlingStyle,
+  SHORT_BATTING_STYLES,
+  SHORT_BOWLING_STYLES,
+} from "@/utils";
 
 const isCricketRole = (r) => {
   if (!r || typeof r !== "string") return false;
@@ -80,8 +86,8 @@ export default function EditPlayerProfile() {
     locationId: routePlayer?.locationId || authUser?.locationId || "",
     age: routePlayer?.age?.toString() || authUser?.age?.toString() || "",
     role: initialRole,
-    battingStyle: routePlayer?.battingStyle || routePlayer?.batStyle || authUser?.battingStyle || authUser?.batStyle || "Right Handed",
-    bowlingStyle: routePlayer?.bowlingStyle || routePlayer?.ballStyle || authUser?.bowlingStyle || authUser?.ballStyle || "Right Arm Medium",
+    battingStyle: toShortBattingStyle(routePlayer?.battingStyle || routePlayer?.batStyle || authUser?.battingStyle || authUser?.batStyle || "RHB"),
+    bowlingStyle: toShortBowlingStyle(routePlayer?.bowlingStyle || routePlayer?.ballStyle || authUser?.bowlingStyle || authUser?.ballStyle || "RAM"),
     photo: routePlayer?.profileImage || routePlayer?.profileImg || routePlayer?.photo || authUser?.profileImage || authUser?.profileImg || null,
     debut: routePlayer?.debut || authUser?.debut || "",
     matches: routePlayer?.matches?.toString() || "0",
@@ -124,8 +130,8 @@ export default function EditPlayerProfile() {
             locationId: prev.locationId || u.locationId || "",
             age: prev.age || (u.age ? String(u.age) : ""),
             role: prev.role || freshRole || "Batsman",
-            battingStyle: prev.battingStyle || u.batStyle || u.battingStyle || "Right Handed",
-            bowlingStyle: prev.bowlingStyle || u.ballStyle || u.bowlingStyle || "Right Arm Medium",
+            battingStyle: toShortBattingStyle(prev.battingStyle || u.batStyle || u.battingStyle || "RHB"),
+            bowlingStyle: toShortBowlingStyle(prev.bowlingStyle || u.ballStyle || u.bowlingStyle || "RAM"),
             photo: prev.photo || u.profileImage || u.profileImg || null,
           }));
         }
@@ -234,6 +240,9 @@ export default function EditPlayerProfile() {
         }
       }
 
+      const cleanBatStyle = toShortBattingStyle(formData.battingStyle);
+      const cleanBallStyle = toShortBowlingStyle(formData.bowlingStyle);
+
       const updatePayload = {
         username: formData.name.trim(),
         name: formData.name.trim(),
@@ -246,10 +255,10 @@ export default function EditPlayerProfile() {
         nationality: formData.nationality.trim(),
         ...(formData.locationId ? { locationId: formData.locationId } : {}),
         age: formData.age ? (Number(formData.age) || formData.age) : undefined,
-        batStyle: formData.battingStyle,
-        ballStyle: formData.bowlingStyle,
-        battingStyle: formData.battingStyle,
-        bowlingStyle: formData.bowlingStyle,
+        batStyle: cleanBatStyle,
+        ballStyle: cleanBallStyle,
+        battingStyle: cleanBatStyle,
+        bowlingStyle: cleanBallStyle,
         profileImage: uploadedPhoto,
         profileImg: uploadedPhoto,
       };
@@ -543,26 +552,16 @@ export default function EditPlayerProfile() {
 
           <SelectField
             label="Batting Style"
-            value={formData.battingStyle}
-            onChange={(value) => handleInputChange("battingStyle", value)}
-            options={[
-              { value: "Right Handed", label: "Right Handed" },
-              { value: "Left Handed", label: "Left Handed" },
-            ]}
+            value={toShortBattingStyle(formData.battingStyle)}
+            onChange={(value) => handleInputChange("battingStyle", toShortBattingStyle(value))}
+            options={SHORT_BATTING_STYLES}
           />
 
           <SelectField
             label="Bowling Style"
-            value={formData.bowlingStyle}
-            onChange={(value) => handleInputChange("bowlingStyle", value)}
-            options={[
-              { value: "Right Arm Fast", label: "Right Arm Fast" },
-              { value: "Right Arm Medium", label: "Right Arm Medium" },
-              { value: "Right Arm Spin", label: "Right Arm Spin" },
-              { value: "Left Arm Fast", label: "Left Arm Fast" },
-              { value: "Left Arm Medium", label: "Left Arm Medium" },
-              { value: "Left Arm Spin", label: "Left Arm Spin" },
-            ]}
+            value={toShortBowlingStyle(formData.bowlingStyle)}
+            onChange={(value) => handleInputChange("bowlingStyle", toShortBowlingStyle(value))}
+            options={SHORT_BOWLING_STYLES}
           />
         </View>
 

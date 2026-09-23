@@ -27,7 +27,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
 import SCREENS from "@/screens";
 import { request } from "@/utils/api";
-import { getImageFullUrl } from "@/utils";
+import { getImageFullUrl, toShortBattingStyle, toShortBowlingStyle } from "@/utils";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
@@ -1186,7 +1186,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                     </ThemedText>
                     {(item.battingStyle || item.bowlingStyle) && (
                       <ThemedText numberOfLines={1} className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                        {[item.battingStyle && `🏏 ${item.battingStyle}`, item.bowlingStyle && `⚾ ${item.bowlingStyle}`].filter(Boolean).join("  •  ")}
+                        {[item.battingStyle && `🏏 ${toShortBattingStyle(item.battingStyle)}`, item.bowlingStyle && `⚾ ${toShortBowlingStyle(item.bowlingStyle)}`].filter(Boolean).join("  •  ")}
                       </ThemedText>
                     )}
 
