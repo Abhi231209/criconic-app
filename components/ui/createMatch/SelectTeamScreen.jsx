@@ -18,7 +18,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import SwipeableTabs from "../custom/SwipeableTab";
-import { teamsApi, searchApi, tournamentsApi, matchesApi, request } from "@/utils/api";
+import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import debounce from "lodash/debounce";
@@ -120,9 +120,9 @@ export default function SelectTeamScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [oppPage, setOppPage] = useState(1);
-  const [hasMoreOpp, setHasMoreOpp] = useState(true);
-  const [loadingMoreOpp, setLoadingMoreOpp] = useState(false);
+  const [tournamentSearchQuery, setTournamentSearchQuery] = useState("");
+  const [myTeamsSearchQuery, setMyTeamsSearchQuery] = useState("");
+  const [opponentSearchQuery, setOpponentSearchQuery] = useState("");
 
   const normalizeTeam = (t, isMy = false) => {
     const raw =
@@ -183,26 +183,22 @@ export default function SelectTeamScreen() {
 
   const fetchTeams = async () => {
     try {
-      const myTeamsEndpoint = currentUserId
-        ? `api/users/withTeam/${currentUserId}`
-        : "api/users/withTeam";
-
-      const [myRes1, myRes2, allTeamsRes, oppRes, matchesRes] = await Promise.all([
+      const promises = [
         teamsApi.getMyTeams().catch(() => null),
-        request(myTeamsEndpoint, { method: "GET", errorAlert: false }).catch(() => null),
-        teamsApi.getAllTeams().catch(() => null),
         teamsApi.getOpponentTeams().catch(() => null),
-        currentUserId
-          ? matchesApi.getMatches({ self: 1, limit: 50 }).catch(() => null)
-          : Promise.resolve(null),
-      ]);
-
-      // 1. Process explicit user teams
-      const rawUserTeams = [
-        ...extractTeamList(myRes1),
-        ...extractTeamList(myRes2),
       ];
 
+      if (tournamentId) {
+        promises.push(tournamentsApi.getTournamentById(tournamentId).catch(() => null));
+      }
+
+      const results = await Promise.all(promises);
+      const myRes = results[0];
+      const oppRes = results[1];
+      const tournRes = tournamentId ? results[2] : null;
+
+      // 1. Process user teams
+      const rawUserTeams = extractTeamList(myRes);
       const userTeamsMap = new Map();
       rawUserTeams.forEach((t) => {
         const norm = normalizeTeam(t, true);
@@ -211,22 +207,7 @@ export default function SelectTeamScreen() {
         }
       });
 
-      // 2. Process all teams - check if user is creator/organizer/captain/player,
-      // and keep a dictionary to enrich opponent teams found from matches
-      const rawAllTeams = extractTeamList(allTeamsRes);
-      const allTeamsMap = new Map();
-      rawAllTeams.forEach((t) => {
-        const norm = normalizeTeam(t, false);
-        if (norm.id) {
-          allTeamsMap.set(norm.id, t);
-          if (norm.isMyTeam || isAdmin) {
-            // User owns/belongs to this team! (Or admin: full access to all teams)
-            userTeamsMap.set(norm.id, { ...norm, isMyTeam: true });
-          }
-        }
-      });
-
-      // 3. Process opponent teams directly from getOpponentTeams API
+      // 2. Process opponent teams directly from getOpponentTeams API
       const rawOppTeams = extractTeamList(oppRes);
       const oppTeamsMap = new Map();
       rawOppTeams.forEach((t) => {
@@ -237,38 +218,6 @@ export default function SelectTeamScreen() {
         }
       });
 
-      // For admin: ensure every team in the system is available under opponents as well
-      if (isAdmin) {
-        rawAllTeams.forEach((t) => {
-          const norm = normalizeTeam(t, false);
-          if (norm.id) {
-            oppTeamsMap.set(norm.id, { ...norm, isMyTeam: false });
-          }
-        });
-      }
-
-      // 4. Also inspect user matches for any opponent teams played against
-      const userMatches = Array.isArray(matchesRes?.data?.matches)
-        ? matchesRes.data.matches
-        : Array.isArray(matchesRes?.matches)
-        ? matchesRes.matches
-        : [];
-
-      userMatches.forEach((m) => {
-        if (!Array.isArray(m?.teams)) return;
-        m.teams.forEach((tm) => {
-          const tId = String(tm?.teamId?._id || tm?.teamId?.id || tm?.teamId || "");
-          if (!tId) return;
-          if (!userTeamsMap.has(tId) && !oppTeamsMap.has(tId)) {
-            const rawOpp = allTeamsMap.get(tId) || (typeof tm.teamId === "object" ? tm.teamId : tm);
-            const norm = normalizeTeam(rawOpp, false);
-            if (norm.id && !userTeamsMap.has(norm.id)) {
-              oppTeamsMap.set(norm.id, norm);
-            }
-          }
-        });
-      });
-
       const finalUserTeams = Array.from(userTeamsMap.values());
       const finalOppTeams = Array.from(oppTeamsMap.values());
       const combined = [...finalUserTeams, ...finalOppTeams];
@@ -277,78 +226,61 @@ export default function SelectTeamScreen() {
       setTeams(combined);
       setLoading(false);
 
-      if (tournamentId) {
-        setTournamentTeams((prev) =>
-          prev.map((tt) => {
-            if (!tt.players || tt.players.length === 0) {
-              const match = combined.find((m) => String(m.id) === String(tt.id));
-              if (match?.players?.length > 0) return { ...tt, players: match.players };
-            }
-            return tt;
-          })
-        );
-      }
+      // 3. Process tournament teams if applicable
+      if (tournamentId && tournRes) {
+        let tData =
+          tournRes?.data?.content ||
+          tournRes?.data?.tournament ||
+          tournRes?.data;
+        if (tData?.content) tData = tData.content;
+        if (tData) {
+          setTournamentTitle(tData.title || tData.name || "Tournament");
+          if (Array.isArray(tData.teams)) {
+            const parsedTeams = tData.teams.map((t) => {
+              const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
+              const normalized = normalizeTeam(innerTeam, false);
+              const tId = normalized.id;
 
-      // 3. Fetch Tournament data if applicable
-      if (tournamentId) {
-        tournamentsApi.getTournamentById(tournamentId).then((tournRes) => {
-          let tData =
-            tournRes?.data?.content ||
-            tournRes?.data?.tournament ||
-            tournRes?.data;
-          if (tData?.content) tData = tData.content;
-          if (tData) {
-            setTournamentTitle(tData.title || tData.name || "Tournament");
-            if (Array.isArray(tData.teams)) {
-              const currentAllTeams = cachedTeams || [];
-              const parsedTeams = tData.teams.map((t) => {
-                const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
-                const normalized = normalizeTeam(innerTeam, false);
-                const tId = normalized.id;
-                
-                // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents!
-                if (!normalized.players || normalized.players.length === 0) {
-                  const matched = currentAllTeams.find((ct) => String(ct.id) === String(tId));
-                  if (matched && Array.isArray(matched.players) && matched.players.length > 0) {
-                    normalized.players = matched.players;
+              // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents
+              if (!normalized.players || normalized.players.length === 0) {
+                const matched = combined.find((ct) => String(ct.id) === String(tId));
+                if (matched && Array.isArray(matched.players) && matched.players.length > 0) {
+                  normalized.players = matched.players;
+                }
+              }
+              return normalized;
+            });
+
+            setTournamentTeams(parsedTeams);
+            cachedTournamentTeams[tournamentId] = parsedTeams;
+
+            // Background-fetch details for any tournament teams still missing players
+            parsedTeams.forEach((pt) => {
+              if (!pt.players || pt.players.length === 0) {
+                teamsApi.getTeamById(pt.id).then((teamDetailRes) => {
+                  const teamDataObj = Array.isArray(teamDetailRes?.data)
+                    ? teamDetailRes.data[0]
+                    : (teamDetailRes?.data?.data || teamDetailRes?.data?.team || teamDetailRes?.data);
+                  const pl = teamDataObj?.players;
+                  if (Array.isArray(pl) && pl.length > 0) {
+                    setTournamentTeams((prev) => {
+                      const updated = prev.map((item) =>
+                        item.id === pt.id ? { ...item, players: pl } : item
+                      );
+                      cachedTournamentTeams[tournamentId] = updated;
+                      return updated;
+                    });
                   }
-                }
-                return normalized;
-              });
-
-              setTournamentTeams(parsedTeams);
-              cachedTournamentTeams[tournamentId] = parsedTeams;
-
-              // Background-fetch details for any tournament teams still missing players
-              parsedTeams.forEach((pt) => {
-                if (!pt.players || pt.players.length === 0) {
-                  teamsApi.getTeamById(pt.id).then((teamDetailRes) => {
-                    const teamDataObj = Array.isArray(teamDetailRes?.data)
-                      ? teamDetailRes.data[0]
-                      : (teamDetailRes?.data?.data || teamDetailRes?.data?.team || teamDetailRes?.data);
-                    const pl = teamDataObj?.players;
-                    if (Array.isArray(pl) && pl.length > 0) {
-                      setTournamentTeams((prev) => {
-                        const updated = prev.map((item) =>
-                          item.id === pt.id ? { ...item, players: pl } : item
-                        );
-                        cachedTournamentTeams[tournamentId] = updated;
-                        return updated;
-                      });
-                    }
-                  }).catch(() => {});
-                }
-              });
-            }
+                }).catch(() => {});
+              }
+            });
           }
-          setLoading(false);
-        }).catch(() => {
-          setLoading(false);
-        });
+        }
       }
     } catch (error) {
       console.warn("[SelectTeam] Failed to fetch teams:", error);
     } finally {
+      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -400,43 +332,19 @@ export default function SelectTeamScreen() {
     debouncedTeamSearch(text);
   };
 
-  const loadMoreOpponents = async () => {
-    if (loading || loadingMoreOpp || !hasMoreOpp || isSearching || searchQuery) return;
-    try {
-      setLoadingMoreOpp(true);
-      const nextP = oppPage + 1;
-      const oppRes = await teamsApi.getOpponentTeams({ params: { page: nextP, limit: 15 } });
-      const rawOppList = Array.isArray(oppRes?.data?.content)
-        ? oppRes.data.content
-        : Array.isArray(oppRes?.data)
-        ? oppRes.data
-        : [];
-      if (rawOppList.length > 0) {
-        const oppData = rawOppList.map((t) => normalizeTeam(t, false));
-        setTeams((prev) => {
-          const seen = new Set(prev.map((t) => t.id).filter(Boolean));
-          const newOpp = oppData.filter((t) => t.id && !seen.has(t.id));
-          const updated = [...prev, ...newOpp];
-          cachedTeams = updated;
-          return updated;
-        });
-        setOppPage(nextP);
-        setHasMoreOpp(rawOppList.length >= 15);
-      } else {
-        setHasMoreOpp(false);
-      }
-    } catch (e) {
-      console.warn("[SelectTeam] Failed to load more opponents:", e);
-    } finally {
-      setLoadingMoreOpp(false);
-    }
-  };
-
   const handleRefresh = () => {
     setRefreshing(true);
-    setOppPage(1);
-    setHasMoreOpp(true);
     fetchTeams();
+  };
+
+  const handleGlobalSearchFromTab = (query = "") => {
+    const q = typeof query === "string" ? query : "";
+    setSearchQuery(q);
+    setActiveTab("search");
+    if (q.trim()) {
+      setIsSearching(true);
+      debouncedTeamSearch(q.trim());
+    }
   };
 
   const handleTeamSelect = (team) => {
@@ -472,17 +380,11 @@ export default function SelectTeamScreen() {
     });
   };
 
-  const [quickSearchQuery, setQuickSearchQuery] = useState("");
-
-  // Filter teams based on active tab, blockedTeamId, and quickSearchQuery
-  const getFilteredTeams = () => {
+  // Filter teams based on active tab, blockedTeamId, and tab-specific search query
+  const getFilteredTeams = (isMy) => {
     let filtered = teams;
     if (!isAdmin) {
-      if (activeTab === "myTeams") {
-        filtered = filtered.filter((t) => t.isMyTeam);
-      } else if (activeTab === "opponentTeams") {
-        filtered = filtered.filter((t) => !t.isMyTeam);
-      }
+      filtered = filtered.filter((t) => (isMy ? t.isMyTeam : !t.isMyTeam));
     }
 
     if (blockedTeamId) {
@@ -491,13 +393,13 @@ export default function SelectTeamScreen() {
       );
     }
 
-    if (quickSearchQuery.trim()) {
-      const q = quickSearchQuery.trim().toLowerCase();
+    const query = (isMy ? myTeamsSearchQuery : opponentSearchQuery).trim().toLowerCase();
+    if (query) {
       filtered = filtered.filter(
         (t) =>
-          (t.name || t.title || "").toLowerCase().includes(q) ||
-          (t.shortName || "").toLowerCase().includes(q) ||
-          (t.location || "").toLowerCase().includes(q)
+          (t.name || t.title || "").toLowerCase().includes(query) ||
+          (t.shortName || "").toLowerCase().includes(query) ||
+          (t.location || "").toLowerCase().includes(query)
       );
     }
     return filtered;
@@ -510,13 +412,13 @@ export default function SelectTeamScreen() {
         (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
       );
     }
-    if (quickSearchQuery.trim()) {
-      const q = quickSearchQuery.trim().toLowerCase();
+    const query = tournamentSearchQuery.trim().toLowerCase();
+    if (query) {
       list = list.filter(
         (t) =>
-          (t.name || t.title || "").toLowerCase().includes(q) ||
-          (t.shortName || "").toLowerCase().includes(q) ||
-          (t.location || "").toLowerCase().includes(q)
+          (t.name || t.title || "").toLowerCase().includes(query) ||
+          (t.shortName || "").toLowerCase().includes(query) ||
+          (t.location || "").toLowerCase().includes(query)
       );
     }
     return list;
@@ -637,43 +539,48 @@ export default function SelectTeamScreen() {
             emptyMessage={tournamentTitle ? `No teams registered in ${tournamentTitle} yet.` : "No tournament teams found."}
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            onCreateTeam={handleCreateTeam}
-            searchQuery={quickSearchQuery}
-            onSearchChange={setQuickSearchQuery}
+            onCreateTeam={null}
+            searchQuery={tournamentSearchQuery}
+            onSearchChange={setTournamentSearchQuery}
+            searchPlaceholder="Search tournament teams..."
+            onEmptyAction={handleGlobalSearchFromTab}
+            emptyActionLabel="Search All Teams"
           />
         )}
 
         {/* My Teams Tab */}
         {activeTab === "myTeams" && (
           <TeamList 
-            teams={getFilteredTeams()} 
+            teams={getFilteredTeams(true)} 
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
             emptyMessage="No teams available. Create one!"
             refreshing={refreshing}
             onRefresh={handleRefresh}
             onCreateTeam={handleCreateTeam}
-            searchQuery={quickSearchQuery}
-            onSearchChange={setQuickSearchQuery}
+            searchQuery={myTeamsSearchQuery}
+            onSearchChange={setMyTeamsSearchQuery}
+            searchPlaceholder="Search my teams by name or location..."
+            onEmptyAction={handleGlobalSearchFromTab}
+            emptyActionLabel="Search All Teams"
           />
         )}
 
         {/* Opponent Teams Tab */}
         {activeTab === "opponentTeams" && (
           <TeamList 
-            teams={getFilteredTeams()} 
+            teams={getFilteredTeams(false)} 
             onTeamSelect={handleTeamSelect}
             isDarkMode={isDarkMode}
-            emptyMessage="No opponent teams found. Teams you play against in matches will appear here."
+            emptyMessage="No opponent teams found. Search across all teams to find opponents."
             refreshing={refreshing}
             onRefresh={handleRefresh}
             onCreateTeam={null}
             emptyActionLabel="Search All Teams"
-            onEmptyAction={() => setActiveTab("search")}
-            searchQuery={quickSearchQuery}
-            onSearchChange={setQuickSearchQuery}
-            onEndReached={loadMoreOpponents}
-            loadingMore={loadingMoreOpp}
+            onEmptyAction={handleGlobalSearchFromTab}
+            searchQuery={opponentSearchQuery}
+            onSearchChange={setOpponentSearchQuery}
+            searchPlaceholder="Search opponent teams by name or location..."
           />
         )}
 
@@ -709,8 +616,7 @@ const TeamList = ({
   onCreateTeam,
   searchQuery,
   onSearchChange,
-  onEndReached,
-  loadingMore,
+  searchPlaceholder,
   emptyActionLabel,
   onEmptyAction,
 }) => {
@@ -729,7 +635,7 @@ const TeamList = ({
           style={{ marginRight: 8 }}
         />
         <TextInput
-          placeholder="Quick search teams by name or location..."
+          placeholder={searchPlaceholder || "Quick search teams by name or location..."}
           placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
           value={searchQuery}
           onChangeText={onSearchChange}
@@ -749,17 +655,7 @@ const TeamList = ({
       <FlatList
         data={teams}
         keyExtractor={(item, idx) => item?.id ? String(item.id) : `team_${idx}`}
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={
-          loadingMore ? (
-            <View className="py-3 items-center justify-center">
-              <ActivityIndicator size="small" color="#2563EB" />
-            </View>
-          ) : (
-            <View style={{ height: 20 }} />
-          )
-        }
+        ListFooterComponent={<View style={{ height: 20 }} />}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -813,12 +709,23 @@ const TeamList = ({
             </ThemedText>
             <ThemedText className="text-gray-500 dark:text-gray-400 text-xs text-center mb-5 max-w-xs">
               {searchQuery
-                ? `No teams matched "${searchQuery}". Try a different name or search globally.`
+                ? `No teams matched "${searchQuery}". Try searching globally.`
                 : emptyMessage || "Create a team now to start playing matches!"}
             </ThemedText>
-            {onEmptyAction && emptyActionLabel && !searchQuery ? (
+            {searchQuery && onEmptyAction ? (
               <TouchableOpacity
-                onPress={onEmptyAction}
+                onPress={() => onEmptyAction(searchQuery)}
+                activeOpacity={0.85}
+                className="flex-row items-center bg-blue-600 px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/30"
+              >
+                <Ionicons name="search" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <ThemedText className="text-white text-sm font-bold">
+                  Search Globally for "{searchQuery}"
+                </ThemedText>
+              </TouchableOpacity>
+            ) : onEmptyAction && emptyActionLabel && !searchQuery ? (
+              <TouchableOpacity
+                onPress={() => onEmptyAction("")}
                 activeOpacity={0.85}
                 className="flex-row items-center bg-blue-600 px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/30"
               >
