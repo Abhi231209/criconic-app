@@ -8,6 +8,7 @@ import {
   Switch,
   Linking,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -156,19 +157,44 @@ export default function Settings() {
   };
 
   const handleRateApp = () => {
+    const playStoreUrl = "market://details?id=com.criconic.app";
+    const playStoreWebUrl = "https://play.google.com/store/apps/details?id=com.criconic.app";
+    const appStoreUrl = "https://apps.apple.com/app/criconic/id6470000000";
+
     showGlobalAlert({
       title: "Rate Criconic",
-      message: "Enjoying the app? Would you like to rate us?",
+      message: "If you enjoy using Criconic, please take a moment to rate us on the app store. Your review helps us grow!",
       type: "info",
       confirmText: "Rate Now",
       cancelText: "Not Now",
-      onConfirm: () => {
-        showGlobalAlert({
-          title: "Thank You!",
-          message: "We appreciate your feedback and support!",
-          type: "success",
-          confirmText: "Close",
-        });
+      onConfirm: async () => {
+        try {
+          if (Platform.OS === "android") {
+            const canOpen = await Linking.canOpenURL(playStoreUrl).catch(() => false);
+            if (canOpen) {
+              await Linking.openURL(playStoreUrl);
+            } else {
+              await Linking.openURL(playStoreWebUrl);
+            }
+          } else if (Platform.OS === "ios") {
+            const canOpen = await Linking.canOpenURL(appStoreUrl).catch(() => false);
+            if (canOpen) {
+              await Linking.openURL(appStoreUrl);
+            } else {
+              await Linking.openURL(playStoreWebUrl);
+            }
+          } else {
+            await Linking.openURL(playStoreWebUrl);
+          }
+        } catch (err) {
+          console.warn("[RateApp] Could not open store URL:", err);
+          showGlobalAlert({
+            title: "Thank You!",
+            message: "We appreciate your support and valuable feedback!",
+            type: "success",
+            confirmText: "Close",
+          });
+        }
       },
     });
   };

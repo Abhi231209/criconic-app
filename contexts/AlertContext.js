@@ -43,51 +43,57 @@ export const showGlobalAlert = (options) => {
     if (!normalized.cancelText && cancelBtn?.text) {
       normalized.cancelText = cancelBtn.text;
     }
+    if (confirmBtn?.style === "destructive" || cancelBtn?.style === "destructive") {
+      normalized.type = "danger";
+    }
+  }
+
+  const lowerTitle = String(normalized.title || "").toLowerCase();
+  if (!normalized.type) {
+    normalized.type =
+      lowerTitle.includes("error") || lowerTitle.includes("fail") || lowerTitle.includes("delete") || lowerTitle.includes("danger") || lowerTitle.includes("sign out") || lowerTitle.includes("logout")
+        ? "danger"
+        : lowerTitle.includes("warn") || lowerTitle.includes("required") || lowerTitle.includes("mismatch") || lowerTitle.includes("weak") || lowerTitle.includes("invalid") || lowerTitle.includes("unable")
+        ? "warning"
+        : lowerTitle.includes("success") || lowerTitle.includes("done") || lowerTitle.includes("thank") || lowerTitle.includes("copied") || lowerTitle.includes("approved")
+        ? "success"
+        : "info";
   }
 
   if (globalAlertHandler) {
     globalAlertHandler(normalized);
   } else {
-    // Fallback to native alert if called before provider mounts
-    const buttons = [];
-    if (normalized.cancelText) {
-      buttons.push({
-        text: normalized.cancelText,
-        style: "cancel",
-        onPress: normalized.onCancel,
-      });
-    }
-    buttons.push({
-      text: normalized.confirmText || "OK",
-      style: normalized.type === "danger" ? "destructive" : "default",
-      onPress: normalized.onConfirm,
-    });
-    originalAlert.call(Alert, normalized.title || "Notice", normalized.message || "", buttons);
+    // If provider is just mounting, retry in 100ms
+    setTimeout(() => {
+      if (globalAlertHandler) {
+        globalAlertHandler(normalized);
+      } else {
+        const buttons = [];
+        if (normalized.cancelText) {
+          buttons.push({
+            text: normalized.cancelText,
+            style: "cancel",
+            onPress: normalized.onCancel,
+          });
+        }
+        buttons.push({
+          text: normalized.confirmText || "OK",
+          style: normalized.type === "danger" ? "destructive" : "default",
+          onPress: normalized.onConfirm,
+        });
+        originalAlert.call(Alert, normalized.title || "Notice", normalized.message || "", buttons);
+      }
+    }, 100);
   }
 };
 
 // Intercept Alert.alert across the entire app so all popups match app design
 Alert.alert = (title, message, buttons, options) => {
-  if (globalAlertHandler) {
-    const lowerTitle = String(title || "").toLowerCase();
-    const type =
-      lowerTitle.includes("error") || lowerTitle.includes("fail") || lowerTitle.includes("delete") || lowerTitle.includes("danger")
-        ? "danger"
-        : lowerTitle.includes("warn") || lowerTitle.includes("required") || lowerTitle.includes("mismatch") || lowerTitle.includes("weak")
-        ? "warning"
-        : lowerTitle.includes("success") || lowerTitle.includes("done") || lowerTitle.includes("thank")
-        ? "success"
-        : "info";
-
-    showGlobalAlert({
-      title: title || "Notice",
-      message: message || "",
-      buttons,
-      type,
-    });
-  } else {
-    originalAlert.call(Alert, title, message, buttons, options);
-  }
+  showGlobalAlert({
+    title: title || "Notice",
+    message: message || "",
+    buttons,
+  });
 };
 
 export const AlertProvider = ({ children }) => {
