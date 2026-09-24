@@ -40,6 +40,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import CurrentUser from "@/utils/User";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import analytics from "@/utils/analytics";
+import { tournamentsApi } from "@/utils/api";
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;

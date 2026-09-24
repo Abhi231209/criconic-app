@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  useColorScheme,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,10 +16,11 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { request } from "@/utils/api";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
+import useAppTheme from "@/hooks/useAppTheme";
 
 export default function ChangePassword({ navigation }) {
-  const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const { theme, isDark } = useAppTheme();
+  const isDarkMode = isDark;
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -457,7 +457,8 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
+    fontFamily: "DarkerGrotesque_600SemiBold",
     paddingVertical: 10,
   },
   eyeBtn: {

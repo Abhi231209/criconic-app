@@ -16,9 +16,11 @@ import { useNavigation } from "@react-navigation/native";
 import { useSelector } from "react-redux";
 import axios from "axios";
 import { BASE_URL as API_URL } from "@/config";
+import useAppTheme from "@/hooks/useAppTheme";
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation();
+  const { theme, isDark } = useAppTheme();
   const token = useSelector((state) => state.auth.token);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -57,7 +59,7 @@ export default function ChangePasswordScreen() {
   };
 
   const Field = ({ label, value, onChange, secure, show, toggle }) => (
-    <View style={{ borderWidth: 0.5, borderColor: "#d1d5db", borderRadius: 12, padding: 12, marginBottom: 16 }}>
+    <View style={{ borderWidth: 0.5, borderColor: isDark ? "#374151" : "#d1d5db", backgroundColor: isDark ? "#1f2937" : "#fff", borderRadius: 12, padding: 12, marginBottom: 16 }}>
       <ThemedText className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</ThemedText>
       <View style={{ flexDirection: "row", alignItems: "center" }}>
         <TextInput
@@ -65,7 +67,8 @@ export default function ChangePasswordScreen() {
           onChangeText={onChange}
           secureTextEntry={!show}
           placeholder="••••••••"
-          style={{ flex: 1, fontSize: 16, color: "#111" }}
+          placeholderTextColor={isDark ? "#6b7280" : "#9ca3af"}
+          style={{ flex: 1, fontSize: 16, color: isDark ? "#fff" : "#111", fontFamily: "DarkerGrotesque_600SemiBold" }}
         />
         <TouchableOpacity onPress={toggle}>
           {show ? <EyeOff size={20} color="#9ca3af" /> : <Eye size={20} color="#9ca3af" />}
@@ -106,14 +109,15 @@ export default function ChangePasswordScreen() {
             show={showNew}
             toggle={() => setShowNew(!showNew)}
           />
-          <View style={{ borderWidth: 0.5, borderColor: "#d1d5db", borderRadius: 12, padding: 12, marginBottom: 24 }}>
+          <View style={{ borderWidth: 0.5, borderColor: isDark ? "#374151" : "#d1d5db", backgroundColor: isDark ? "#1f2937" : "#fff", borderRadius: 12, padding: 12, marginBottom: 24 }}>
             <ThemedText className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm new password</ThemedText>
             <TextInput
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showNew}
               placeholder="••••••••"
-              style={{ fontSize: 16, color: "#111" }}
+              placeholderTextColor={isDark ? "#6b7280" : "#9ca3af"}
+              style={{ fontSize: 16, color: isDark ? "#fff" : "#111", fontFamily: "DarkerGrotesque_600SemiBold" }}
             />
           </View>
 

@@ -55,10 +55,16 @@ export default function ThemedText({
 
   let styleWeight = null;
   let flatStyle = null;
+  let cleanStyle = style;
+
   if (style) {
     flatStyle = StyleSheet.flatten(style);
-    if (!classFontKey && flatStyle?.fontWeight) {
-      styleWeight = String(flatStyle.fontWeight).toLowerCase();
+    if (flatStyle?.fontWeight) {
+      if (!classFontKey) {
+        styleWeight = String(flatStyle.fontWeight).toLowerCase();
+      }
+      const { fontWeight, ...rest } = flatStyle;
+      cleanStyle = rest;
     }
   }
 
@@ -98,8 +104,8 @@ export default function ThemedText({
           includeFontPadding: false,
           textAlignVertical: 'center',
         },
-        style,
-        { fontFamily },
+        cleanStyle,
+        { fontFamily, fontWeight: undefined },
         !flatStyle?.lineHeight && flatStyle?.fontSize
           ? { lineHeight: Math.round(flatStyle.fontSize * 1.2) }
           : null,
