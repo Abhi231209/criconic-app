@@ -476,8 +476,8 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
   const target = {
     ...(sanitizedRoutePlayer || {}),
-    ...(isSelf ? authUser : {}),
     ...(fetchedPlayer || {}),
+    ...(isSelf ? authUser : {}),
   };
 
   const bStats = target?.stats?.batting || target?.battingStats || userStats?.batting || {};
@@ -569,13 +569,60 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     return "Batsman";
   })();
 
+  const resolvedLocation = (() => {
+    // 1. If self, priority to authUser's specific location or city if not generic country
+    if (isSelf) {
+      if (authUser?.location && authUser.location !== "India") return authUser.location;
+      if (authUser?.city && authUser.city !== "India") return authUser.city;
+    }
+    // 2. Fresh fetched profile specific location or city
+    if (fetchedPlayer?.location && fetchedPlayer.location !== "India") return fetchedPlayer.location;
+    if (fetchedPlayer?.city && fetchedPlayer.city !== "India") return fetchedPlayer.city;
+
+    // 3. Merged target specific location or city
+    if (target?.location && target.location !== "India") return target.location;
+    if (target?.city && target.city !== "India") return target.city;
+
+    // 4. Initial route player
+    if (sanitizedRoutePlayer?.location && sanitizedRoutePlayer.location !== "India") return sanitizedRoutePlayer.location;
+    if (sanitizedRoutePlayer?.city && sanitizedRoutePlayer.city !== "India") return sanitizedRoutePlayer.city;
+
+    // 5. Fallback to any defined location/city
+    if (isSelf && authUser?.location) return authUser.location;
+    if (isSelf && authUser?.city) return authUser.city;
+    if (fetchedPlayer?.location) return fetchedPlayer.location;
+    if (fetchedPlayer?.city) return fetchedPlayer.city;
+    if (target?.location) return target.location;
+    if (target?.city) return target.city;
+
+    // 6. Nationality fallbacks
+    if (isSelf && authUser?.nationality && authUser.nationality !== "India") return authUser.nationality;
+    if (fetchedPlayer?.nationality && fetchedPlayer.nationality !== "India") return fetchedPlayer.nationality;
+    if (target?.nationality && target.nationality !== "India") return target.nationality;
+
+    if (isSelf && authUser?.nationality) return authUser.nationality;
+    if (fetchedPlayer?.nationality) return fetchedPlayer.nationality;
+    if (target?.nationality) return target.nationality;
+
+    return "India";
+  })();
+
+  const resolvedNationality = (() => {
+    if (isSelf && authUser?.nationality) return authUser.nationality;
+    if (fetchedPlayer?.nationality) return fetchedPlayer.nationality;
+    if (target?.nationality) return target.nationality;
+    return "India";
+  })();
+
   // Dynamic player data derived from fetched data, sanitized route params, or match derived stats
   const player = {
     id: target?._id || target?.id || target?.playerId || routePlayerId || authUser?._id || authUser?.id || "1",
     name: (isSelf ? authUser?.username || authUser?.name : null) || target?.username || target?.name || target?.playerName || sanitizedRoutePlayer?.name || sanitizedRoutePlayer?.username || "Player",
     shortName: (isSelf ? authUser?.shortName : null) || target?.shortName || target?.username || target?.name || sanitizedRoutePlayer?.name || "Player",
-    team: target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || route?.params?.team?.title || route?.params?.team?.name || sanitizedRoutePlayer?.team || "Unassigned",
-    nationality: (isSelf ? authUser?.location || authUser?.city || authUser?.nationality : null) || target?.nationality || target?.location || target?.city || "India",
+    team: (isSelf && (authUser?.team || authUser?.teamName) ? authUser.team || authUser.teamName : null) || target?.teams?.[0]?.title || target?.teams?.[0]?.name || target?.team || target?.teamName || route?.params?.team?.title || route?.params?.team?.name || sanitizedRoutePlayer?.team || "Unassigned",
+    location: resolvedLocation,
+    city: (isSelf ? authUser?.city || authUser?.location : null) || target?.city || target?.location || resolvedLocation,
+    nationality: resolvedNationality,
     age: (isSelf && authUser?.age ? String(authUser.age) : null) || (target?.age ? String(target.age) : "-"),
     role: resolvedRole,
     battingStyle: toShortBattingStyle((isSelf ? authUser?.battingStyle || authUser?.batStyle : null) || target?.battingStyle || target?.batStyle || sanitizedRoutePlayer?.battingStyle || "RHB"),
@@ -840,12 +887,27 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
           <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
             <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
-              Nationality
+              Location / City
             </ThemedText>
             <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
-              {player.nationality}
+              {player.location || player.city || player.nationality || "Not specified"}
             </ThemedText>
           </View>
+
+          {Boolean(
+            player.nationality &&
+            player.nationality !== player.location &&
+            player.nationality !== player.city
+          ) && (
+            <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
+              <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>
+                Nationality
+              </ThemedText>
+              <ThemedText className={isDarkMode ? "text-white" : "text-gray-900"}>
+                {player.nationality}
+              </ThemedText>
+            </View>
+          )}
 
           <View className="flex-row justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
             <ThemedText className={isDarkMode ? "text-gray-400" : "text-gray-600"}>

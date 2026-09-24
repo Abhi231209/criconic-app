@@ -4,7 +4,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  useColorScheme,
   TextInput,
   Switch,
   Alert,
@@ -17,12 +16,14 @@ import * as ImagePicker from "expo-image-picker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { useSelector, useDispatch } from "react-redux";
-import { request, upload, userApi } from "@/utils/api";
+import { request, upload, userApi, teamsApi } from "@/utils/api";
 import { updateUser, login } from "@/redux/authSlice";
 import { setUser } from "@/redux/userSlice";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import LocationSearch from "@/components/ui/custom/LocationSearch";
+import Dropdown from "@/components/ui/custom/Dropdown";
+import useAppTheme from "@/hooks/useAppTheme";
 import {
   toShortBattingStyle,
   toShortBowlingStyle,
@@ -60,8 +61,8 @@ export default function EditPlayerProfile() {
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch();
-  const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const { theme, isDark } = useAppTheme();
+  const isDarkMode = isDark;
 
   const routePlayer = route?.params?.player;
   const authUser = useSelector((state) => state?.auth?.user);
@@ -77,12 +78,39 @@ export default function EditPlayerProfile() {
     : "Batsman";
 
   // Dynamic player data derived from route params or Redux auth user
+  const initialLocation =
+    (routePlayer?.location && routePlayer.location !== "India" ? routePlayer.location : null) ||
+    (routePlayer?.city && routePlayer.city !== "India" ? routePlayer.city : null) ||
+    (authUser?.location && authUser.location !== "India" ? authUser.location : null) ||
+    (authUser?.city && authUser.city !== "India" ? authUser.city : null) ||
+    routePlayer?.location ||
+    routePlayer?.city ||
+    (routePlayer?.nationality && routePlayer.nationality !== "India" ? routePlayer.nationality : null) ||
+    authUser?.location ||
+    authUser?.city ||
+    (authUser?.nationality && authUser.nationality !== "India" ? authUser.nationality : null) ||
+    routePlayer?.nationality ||
+    authUser?.nationality ||
+    "";
+
+  const initialTeam =
+    routePlayer?.team ||
+    routePlayer?.teamName ||
+    (routePlayer?.teams?.[0]?.title || routePlayer?.teams?.[0]?.name) ||
+    authUser?.team ||
+    authUser?.teamName ||
+    (authUser?.teams?.[0]?.title || authUser?.teams?.[0]?.name) ||
+    "";
+
+  // Dynamic player data derived from route params or Redux auth user
   const initialPlayer = {
     id: routePlayer?._id || routePlayer?.id || authUser?._id || authUser?.id || "",
     name: routePlayer?.username || routePlayer?.name || authUser?.username || authUser?.name || "",
     shortName: routePlayer?.shortName || authUser?.shortName || "",
-    team: routePlayer?.team || "",
-    nationality: routePlayer?.nationality || routePlayer?.location || routePlayer?.city || authUser?.location || authUser?.city || "",
+    team: initialTeam,
+    nationality: initialLocation,
+    location: initialLocation,
+    city: initialLocation,
     locationId: routePlayer?.locationId || authUser?.locationId || "",
     age: routePlayer?.age?.toString() || authUser?.age?.toString() || "",
     role: initialRole,
@@ -122,28 +150,123 @@ export default function EditPlayerProfile() {
             ? normalizeCricketRole(u.playingRole)
             : null;
 
-          setFormData((prev) => ({
-            ...prev,
-            name: prev.name || u.username || u.name || "",
-            shortName: prev.shortName || u.shortName || "",
-            nationality: prev.nationality || u.location || u.city || "",
-            locationId: prev.locationId || u.locationId || "",
-            age: prev.age || (u.age ? String(u.age) : ""),
-            role: prev.role || freshRole || "Batsman",
-            battingStyle: toShortBattingStyle(prev.battingStyle || u.batStyle || u.battingStyle || "RHB"),
-            bowlingStyle: toShortBowlingStyle(prev.bowlingStyle || u.ballStyle || u.bowlingStyle || "RAM"),
-            photo: prev.photo || u.profileImage || u.profileImg || null,
-          }));
+          const freshLocation =
+            (u.location && u.location !== "India" ? u.location : null) ||
+            (u.city && u.city !== "India" ? u.city : null) ||
+            (u.nationality && u.nationality !== "India" ? u.nationality : null) ||
+            u.location ||
+            u.city ||
+            u.nationality ||
+            "";
+
+          const freshTeam =
+            u.team ||
+            u.teamName ||
+            (u.teams?.[0]?.title || u.teams?.[0]?.name) ||
+            "";
+
+          setFormData((prev) => {
+            const hasCustomPrevLoc =
+              (prev.location && prev.location !== "India" ? prev.location : null) ||
+              (prev.city && prev.city !== "India" ? prev.city : null) ||
+              (prev.nationality && prev.nationality !== "India" ? prev.nationality : null);
+            const resolvedLoc = hasCustomPrevLoc || freshLocation || prev.location || prev.city || prev.nationality || "";
+            return {
+              ...prev,
+              name: prev.name || u.username || u.name || "",
+              shortName: prev.shortName || u.shortName || "",
+              team: prev.team || freshTeam || "",
+              nationality: resolvedLoc,
+              location: resolvedLoc,
+              city: resolvedLoc,
+              locationId: prev.locationId || u.locationId || "",
+              age: prev.age || (u.age ? String(u.age) : ""),
+              role: prev.role || freshRole || "Batsman",
+              battingStyle: toShortBattingStyle(prev.battingStyle || u.batStyle || u.battingStyle || "RHB"),
+              bowlingStyle: toShortBowlingStyle(prev.bowlingStyle || u.ballStyle || u.bowlingStyle || "RAM"),
+              photo: prev.photo || u.profileImage || u.profileImg || null,
+            };
+          });
         }
       })
       .catch(() => {});
   }, []);
 
-  const handleInputChange = (field, value) => {
-    setFormData({
-      ...formData,
-      [field]: value,
+  const [teamsList, setTeamsList] = useState([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoadingTeams(true);
+    Promise.all([
+      teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
+      teamsApi.getAllTeams({ errorAlert: false }).catch(() => null),
+    ]).then(([myRes, allRes]) => {
+      if (!isMounted) return;
+
+      const extractTeams = (res) => {
+        if (!res) return [];
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res.data)) return res.data;
+        if (Array.isArray(res.data?.content?.teams)) return res.data.content.teams;
+        if (Array.isArray(res.data?.content)) return res.data.content;
+        if (Array.isArray(res.data?.teams)) return res.data.teams;
+        if (Array.isArray(res.data?.data?.teams)) return res.data.data.teams;
+        if (Array.isArray(res.data?.data)) return res.data.data;
+        return [];
+      };
+
+      const combined = [...extractTeams(myRes), ...extractTeams(allRes)];
+      const map = new Map();
+      combined.forEach((item) => {
+        const t =
+          item?.teamId && typeof item.teamId === "object"
+            ? item.teamId
+            : item?.team?.[0] || item;
+        const id = String(t?._id || t?.id || "");
+        const name = String(t?.title || t?.name || t?.teamName || "").trim();
+        if (name && !map.has(name.toLowerCase())) {
+          map.set(name.toLowerCase(), { label: name, value: name, teamId: id });
+        }
+      });
+
+      setTeamsList(Array.from(map.values()));
+      setLoadingTeams(false);
     });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authUser?._id]);
+
+  const teamOptions = React.useMemo(() => {
+    const options = [{ label: "None / Unassigned", value: "" }];
+    const seen = new Set([""]);
+
+    if (formData.team?.trim() && !seen.has(formData.team.trim().toLowerCase())) {
+      options.push({
+        label: formData.team.trim(),
+        value: formData.team.trim(),
+        teamId: formData.teamId || "",
+      });
+      seen.add(formData.team.trim().toLowerCase());
+    }
+
+    teamsList.forEach((tm) => {
+      if (!seen.has(tm.value.toLowerCase())) {
+        options.push(tm);
+        seen.add(tm.value.toLowerCase());
+      }
+    });
+
+    return options;
+  }, [teamsList, formData.team, formData.teamId]);
+
+  const handleInputChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const pickImage = async () => {
@@ -156,10 +279,10 @@ export default function EditPlayerProfile() {
       });
 
       if (!result.canceled) {
-        setFormData({
-          ...formData,
+        setFormData((prev) => ({
+          ...prev,
           photo: result.assets[0].uri,
-        });
+        }));
       }
     } catch (error) {
       showGlobalAlert({
@@ -190,10 +313,10 @@ export default function EditPlayerProfile() {
       });
 
       if (!result.canceled) {
-        setFormData({
-          ...formData,
+        setFormData((prev) => ({
+          ...prev,
           photo: result.assets[0].uri,
-        });
+        }));
       }
     } catch (error) {
       showGlobalAlert({
@@ -213,7 +336,14 @@ export default function EditPlayerProfile() {
       });
       return;
     }
-    if (!formData.nationality?.trim()) {
+    const locationVal = (
+      formData.nationality ||
+      formData.location ||
+      formData.city ||
+      ""
+    ).trim();
+
+    if (!locationVal) {
       showGlobalAlert({
         title: "Error",
         message: "Please enter your location or city",
@@ -250,10 +380,13 @@ export default function EditPlayerProfile() {
         role: formData.role,
         playerRole: formData.role,
         playingRole: formData.role,
-        location: formData.nationality.trim(),
-        city: formData.nationality.trim(),
-        nationality: formData.nationality.trim(),
+        location: locationVal,
+        city: locationVal,
+        nationality: locationVal,
         ...(formData.locationId ? { locationId: formData.locationId } : {}),
+        team: formData.team ? formData.team.trim() : "",
+        teamName: formData.team ? formData.team.trim() : "",
+        ...(formData.teamId ? { teamId: formData.teamId, teams: [formData.teamId] } : {}),
         age: formData.age ? (Number(formData.age) || formData.age) : undefined,
         batStyle: cleanBatStyle,
         ballStyle: cleanBallStyle,
@@ -272,11 +405,15 @@ export default function EditPlayerProfile() {
         apiResponseUser = res?.data?.user || res?.data?.data || null;
       }
 
-      // Update Redux state and User singleton
+      // Update Redux state and User singleton - ensure user edits override any stale apiResponseUser fields
       const updatedUser = {
         ...(authUser || {}),
-        ...updatePayload,
         ...(apiResponseUser && typeof apiResponseUser === "object" ? apiResponseUser : {}),
+        ...updatePayload,
+        location: locationVal,
+        city: locationVal,
+        nationality: locationVal,
+        team: formData.team ? formData.team.trim() : "",
         _id: playerId,
         id: playerId,
       };
@@ -402,6 +539,7 @@ export default function EditPlayerProfile() {
         className="flex-1" 
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
       >
         {/* Profile Photo Section */}
@@ -496,21 +634,45 @@ export default function EditPlayerProfile() {
             placeholder="Enter short name"
           />
 
-          <InputField
-            label="Team"
-            value={formData.team}
-            onChange={(value) => handleInputChange("team", value)}
-            placeholder="Enter team name"
-          />
+          {/* Team Dropdown */}
+          <View style={{ zIndex: 2000 }} className="mb-4">
+            <ThemedText
+              className={`text-sm font-medium mb-2 ${
+                isDarkMode ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
+              Team
+            </ThemedText>
+            <Dropdown
+              title="Select Team"
+              options={teamOptions}
+              selectedValue={formData.team || ""}
+              onValueChange={(val) => {
+                const matched = teamOptions.find((t) => t.value === val);
+                setFormData((prev) => ({
+                  ...prev,
+                  team: val,
+                  teamId: matched?.teamId || "",
+                }));
+              }}
+              placeholder={loadingTeams ? "Loading teams..." : "Select team"}
+              isDarkMode={isDarkMode}
+            />
+          </View>
 
           {/* Location / City (Google API Powered) */}
           <View style={{ zIndex: 1000 }} className="mb-4">
             <LocationSearch
               label="Location / City"
-              value={formData.nationality}
+              value={formData.nationality || formData.location || formData.city || ""}
               onChangeText={(text) => {
-                handleInputChange("nationality", text);
-                handleInputChange("locationId", "");
+                setFormData((prev) => ({
+                  ...prev,
+                  nationality: text,
+                  location: text,
+                  city: text,
+                  locationId: "",
+                }));
               }}
               onSelectLocation={(item) => {
                 const desc =
@@ -519,10 +681,14 @@ export default function EditPlayerProfile() {
                     : item?.description ||
                       item?.structured_formatting?.main_text ||
                       "";
-                handleInputChange("nationality", desc);
-                if (item?.place_id) {
-                  handleInputChange("locationId", item.place_id);
-                }
+                const placeId = item?.place_id || "";
+                setFormData((prev) => ({
+                  ...prev,
+                  nationality: desc,
+                  location: desc,
+                  city: desc,
+                  locationId: placeId,
+                }));
               }}
               placeholder="Search city or location (powered by Google)..."
               isDarkMode={isDarkMode}
