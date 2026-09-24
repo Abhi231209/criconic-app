@@ -390,11 +390,15 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
           )}
           {!isCreate && (
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
               style={[
                 styles.tabLabel,
                 {
                   color: isActive ? colors.primary : colors.textSecondary,
                   fontWeight: isActive ? "600" : "400",
+                  fontSize: width < 360 ? 9.5 : width < 390 ? 10 : 11,
                 },
               ]}
             >
@@ -629,7 +633,12 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
             },
           ]}
         >
-          <HStack style={styles.footerItemsContainer}>
+          <HStack
+            style={[
+              styles.footerItemsContainer,
+              { paddingHorizontal: width < 380 ? 6 : 16 },
+            ]}
+          >
             {footerItems.map((item, index) => renderFooterItem(item, index))}
           </HStack>
         </View>
