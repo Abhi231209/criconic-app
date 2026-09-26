@@ -197,6 +197,15 @@ export default function CreateTeam() {
       return;
     }
 
+    if (formData.teamName.trim().length < 2) {
+      showGlobalAlert({
+        title: 'Error',
+        message: 'Team name must be at least 2 characters long',
+        type: 'warning',
+      });
+      return;
+    }
+
     if (!formData.shortName.trim()) {
       showGlobalAlert({
         title: 'Error',
@@ -246,7 +255,7 @@ export default function CreateTeam() {
 
       const teamPayload = {
         title: formData.teamName.trim(),
-        shortName: formData.shortName.trim(),
+        shortName: formData.shortName.trim().toUpperCase(),
         location: formData.city.trim() || "Local",
         ...(formData.cityLocationId ? { locationId: formData.cityLocationId } : {}),
         teamType: formData.teamType,
@@ -261,9 +270,14 @@ export default function CreateTeam() {
         teamLogo: logoUrl,
       };
 
-      const res = await teamsApi.createTeam(teamPayload);
+      const res = await teamsApi.createTeam(teamPayload, { errorAlert: false });
 
-      if (res?.data?.success || res?.status === 200 || res?.data?.data?._id) {
+      if (
+        res?.data?.success ||
+        res?.status === 200 ||
+        res?.status === 201 ||
+        res?.data?.data?._id
+      ) {
         analytics.logAction("create_team_success", "team", {
           team_name: formData.teamName || "",
         });
@@ -273,6 +287,25 @@ export default function CreateTeam() {
           title: formData.teamName,
           location: formData.city,
         };
+
+        if (createdTeam?._id && Array.isArray(formData.players) && formData.players.length > 0) {
+          try {
+            await teamsApi.addPlayerToTeam(
+              createdTeam._id,
+              {
+                players: formData.players.map((p) => ({
+                  id: p.id || p._id,
+                  username: p.name || p.username,
+                  name: p.name || p.username,
+                  mobile: p.mobile || undefined,
+                })),
+              },
+              { errorAlert: false }
+            );
+          } catch (playerErr) {
+            console.warn("[CreateTeam] Adding initial players warning:", playerErr);
+          }
+        }
 
         if (route.params?.onTeamCreated) {
           route.params.onTeamCreated(createdTeam);
@@ -286,7 +319,11 @@ export default function CreateTeam() {
           onConfirm: () => navigation.goBack(),
         });
       } else {
-        const msg = res?.data?.message || 'Could not create team. Please try again.';
+        const msg =
+          res?.data?.message ||
+          res?.data?.error?.[0]?.message ||
+          (typeof res?.data?.error === 'string' ? res.data.error : null) ||
+          'Could not create team. Please try again.';
         analytics.logAction("create_team_failed", "team", { reason: msg });
         showGlobalAlert({
           title: 'Notice',
@@ -505,12 +542,12 @@ export default function CreateTeam() {
                       const list = Array.isArray(incoming) ? incoming : [incoming];
                       setFormData((prev) => {
                         let updatedPlayers = [...prev.players];
-                        list.forEach((item) => {
+                        list.forEach((item, idx) => {
                           const pId =
                             item.id ||
                             item._id ||
                             item.playerId ||
-                            `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+                            `player_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 6)}`;
                           const pName =
                             item.name ||
                             item.username ||
@@ -519,17 +556,23 @@ export default function CreateTeam() {
                             item.user?.name ||
                             item.user?.username ||
                             (item.mobile ? `Player (${item.mobile.slice(-4)})` : "Player");
-                          const exists = updatedPlayers.some(
-                            (p) =>
-                              (p.id || p._id || p.playerId) === pId ||
-                              (p.name && p.name.toLowerCase() === pName.toLowerCase() && pName !== "Player")
-                          );
+                          const cleanMob = item.mobile ? String(item.mobile).trim() : "";
+                          const exists = updatedPlayers.some((p) => {
+                            const existingId = p.id || p._id || p.playerId;
+                            const existingMob = p.mobile ? String(p.mobile).trim() : "";
+                            if (existingId && existingId === pId) return true;
+                            if (cleanMob && existingMob) return cleanMob === existingMob;
+                            if (!cleanMob && !existingMob && p.name && pName !== "Player") {
+                              return p.name.toLowerCase() === pName.toLowerCase();
+                            }
+                            return false;
+                          });
                           if (!exists) {
                             updatedPlayers.push({
                               id: pId,
                               _id: pId,
                               name: pName,
-                              mobile: item.mobile || "",
+                              mobile: cleanMob,
                               jerseyNumber:
                                 item.jerseyNumber || updatedPlayers.length + 1,
                             });

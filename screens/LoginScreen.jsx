@@ -112,6 +112,7 @@ const LoginScreen = () => {
       });
 
       if (res?.data?.success || res?.status === 200) {
+        const loginToken = res?.data?.access_token || res?.data?.token;
         let user = res?.data?.user;
 
         // If login response doesn't contain user data,
@@ -124,6 +125,14 @@ const LoginScreen = () => {
             res?.data?.user || {
               mobile: mobile.trim(),
             };
+        }
+
+        if (loginToken && user) {
+          user = {
+            ...user,
+            access_token: loginToken,
+            token: loginToken,
+          };
         }
 
         console.log(

@@ -104,6 +104,13 @@ export const request = async (
     const deviceId = await getDeviceId();
     const state = store?.getState?.();
     const user = state?.auth?.user || User.user;
+    const authToken =
+      state?.auth?.token ||
+      user?.access_token ||
+      user?.token ||
+      User.user?.access_token ||
+      User.user?.token ||
+      undefined;
 
     const normalizedEndpoint = endpoint.startsWith("/")
       ? endpoint.slice(1)
@@ -116,8 +123,13 @@ export const request = async (
     const requestHeaders = {
       "Content-Type": "application/json",
       device_id: deviceId,
-      token: user?.token || user?.access_token,
-      access_token: user?.access_token,
+      ...(authToken
+        ? {
+            token: authToken,
+            access_token: authToken,
+            Authorization: `Bearer ${authToken}`,
+          }
+        : {}),
       session_id: user?.session_id,
       refresh_token: user?.refresh_token,
       ...headers,
@@ -205,8 +217,20 @@ export const request = async (
  */
 export const upload = async (fileInput, folderName = "general") => {
   try {
+    if (!isCookieInitialized) {
+      await initSessionCookie();
+    }
     const formData = new FormData();
     const deviceId = await getDeviceId();
+    const state = store?.getState?.();
+    const user = state?.auth?.user || User.user;
+    const authToken =
+      state?.auth?.token ||
+      user?.access_token ||
+      user?.token ||
+      User.user?.access_token ||
+      User.user?.token ||
+      undefined;
 
     if (typeof fileInput === "string") {
       const filename = fileInput.split("/").pop() || "upload.jpg";
@@ -237,13 +261,25 @@ export const upload = async (fileInput, folderName = "general") => {
       "Content-Type": "multipart/form-data",
       device_id: deviceId,
       folder: folderName,
+      ...(authToken
+        ? {
+            token: authToken,
+            access_token: authToken,
+            Authorization: `Bearer ${authToken}`,
+          }
+        : {}),
+      ...(sessionCookie ? { Cookie: sessionCookie } : {}),
     };
 
-    const res = await axios.post(`${apiUrl}upload`, formData, {
-      headers,
-      withCredentials: true,
-      transformRequest: (data) => data,
-    });
+    const res = await axios.post(
+      `${apiUrl}upload?folder=${encodeURIComponent(folderName)}`,
+      formData,
+      {
+        headers,
+        withCredentials: true,
+        transformRequest: (data) => data,
+      }
+    );
 
     return res?.data;
   } catch (error) {
@@ -258,36 +294,54 @@ export const upload = async (fileInput, folderName = "general") => {
 
 export const authApi = {
   login: async (credentials) => {
-    // 1. Submit login request (backend responds with Set-Cookie: connect.sid=...)
+    // 1. Submit login request (backend responds with Set-Cookie: connect.sid=... and access_token)
     const res = await request("api/users/login", {
       method: "POST",
       data: credentials,
     });
 
     if (res?.data?.success || res?.status === 200) {
+      const loginToken = res?.data?.access_token || res?.data?.token;
+      if (res?.data?.user) {
+        User.login({
+          ...res.data.user,
+          ...(loginToken ? { access_token: loginToken, token: loginToken } : {}),
+        });
+      }
       console.log(
         "🔐 [authApi.login] Login credentials verified, fetching profile from api/auth/status..."
       );
-      // 2. Fetch authenticated user profile using the established session cookie
+      // 2. Fetch authenticated user profile using the established session cookie or token
       const statusRes = await request("api/auth/status", {
         method: "GET",
         errorAlert: false,
+        headers: loginToken
+          ? {
+              token: loginToken,
+              access_token: loginToken,
+              Authorization: `Bearer ${loginToken}`,
+            }
+          : {},
       });
 
-      const userProfile = statusRes?.data?.user;
+      const userProfile = statusRes?.data?.user || res?.data?.user;
       if (userProfile && (userProfile._id || userProfile.id)) {
+        const mergedProfile = {
+          ...userProfile,
+          ...(loginToken ? { access_token: loginToken, token: loginToken } : {}),
+        };
         console.log(
           "🔐 [authApi.login] Profile loaded successfully:",
-          userProfile._id,
-          userProfile.username
+          mergedProfile._id,
+          mergedProfile.username
         );
-        User.login(userProfile);
+        User.login(mergedProfile);
         return {
           ...res,
           data: {
             ...res.data,
             success: true,
-            user: userProfile,
+            user: mergedProfile,
           },
         };
       } else {

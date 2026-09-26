@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
   Alert,
   StyleSheet,
   useColorScheme,
+  Image,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import QRCode from "react-native-qrcode-svg";
@@ -13,28 +15,97 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
+import { authApi, userApi } from "@/utils/api";
+import { getImageFullUrl } from "@/utils";
 
 export default function MyQR({ navigation }) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
   const authUser = useSelector((state) => state.auth?.user);
-  const userId = authUser?._id || User.id || authUser?.id || "";
-  const userName =
-    authUser?.username || authUser?.name || User.name || "Player";
-  const sharingCode =
-    authUser?.sharingCode || User.sharingCode || userId.slice(-6).toUpperCase();
+  const currentUser = authUser?.user || authUser || User.user || {};
 
-  const qrData = JSON.stringify({
-    type: "PLAYER",
-    action: "JOIN",
-    value: userId,
-  });
+  const userId = String(
+    currentUser?._id || currentUser?.id || User.id || ""
+  );
+  const userName =
+    currentUser?.username || currentUser?.name || User.name || "Player";
+  const rawPhoto =
+    currentUser?.profileImg ||
+    currentUser?.profileImage ||
+    currentUser?.photo ||
+    currentUser?.avatar ||
+    User?.user?.profileImg;
+  const profileImageUrl = rawPhoto ? getImageFullUrl(rawPhoto) : null;
+
+  const [fetchedSharingCode, setFetchedSharingCode] = useState(
+    currentUser?.sharingCode || User.sharingCode || ""
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const ensureSharingCode = async () => {
+      if (currentUser?.sharingCode || User.sharingCode) {
+        if (mounted) {
+          setFetchedSharingCode(currentUser?.sharingCode || User.sharingCode);
+        }
+        return;
+      }
+      if (!userId) return;
+      try {
+        const statusRes = await authApi.checkStatus();
+        const codeFromStatus = statusRes?.data?.user?.sharingCode;
+        if (codeFromStatus && mounted) {
+          setFetchedSharingCode(codeFromStatus);
+          return;
+        }
+        const profRes = await userApi.getProfile(userId);
+        const codeFromProf =
+          profRes?.data?.data?.sharingCode || profRes?.data?.sharingCode;
+        if (codeFromProf && mounted) {
+          setFetchedSharingCode(codeFromProf);
+        }
+      } catch (e) {
+        // Ignore background fetch error
+      }
+    };
+    ensureSharingCode();
+    return () => {
+      mounted = false;
+    };
+  }, [userId, currentUser?.sharingCode]);
+
+  const sharingCode =
+    fetchedSharingCode ||
+    currentUser?.sharingCode ||
+    User.sharingCode ||
+    (userId ? userId.slice(-6).toUpperCase() : "");
+
+  const qrData = userId
+    ? JSON.stringify({
+        type: "PLAYER",
+        action: "JOIN",
+        value: userId,
+      })
+    : "CRICONIC_PLAYER";
 
   const handleCopyCode = async () => {
-    if (sharingCode) {
-      await Clipboard.setStringAsync(sharingCode);
-      Alert.alert("Copied", `Sharing code ${sharingCode} copied to clipboard!`);
+    const codeToCopy = sharingCode || userId;
+    if (codeToCopy) {
+      await Clipboard.setStringAsync(codeToCopy);
+      Alert.alert("Copied", `Sharing code ${codeToCopy} copied to clipboard!`);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: sharingCode
+          ? `Add ${userName} on Criconic! Sharing Code: ${sharingCode}`
+          : `Add ${userName} on Criconic!`,
+      });
+    } catch (_) {
+      // User dismissed share sheet
     }
   };
 
@@ -68,7 +139,17 @@ export default function MyQR({ navigation }) {
         >
           My QR Code
         </ThemedText>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          onPress={handleShare}
+          style={styles.backButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons
+            name="share-social-outline"
+            size={22}
+            color={isDarkMode ? "#FFFFFF" : "#111827"}
+          />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.container}>
@@ -78,6 +159,33 @@ export default function MyQR({ navigation }) {
             isDarkMode ? styles.cardDark : styles.cardLight,
           ]}
         >
+          {profileImageUrl ? (
+            <Image
+              source={{ uri: profileImageUrl }}
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                marginBottom: 10,
+                backgroundColor: "#E5E7EB",
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                marginBottom: 10,
+                backgroundColor: isDarkMode ? "#374151" : "#EFF6FF",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="person" size={30} color="#3B82F6" />
+            </View>
+          )}
+
           <ThemedText
             style={[
               styles.nameText,
@@ -93,13 +201,13 @@ export default function MyQR({ navigation }) {
               isDarkMode ? styles.subtitleDark : styles.subtitleLight,
             ]}
           >
-            Scan this QR code to quickly add me to your team or tournament
+            Scan this QR code to quickly add me to your team or view my profile
           </ThemedText>
 
           {/* QR Container */}
           <View style={styles.qrContainer}>
             <QRCode
-              value={qrData || "CRICONIC_PLAYER"}
+              value={qrData}
               size={220}
               backgroundColor="white"
               color="#111827"
@@ -107,40 +215,69 @@ export default function MyQR({ navigation }) {
           </View>
 
           {/* Sharing Code */}
-          <View
-            style={[
-              styles.codeBox,
-              isDarkMode ? styles.codeBoxDark : styles.codeBoxLight,
-            ]}
-          >
-            <View>
-              <ThemedText
-                style={[
-                  styles.codeLabel,
-                  isDarkMode ? styles.subtitleDark : styles.subtitleLight,
-                ]}
-              >
-                Sharing Code
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.codeValue,
-                  isDarkMode ? styles.textWhite : styles.textBlack,
-                ]}
-              >
-                {sharingCode}
-              </ThemedText>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleCopyCode}
-              style={styles.copyButton}
-              activeOpacity={0.7}
+          {Boolean(sharingCode) && (
+            <View
+              style={[
+                styles.codeBox,
+                isDarkMode ? styles.codeBoxDark : styles.codeBoxLight,
+              ]}
             >
-              <Ionicons name="copy-outline" size={18} color="#3B82F6" />
-              <ThemedText style={styles.copyText}>Copy</ThemedText>
-            </TouchableOpacity>
-          </View>
+              <View>
+                <ThemedText
+                  style={[
+                    styles.codeLabel,
+                    isDarkMode ? styles.subtitleDark : styles.subtitleLight,
+                  ]}
+                >
+                  Sharing Code
+                </ThemedText>
+                <ThemedText
+                  style={[
+                    styles.codeValue,
+                    isDarkMode ? styles.textWhite : styles.textBlack,
+                  ]}
+                >
+                  {sharingCode}
+                </ThemedText>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleCopyCode}
+                style={styles.copyButton}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="copy-outline" size={18} color="#3B82F6" />
+                <ThemedText style={styles.copyText}>Copy</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity
+            onPress={handleShare}
+            activeOpacity={0.8}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              backgroundColor: "#2563EB",
+              borderRadius: 12,
+              paddingVertical: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+            <ThemedText
+              style={{
+                color: "#FFFFFF",
+                fontWeight: "600",
+                fontSize: 14,
+                marginLeft: 6,
+              }}
+            >
+              Share My Code
+            </ThemedText>
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

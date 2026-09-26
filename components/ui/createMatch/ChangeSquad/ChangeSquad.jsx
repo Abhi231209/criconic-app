@@ -749,24 +749,35 @@ export default function ChangeSquad(props) {
               cb={async (newPlayer) => {
                 const updatedTeam = await fetchTeamData();
                 if (newPlayer) {
-                  const playerItem = Array.isArray(newPlayer) ? newPlayer[0] : newPlayer;
-                  let pId = extractPlayerId(playerItem);
-                  const pName = getPlayerName(playerItem);
+                  const playerItems = Array.isArray(newPlayer) ? newPlayer : [newPlayer];
+                  const nextToAdd = {};
+                  const nextSelected = {};
 
-                  if (updatedTeam?.players && (!pId || String(pId).startsWith("player_"))) {
-                    const matched = updatedTeam.players.find(
-                      (p) => getPlayerName(p)?.toLowerCase() === pName?.toLowerCase()
-                    );
-                    if (matched) {
-                      pId = extractPlayerId(matched);
-                    } else if (updatedTeam.players.length > 0) {
-                      pId = extractPlayerId(updatedTeam.players[updatedTeam.players.length - 1]);
+                  playerItems.forEach((playerItem) => {
+                    if (!playerItem) return;
+                    let pId = extractPlayerId(playerItem);
+                    const pName = getPlayerName(playerItem);
+
+                    if (updatedTeam?.players && (!pId || String(pId).startsWith("player_"))) {
+                      const matched = updatedTeam.players.find(
+                        (p) =>
+                          (playerItem.mobile && p.mobile && String(p.mobile) === String(playerItem.mobile)) ||
+                          getPlayerName(p)?.toLowerCase() === pName?.toLowerCase()
+                      );
+                      if (matched) {
+                        pId = extractPlayerId(matched);
+                      }
                     }
-                  }
 
-                  if (pId) {
-                    setPlayerToAdd((prev) => ({ ...prev, [pId]: pName || 1 }));
-                    setSelectedPlayer((prev) => ({ ...prev, [pId]: pName || 1 }));
+                    if (pId) {
+                      nextToAdd[pId] = pName || 1;
+                      nextSelected[pId] = pName || 1;
+                    }
+                  });
+
+                  if (Object.keys(nextToAdd).length > 0) {
+                    setPlayerToAdd((prev) => ({ ...prev, ...nextToAdd }));
+                    setSelectedPlayer((prev) => ({ ...prev, ...nextSelected }));
                   }
                 }
                 setActiveTab(0);
