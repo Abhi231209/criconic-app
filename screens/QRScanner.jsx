@@ -625,7 +625,7 @@ export default function QRScanner({ navigation, route }) {
   const handlePickFromGallery = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 1,
       });

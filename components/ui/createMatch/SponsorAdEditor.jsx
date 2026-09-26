@@ -276,7 +276,7 @@ export default function SponsorAdEditor({
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.85,
       });
@@ -296,13 +296,12 @@ export default function SponsorAdEditor({
         uploadRes?.data?.url ||
         uploadRes?.data;
 
-      // Resolve full hosted URL
-      const finalUrl = remoteUrl ? getImageFullUrl(remoteUrl) : localUri;
-
-      if (!finalUrl) {
-        throw new Error("Could not obtain image URL after upload");
+      if (!remoteUrl) {
+        throw new Error(uploadRes?.message || "Server did not return an image URL.");
       }
 
+      // Resolve full hosted URL
+      const finalUrl = getImageFullUrl(remoteUrl);
       updateVisualField("imageUrl", finalUrl);
     } catch (err) {
       console.error("[SponsorAdEditor] Image upload error:", err);
