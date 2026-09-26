@@ -441,7 +441,7 @@ export default function SelectSquadScreen() {
         {activeTab === "addPlayer" && (
           <AddPlayer
             showHeader={false}
-            teamID={team?._id || team?.id}
+            teamID={team?._id || team?.id || team?.teamId}
             cb={(newPlayer) => {
               const teamId = team?._id || team?.id || team?.teamId;
               if (teamId) {

@@ -631,6 +631,19 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
         "";
 
       if (contactName) {
+        const currentTrimmed = username.trim();
+        if (currentTrimmed) {
+          const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+          setAddedPlayers((prev) => [
+            ...prev,
+            {
+              id: pId,
+              _id: pId,
+              name: currentTrimmed,
+              username: currentTrimmed,
+            },
+          ]);
+        }
         setUsername(contactName);
       }
     } catch (err) {
@@ -710,8 +723,12 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
         });
 
         if (res?.data?.success || res?.status === 200 || res?.status === 201) {
+          const resolvedPlayers =
+            Array.isArray(res?.data?.players) && res.data.players.length > 0
+              ? res.data.players
+              : playersToAdd;
           // Immediately trigger refresh callback for parent squad
-          cb?.(playersToAdd?.[0] || playersToAdd);
+          cb?.(resolvedPlayers);
           showGlobalAlert({
             title: "Success",
             message: `${playersToAdd.length} ${
@@ -721,7 +738,7 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
             confirmText: "OK",
             onConfirm: () => {
               setShowUploadWithoutNumber(false);
-              cb?.(playersToAdd?.[0] || playersToAdd);
+              cb?.(resolvedPlayers);
               if (!isEmbedded) {
                 navigation.goBack();
               }
@@ -745,7 +762,6 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
           confirmText: "OK",
           onConfirm: () => {
             setShowUploadWithoutNumber(false);
-            cb?.(playersToAdd);
             if (!isEmbedded) {
               navigation.goBack();
             }
@@ -1010,7 +1026,7 @@ function MultiContactPickerModal({
           if (!bestMobile) continue;
 
           list.push({
-            id: c.id || `${name}_${bestMobile}`,
+            id: `${c.id || "c"}_${bestMobile}_${list.length}`,
             name: name.trim(),
             mobile: bestMobile,
             rawMobile: bestRaw,
@@ -1402,29 +1418,152 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   const [showMultiPicker, setShowMultiPicker] = useState(false);
   const [multipleNumbersData, setMultipleNumbersData] = useState(null);
 
+  const applySinglePickedContact = (pickedName, pickedMobile, pickedEmail) => {
+    const currentName = username.trim();
+    const currentCleanMobile = cleanMobileNumber(mobile);
+    if (currentName && /^[6-9]\d{9}$/.test(currentCleanMobile)) {
+      const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      setAddedPlayers((prev) => {
+        if (prev.some((p) => p.mobile === currentCleanMobile)) return prev;
+        return [
+          ...prev,
+          {
+            id: pId,
+            _id: pId,
+            name: currentName,
+            username: currentName,
+            mobile: currentCleanMobile,
+            email: email.trim(),
+            location: location.trim(),
+          },
+        ];
+      });
+      setLocation("");
+    }
+    if (pickedName) setUsername(pickedName);
+    setMobile(pickedMobile || "");
+    setEmail(pickedEmail || "");
+  };
+
+  const savePlayersList = async (playersToAdd) => {
+    if (!Array.isArray(playersToAdd) || playersToAdd.length === 0) return;
+    setIsLoading(true);
+
+    try {
+      if (teamID) {
+        const payloadPlayers = playersToAdd.map((p) => ({
+          name: p.name || p.username,
+          username: p.username || p.name,
+          mobile: p.mobile,
+          ...(p.email ? { email: p.email } : {}),
+          ...(p.location ? { location: p.location } : {}),
+        }));
+
+        const res = await teamsApi.addPlayerToTeam(teamID, {
+          players: payloadPlayers,
+        });
+        if (res?.data?.success || res?.status === 200 || res?.status === 201) {
+          const resolvedPlayers =
+            Array.isArray(res?.data?.players) && res.data.players.length > 0
+              ? res.data.players
+              : playersToAdd;
+          // Immediately notify parent to refresh squad with all added players
+          cb?.(resolvedPlayers);
+          showGlobalAlert({
+            title: "Success",
+            message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
+            type: "success",
+            confirmText: "OK",
+            onConfirm: () => {
+              setShowAddMobile(false);
+              cb?.(resolvedPlayers);
+              if (!isEmbedded) {
+                navigation.goBack();
+              }
+            },
+          });
+        } else {
+          showGlobalAlert({
+            title: "Notice",
+            message: res?.data?.message || "Failed to add players",
+            type: "warning",
+          });
+        }
+      } else {
+        cb?.(playersToAdd);
+        showGlobalAlert({
+          title: "Success",
+          message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
+          type: "success",
+          confirmText: "OK",
+          onConfirm: () => {
+            setShowAddMobile(false);
+            if (!isEmbedded) {
+              navigation.goBack();
+            }
+          },
+        });
+      }
+    } catch (error) {
+      showGlobalAlert({
+        title: "Error",
+        message: error?.response?.data?.message || error?.message || "Failed to add players",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAddMultipleContacts = (selectedList) => {
     if (!selectedList || selectedList.length === 0) return;
-    const newPlayers = selectedList.map((c) => {
+
+    const combined = [...addedPlayers];
+    const seenMobiles = new Set(combined.map((p) => p.mobile).filter(Boolean));
+
+    const currentName = username.trim();
+    const currentCleanMobile = cleanMobileNumber(mobile);
+    if (
+      currentName &&
+      /^[6-9]\d{9}$/.test(currentCleanMobile) &&
+      !seenMobiles.has(currentCleanMobile)
+    ) {
       const pId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      return {
+      combined.push({
+        id: pId,
+        _id: pId,
+        name: currentName,
+        username: currentName,
+        mobile: currentCleanMobile,
+        email: email.trim(),
+        location: location.trim(),
+      });
+      seenMobiles.add(currentCleanMobile);
+      setUsername("");
+      setMobile("");
+      setEmail("");
+      setLocation("");
+    }
+
+    selectedList.forEach((c, idx) => {
+      const cleanMob = cleanMobileNumber(c.mobile);
+      if (!cleanMob || seenMobiles.has(cleanMob)) return;
+      seenMobiles.add(cleanMob);
+      const pId = `player_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 6)}`;
+      combined.push({
         id: pId,
         _id: pId,
         name: c.name,
         username: c.name,
-        mobile: c.mobile,
+        mobile: cleanMob,
         email: c.email || "",
         location: "",
-      };
+      });
     });
-    setAddedPlayers((prev) => [...prev, ...newPlayers]);
+
+    setAddedPlayers(combined);
     setShowMultiPicker(false);
-    showGlobalAlert({
-      title: "Success",
-      message: `${newPlayers.length} ${
-        newPlayers.length === 1 ? "player" : "players"
-      } added from contacts. Tap 'Done' to finish!`,
-      type: "success",
-    });
+    savePlayersList(combined);
   };
 
   const handlePickContact = async () => {
@@ -1483,9 +1622,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
 
       if (rawPhones.length === 1) {
         const cleaned = cleanMobileNumber(rawPhones[0].number || rawPhones[0].digits);
-        if (contactName) setUsername(contactName);
-        if (cleaned) setMobile(cleaned);
-        if (contactEmail) setEmail(contactEmail);
+        applySinglePickedContact(contactName, cleaned, contactEmail);
       } else {
         // Multiple numbers found -> show selection modal
         setMultipleNumbersData({
@@ -1509,9 +1646,11 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   const handleSelectMultipleNumber = (phoneObj) => {
     if (!multipleNumbersData) return;
     const cleaned = cleanMobileNumber(phoneObj.number || phoneObj.digits);
-    if (multipleNumbersData.name) setUsername(multipleNumbersData.name);
-    if (cleaned) setMobile(cleaned);
-    if (multipleNumbersData.email) setEmail(multipleNumbersData.email);
+    applySinglePickedContact(
+      multipleNumbersData.name,
+      cleaned,
+      multipleNumbersData.email
+    );
     setMultipleNumbersData(null);
   };
 
@@ -1592,70 +1731,10 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
       });
     }
 
-    setIsLoading(true);
-
-    try {
-      if (teamID) {
-        const payloadPlayers = playersToAdd.map((p) => ({
-          name: p.name || p.username,
-          username: p.username || p.name,
-          mobile: p.mobile,
-          ...(p.email ? { email: p.email } : {}),
-          ...(p.location ? { location: p.location } : {}),
-        }));
-
-        const res = await teamsApi.addPlayerToTeam(teamID, {
-          players: payloadPlayers,
-        });
-        if (res?.data?.success || res?.status === 200 || res?.status === 201) {
-          // Immediately notify parent to refresh squad
-          cb?.(playersToAdd?.[0] || playersToAdd);
-          showGlobalAlert({
-            title: "Success",
-            message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
-            type: "success",
-            confirmText: "OK",
-            onConfirm: () => {
-              setShowAddMobile(false);
-              cb?.(playersToAdd?.[0] || playersToAdd);
-              if (!isEmbedded) {
-                navigation.goBack();
-              }
-            },
-          });
-        } else {
-          showGlobalAlert({
-            title: "Notice",
-            message: res?.data?.message || "Failed to add players",
-            type: "warning",
-          });
-        }
-      } else {
-        cb?.(playersToAdd?.[0] || playersToAdd);
-        showGlobalAlert({
-          title: "Success",
-          message: `${playersToAdd.length} ${playersToAdd.length === 1 ? "player" : "players"} added successfully`,
-          type: "success",
-          confirmText: "OK",
-          onConfirm: () => {
-            setShowAddMobile(false);
-            cb?.(playersToAdd?.[0] || playersToAdd);
-            if (!isEmbedded) {
-              navigation.goBack();
-            }
-          },
-        });
-      }
-    } catch (error) {
-      showGlobalAlert({
-        title: "Error",
-        message: error?.response?.data?.message || error?.message || "Failed to add players",
-        type: "error",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    await savePlayersList(playersToAdd);
   };
+
+  const totalCount = addedPlayers.length + (username.trim() ? 1 : 0);
 
   return (
     <AppKeyboardAwareScrollView
@@ -1857,7 +1936,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {addedPlayers.map((player, index) => (
               <View
-                key={index}
+                key={player.id || index}
                 className={`flex-row items-center rounded-full px-3 py-2 mr-2 ${
                   isDarkMode ? "bg-gray-700" : "bg-gray-200"
                 }`}
@@ -1897,7 +1976,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <ThemedText className="text-white font-bold text-sm">
-              Done
+              Done {totalCount > 0 ? `(${totalCount})` : ""}
             </ThemedText>
           )}
         </TouchableOpacity>
