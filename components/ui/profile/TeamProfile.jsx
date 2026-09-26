@@ -15,6 +15,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -68,6 +69,41 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   // Animation values
   const fadeAnim = useState(new Animated.Value(1))[0];
   const slideAnim = useState(new Animated.Value(0))[0];
+
+  // Safe back navigation handler
+  const handleBack = useCallback(() => {
+    try {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+        return true;
+      }
+    } catch (e) {
+      console.warn("[TeamProfile] navigation.canGoBack() check failed:", e);
+    }
+
+    if (route?.params?.returnScreen) {
+      navigation.navigate(route.params.returnScreen, route.params?.returnParams || {});
+      return true;
+    }
+
+    // Default safe fallback to Home
+    if (navigation?.navigate) {
+      navigation.navigate(SCREENS.Home);
+    }
+    return true;
+  }, [navigation, route?.params]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+    return () => subscription.remove();
+  }, [handleBack]);
 
   const routeTeam = route?.params?.team;
   const rawRouteTeamId =
@@ -1922,7 +1958,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
         {/* Top bar: Back + Title + Edit */}
         <View className="flex-row items-center justify-between mb-4">
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             className="w-9 h-9 rounded-full items-center justify-center"
           >
             <Ionicons

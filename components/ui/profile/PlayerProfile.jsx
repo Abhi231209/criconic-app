@@ -8,6 +8,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
@@ -59,6 +60,41 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     bowling: false,
     achievements: false
   });
+
+  // Safe back navigation handler
+  const handleBack = useCallback(() => {
+    try {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+        return true;
+      }
+    } catch (e) {
+      console.warn("[PlayerProfile] navigation.canGoBack() check failed:", e);
+    }
+
+    if (route?.params?.returnScreen) {
+      navigation.navigate(route.params.returnScreen, route.params?.returnParams || {});
+      return true;
+    }
+
+    // Default safe fallback to Home
+    if (navigation?.navigate) {
+      navigation.navigate(SCREENS.Home);
+    }
+    return true;
+  }, [navigation, route?.params]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+    return () => subscription.remove();
+  }, [handleBack]);
 
   const routePlayer = route?.params?.player;
   const routePlayerId = route?.params?.playerId || routePlayer?.id || routePlayer?._id || routePlayer?.playerId || routePlayer?.userId;
@@ -1720,7 +1756,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       >
         <View className="flex-row items-center justify-between mb-4">
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             className="w-10 h-10 rounded-full items-center justify-center bg-black/20"
           >
             <Ionicons name="arrow-back" size={24} color="white" />

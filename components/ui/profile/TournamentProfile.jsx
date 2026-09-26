@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Share,
+  BackHandler,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -62,6 +63,41 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
     batting: false,
     bowling: false
   });
+
+  // Safe back navigation handler
+  const handleBack = useCallback(() => {
+    try {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+        return true;
+      }
+    } catch (e) {
+      console.warn("[TournamentProfile] navigation.canGoBack() check failed:", e);
+    }
+
+    if (route?.params?.returnScreen) {
+      navigation.navigate(route.params.returnScreen, route.params?.returnParams || {});
+      return true;
+    }
+
+    // Default safe fallback to Home screen if no stack history exists
+    if (navigation?.navigate) {
+      navigation.navigate(SCREENS.Home);
+    }
+    return true;
+  }, [navigation, route?.params]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+    return () => subscription.remove();
+  }, [handleBack]);
 
   // HARDCODED TOURNAMENT DATA - COMMENTED OUT (API ONLY)
   /*
@@ -2045,7 +2081,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           {/* Top Bar with Frosted Buttons */}
           <View className="flex-row items-center justify-between">
             <TouchableOpacity
-              onPress={() => navigation.goBack()}
+              onPress={handleBack}
               className="w-9 h-9 rounded-full items-center justify-center bg-black/40 border border-white/20"
               activeOpacity={0.7}
             >
