@@ -540,7 +540,7 @@ export default function Settings() {
             isDarkMode ? styles.versionTextDark : styles.versionTextLight,
           ]}
         >
-          Cricket App v1.0.0
+          Cricket App v1.1.0
         </ThemedText>
       </ScrollView>
     </SafeAreaView>

@@ -21,7 +21,7 @@ class GoogleAnalyticsClient {
       os_version: String(Device.osVersion || Platform.Version || "unknown"),
       device_model: String(Device.modelName || Device.deviceName || "mobile"),
       app_name: "criconic-mobile",
-      app_version: "1.0.0",
+      app_version: "1.1.0",
     };
   }
 
