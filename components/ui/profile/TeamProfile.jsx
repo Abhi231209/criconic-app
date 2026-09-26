@@ -1542,6 +1542,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
               <ScoreCard
                 matchId={item?._id || item?.id || (typeof item === "string" ? item : null)}
                 match={typeof item === "object" && item?.teams ? item : null}
+                fullWidth={true}
                 navigation={navigation}
               />
             </View>

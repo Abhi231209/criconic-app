@@ -358,10 +358,11 @@ export default function MyCricket({ route: propRoute }) {
       data={recentMatches}
       keyExtractor={(item, index) => item?.id || String(index)}
       renderItem={({ item }) => (
-        <View className="mb-4 w-full max-w-md self-center">
+        <View className="mb-3 w-full max-w-md self-center">
           <ScoreCard
             matchId={item.id}
             match={item.raw || item}
+            fullWidth={true}
           />
         </View>
       )}
@@ -419,7 +420,7 @@ export default function MyCricket({ route: propRoute }) {
       }
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={5}
@@ -808,7 +809,13 @@ export default function MyCricket({ route: propRoute }) {
         }`}
       >
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate(SCREENS.Home);
+            }
+          }}
           className="p-2 mr-3"
         >
           <Ionicons name="arrow-back" size={24} color="#2563EB" />

@@ -490,11 +490,12 @@ function ScoreCard({
       style={[
         {
           width: fullWidth ? "100%" : 300,
+          alignSelf: "center",
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: isDarkMode ? 0.3 : 0.08,
           shadowRadius: 10,
           elevation: 4,
-          marginHorizontal: 4,
+          marginHorizontal: fullWidth ? 0 : 4,
           marginVertical: 4,
         },
         style,
