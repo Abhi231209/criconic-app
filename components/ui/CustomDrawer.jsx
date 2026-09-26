@@ -23,6 +23,7 @@ import User from "@/utils/User";
 import { getImageFullUrl } from "@/utils";
 import useAppTheme from "@/hooks/useAppTheme";
 import useRequireAuth from "@/hooks/useRequireAuth";
+import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 import analytics from "@/utils/analytics";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 
@@ -183,6 +184,28 @@ export default function CustomDrawer(props) {
           backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
         }}
       >
+        {/* Brand Header */}
+        <View
+          className={`px-4 pt-3 pb-2.5 flex-row items-center justify-between border-b ${
+            isDarkMode ? "border-gray-800" : "border-gray-100"
+          }`}
+        >
+          <CriconicLogo
+            variant="horizontal"
+            theme={isDarkMode ? "dark" : "light"}
+            width={110}
+            height={24}
+          />
+          <View
+            className="px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: "rgba(77, 214, 199, 0.15)" }}
+          >
+            <ThemedText className="text-[10px] font-bold text-[#4DD6C7]">
+              ARENA
+            </ThemedText>
+          </View>
+        </View>
+
         {/* Profile Card Header with Gradient Accent */}
         <View
           className={`p-4 border-b ${

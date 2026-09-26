@@ -16,6 +16,7 @@ import {
 import SCREENS from "@/screens";
 import { SafeAreaView } from "react-native-safe-area-context";
 import useAppTheme from "@/hooks/useAppTheme";
+import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 
 export default function NavBar({ handleSearch }) {
   const { isDark } = useAppTheme();
@@ -114,14 +115,11 @@ export default function NavBar({ handleSearch }) {
               activeOpacity={0.8}
               className="flex-row items-center"
             >
-              <Image
-                source={
-                  isDarkMode
-                    ? require("../../assets/Logo-dark.png")
-                    : require("../../assets/Logo.png")
-                }
-                className="w-24 h-9"
-                resizeMode="contain"
+              <CriconicLogo
+                variant="horizontal"
+                theme={isDarkMode ? "dark" : "light"}
+                width={112}
+                height={24}
               />
             </TouchableOpacity>
           )}

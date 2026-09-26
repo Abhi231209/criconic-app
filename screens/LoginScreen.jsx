@@ -27,6 +27,7 @@ import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import useAppTheme from "@/hooks/useAppTheme";
+import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 
 import SCREENS from ".";
 import { login as loginAction } from "@/redux/authSlice";
@@ -256,23 +257,16 @@ const LoginScreen = () => {
 
             {/* Logo and App Title */}
             <View className="items-center z-10">
-              <View className="p-3 rounded-2xl bg-white/15 items-center justify-center mb-2.5 border border-white/30 shadow-lg backdrop-blur-md">
-                <Image
-                  source={
-                    isDarkMode
-                      ? require("../assets/Logo-dark.png")
-                      : require("../assets/Logo.png")
-                  }
-                  className="w-32 h-10"
-                  resizeMode="contain"
+              <View className="mb-2">
+                <CriconicLogo
+                  variant="stacked"
+                  theme="dark"
+                  width={150}
+                  height={98}
                 />
               </View>
 
-              <ThemedText className="text-white text-2xl font-black tracking-widest">
-                CRICONIC
-              </ThemedText>
-
-              <View className="flex-row items-center mt-1 px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20">
+              <View className="flex-row items-center mt-1 px-3 py-0.5 rounded-full bg-white/15 border border-white/20">
                 <ThemedText className="text-blue-100 text-[11px] font-medium tracking-wide">
                   Live Cricket Scoring & Tournaments
                 </ThemedText>

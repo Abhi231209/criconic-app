@@ -28,6 +28,7 @@ import SCREENS from "@/screens";
 import { useDispatch } from "react-redux";
 import { login as loginAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
+import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
 import { showGlobalAlert } from "@/contexts/AlertContext";
@@ -412,21 +413,15 @@ export default function SignUpScreen() {
             className="absolute inset-0 items-center justify-center px-6 pt-4 pb-10"
           >
             <View className="items-center z-10">
-              <View className="p-2 rounded-2xl bg-white/15 backdrop-blur-md items-center justify-center mb-2 border border-white/25 shadow-lg">
-                <Image
-                  source={
-                    isDarkMode
-                      ? require("../assets/Logo-dark.png")
-                      : require("../assets/Logo.png")
-                  }
-                  className="w-28 h-9"
-                  resizeMode="contain"
+              <View className="mb-1.5">
+                <CriconicLogo
+                  variant="stacked"
+                  theme="dark"
+                  width={140}
+                  height={92}
                 />
               </View>
-              <ThemedText className="text-white text-xl font-black tracking-wider">
-                CRICONIC
-              </ThemedText>
-              <ThemedText className="text-blue-200 text-xs font-medium tracking-wide mt-0.5 text-center">
+              <ThemedText className="text-blue-200 text-xs font-medium tracking-wide text-center">
                 Create Your Account
               </ThemedText>
             </View>
