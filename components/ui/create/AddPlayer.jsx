@@ -11,6 +11,9 @@ import {
   Image,
   useColorScheme,
   ActivityIndicator,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -817,6 +820,7 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
                 ? "border-gray-700 text-white"
                 : "border-gray-300 text-gray-900"
             }`}
+            style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
             value={username}
             onChangeText={setUsername}
             placeholder={`Enter player #${addedPlayers.length + 1} name`}
@@ -862,6 +866,7 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
                   className={`text-base font-semibold ${
                     isDarkMode ? "text-white" : "text-gray-900"
                   }`}
+                  style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
                   numberOfLines={1}
                 >
                   {player.username || player.name}
@@ -928,6 +933,8 @@ function MultiContactPickerModal({
   const [selectedMap, setSelectedMap] = useState(new Map());
   const [isLoading, setIsLoading] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(true);
+  const [editingContact, setEditingContact] = useState(null);
+  const [editNameText, setEditNameText] = useState("");
 
   const existingMobileSet = useMemo(() => {
     return new Set(
@@ -941,6 +948,8 @@ function MultiContactPickerModal({
     } else {
       setSearchTerm("");
       setSelectedMap(new Map());
+      setEditingContact(null);
+      setEditNameText("");
     }
   }, [visible]);
 
@@ -1096,6 +1105,45 @@ function MultiContactPickerModal({
     onAddContacts(selectedList);
   };
 
+  const handleOpenEditName = (contact) => {
+    if (!contact) return;
+    setEditingContact(contact);
+    setEditNameText(contact.name || "");
+  };
+
+  const handleSaveEditedName = () => {
+    if (!editingContact) return;
+    const trimmed = editNameText.trim();
+    if (!trimmed) {
+      showGlobalAlert({
+        title: "Invalid Name",
+        message: "Player name cannot be empty.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const updated = {
+      ...editingContact,
+      name: trimmed,
+      isNameEdited: true,
+    };
+
+    setContacts((prev) =>
+      prev.map((c) => (c.id === editingContact.id ? updated : c))
+    );
+    setFilteredContacts((prev) =>
+      prev.map((c) => (c.id === editingContact.id ? updated : c))
+    );
+    setSelectedMap((prev) => {
+      const next = new Map(prev);
+      next.set(editingContact.id, updated);
+      return next;
+    });
+
+    setEditingContact(null);
+  };
+
   const getAvatarBg = (name) => {
     const colors = [
       "#2563EB", "#7C3AED", "#DB2777", "#D97706",
@@ -1149,13 +1197,21 @@ function MultiContactPickerModal({
 
         {/* Info */}
         <View className="flex-1 mr-2">
-          <View className="flex-row items-center">
+          <View className="flex-row items-center flex-wrap">
             <ThemedText
               className="font-bold text-base text-gray-900 dark:text-white"
+              style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
               numberOfLines={1}
             >
               {item.name}
             </ThemedText>
+            {item.isNameEdited && (
+              <View className="ml-2 bg-blue-500/15 px-1.5 py-0.5 rounded-md">
+                <ThemedText className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+                  Edited
+                </ThemedText>
+              </View>
+            )}
             {isAlreadyAdded && (
               <View className="ml-2 bg-gray-500/20 px-2 py-0.5 rounded-full">
                 <ThemedText className="text-[10px] text-gray-400 font-semibold">
@@ -1176,8 +1232,34 @@ function MultiContactPickerModal({
           </View>
         </View>
 
+        {/* Edit Name Button */}
+        {!isAlreadyAdded && (
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation?.();
+              handleOpenEditName(item);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            className={`p-2 rounded-xl mr-2 ${
+              item.isNameEdited
+                ? isDarkMode
+                  ? "bg-blue-600/30"
+                  : "bg-blue-100"
+                : isDarkMode
+                ? "bg-gray-700/60"
+                : "bg-gray-100"
+            }`}
+          >
+            <Ionicons
+              name="pencil"
+              size={15}
+              color={item.isNameEdited ? "#2563EB" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+            />
+          </TouchableOpacity>
+        )}
+
         {/* Checkbox */}
-        <View className="items-center justify-center pl-2">
+        <View className="items-center justify-center pl-1">
           {isAlreadyAdded ? (
             <Ionicons name="checkmark-circle" size={24} color="#9CA3AF" />
           ) : isSelected ? (
@@ -1257,6 +1339,7 @@ function MultiContactPickerModal({
               className={`flex-1 ml-2.5 text-base ${
                 isDarkMode ? "text-white" : "text-gray-900"
               }`}
+              style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
               placeholder="Search by name or phone..."
               placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
               value={searchTerm}
@@ -1288,6 +1371,67 @@ function MultiContactPickerModal({
               </View>
             )}
           </View>
+
+          {/* Selected Contacts Quick Edit Strip */}
+          {selectedMap.size > 0 && (
+            <View className="mt-3 pt-2.5 border-t border-gray-200 dark:border-gray-700/80">
+              <View className="flex-row items-center justify-between mb-2">
+                <ThemedText className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  Selected ({selectedMap.size}) • Tap to edit name
+                </ThemedText>
+                <TouchableOpacity onPress={() => setSelectedMap(new Map())}>
+                  <ThemedText className="text-xs font-semibold text-red-500">
+                    Clear All
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingRight: 4 }}
+              >
+                {Array.from(selectedMap.values()).map((selItem) => (
+                  <TouchableOpacity
+                    key={selItem.id}
+                    onPress={() => handleOpenEditName(selItem)}
+                    activeOpacity={0.8}
+                    className={`flex-row items-center py-1.5 px-3 rounded-full border ${
+                      isDarkMode
+                        ? "bg-blue-600/20 border-blue-500/50"
+                        : "bg-blue-50 border-blue-300"
+                    }`}
+                  >
+                    <ThemedText
+                      className="text-xs font-bold text-blue-600 dark:text-blue-400 mr-1.5"
+                      style={{ color: isDarkMode ? "#93C5FD" : "#2563EB" }}
+                      numberOfLines={1}
+                    >
+                      {selItem.name}
+                    </ThemedText>
+                    <Ionicons
+                      name="pencil"
+                      size={12}
+                      color={isDarkMode ? "#60A5FA" : "#2563EB"}
+                      style={{ marginRight: 6 }}
+                    />
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        toggleSelect(selItem);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={15}
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
 
         {/* Contact List */}
@@ -1385,6 +1529,111 @@ function MultiContactPickerModal({
             </ThemedText>
           </TouchableOpacity>
         </View>
+
+        {/* Edit Name Dialog Overlay */}
+        {editingContact && (
+          <View
+            style={StyleSheet.absoluteFill}
+            className="z-50 justify-center items-center px-5 bg-black/60"
+          >
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              className="w-full max-w-sm"
+            >
+              <View
+                className={`rounded-3xl p-5 shadow-2xl border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-white border-gray-100"
+                }`}
+              >
+                <View className="flex-row items-center justify-between mb-3">
+                  <View className="flex-row items-center flex-1 mr-2">
+                    <View className="w-10 h-10 rounded-full bg-blue-600/15 items-center justify-center mr-3">
+                      <Ionicons name="pencil" size={20} color="#2563EB" />
+                    </View>
+                    <View className="flex-1">
+                      <ThemedText className="text-lg font-bold text-gray-900 dark:text-white">
+                        Edit Player Name
+                      </ThemedText>
+                      <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                        {editingContact.mobile}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setEditingContact(null)}
+                    className="p-1 rounded-full bg-gray-500/10"
+                  >
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <ThemedText className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase">
+                  Player Name
+                </ThemedText>
+                <View
+                  className={`flex-row items-center px-3.5 py-3 rounded-xl border mb-5 ${
+                    isDarkMode
+                      ? "bg-gray-900 border-gray-700"
+                      : "bg-gray-50 border-gray-300"
+                  }`}
+                >
+                  <TextInput
+                    className={`flex-1 text-base font-medium ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                    style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
+                    value={editNameText}
+                    onChangeText={setEditNameText}
+                    placeholder="Enter player name"
+                    placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    autoFocus
+                    selectTextOnFocus
+                    returnKeyType="done"
+                    onSubmitEditing={handleSaveEditedName}
+                  />
+                  {editNameText.length > 0 && (
+                    <TouchableOpacity onPress={() => setEditNameText("")}>
+                      <Ionicons
+                        name="close-circle"
+                        size={18}
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <View className="flex-row items-center gap-3">
+                  <TouchableOpacity
+                    onPress={() => setEditingContact(null)}
+                    className={`flex-1 py-3 rounded-xl items-center border ${
+                      isDarkMode
+                        ? "border-gray-700 bg-gray-700/50"
+                        : "border-gray-300 bg-gray-100"
+                    }`}
+                  >
+                    <ThemedText className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Cancel
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveEditedName}
+                    className="flex-1 py-3 rounded-xl items-center bg-blue-600 shadow-md"
+                  >
+                    <ThemedText className="text-sm font-bold text-white">
+                      Save Name
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -1407,6 +1656,42 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
   const [isPickingContact, setIsPickingContact] = useState(false);
   const [showMultiPicker, setShowMultiPicker] = useState(false);
   const [multipleNumbersData, setMultipleNumbersData] = useState(null);
+  const [editingPlayerIndex, setEditingPlayerIndex] = useState(null);
+  const [editingPlayerName, setEditingPlayerName] = useState("");
+
+  const handleOpenEditPlayer = (index) => {
+    setEditingPlayerIndex(index);
+    setEditingPlayerName(
+      addedPlayers[index]?.username || addedPlayers[index]?.name || ""
+    );
+  };
+
+  const handleSaveEditedPlayer = () => {
+    if (editingPlayerIndex === null || editingPlayerIndex < 0) return;
+    const trimmed = editingPlayerName.trim();
+    if (!trimmed) {
+      showGlobalAlert({
+        title: "Invalid Name",
+        message: "Player name cannot be empty.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const updatedList = addedPlayers.map((p, idx) => {
+      if (idx === editingPlayerIndex) {
+        return {
+          ...p,
+          name: trimmed,
+          username: trimmed,
+        };
+      }
+      return p;
+    });
+
+    setAddedPlayers(updatedList);
+    setEditingPlayerIndex(null);
+  };
 
   const applySinglePickedContact = (pickedName, pickedMobile, pickedEmail) => {
     const currentName = username.trim();
@@ -1553,7 +1838,6 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
 
     setAddedPlayers(combined);
     setShowMultiPicker(false);
-    savePlayersList(combined);
   };
 
   const handlePickContact = async () => {
@@ -1803,6 +2087,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
                 ? "border-gray-700 text-white"
                 : "border-gray-300 text-gray-900"
             }`}
+            style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
             value={username}
             onChangeText={setUsername}
             placeholder="Enter player full name"
@@ -1837,6 +2122,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
                 ? "border-gray-700 text-white"
                 : "border-gray-300 text-gray-900"
             }`}
+            style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
             value={mobile}
             onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
             placeholder="10-digit mobile number"
@@ -1860,6 +2146,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
                 ? "border-gray-700 text-white"
                 : "border-gray-300 text-gray-900"
             }`}
+            style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
             value={email}
             onChangeText={setEmail}
             placeholder="Enter email (optional)"
@@ -1882,6 +2169,7 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
                 ? "border-gray-700 text-white"
                 : "border-gray-300 text-gray-900"
             }`}
+            style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
             value={location}
             onChangeText={setLocation}
             placeholder="Enter city or area (optional)"
@@ -1893,32 +2181,58 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
       {/* Added Players List */}
       {addedPlayers.length > 0 && (
         <View className="mb-4">
-          <ThemedText
-            className={`text-sm mb-2 ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            Added Players ({addedPlayers.length})
-          </ThemedText>
+          <View className="flex-row items-center justify-between mb-2">
+            <ThemedText
+              className={`text-sm font-bold ${
+                isDarkMode ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
+              Added Players ({addedPlayers.length})
+            </ThemedText>
+            <ThemedText className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+              Tap player to edit name
+            </ThemedText>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {addedPlayers.map((player, index) => (
-              <View
+              <TouchableOpacity
                 key={player.id || index}
-                className={`flex-row items-center rounded-full px-3 py-2 mr-2 ${
-                  isDarkMode ? "bg-gray-700" : "bg-gray-200"
-                }`}
+                onPress={() => handleOpenEditPlayer(index)}
+                activeOpacity={0.8}
+                className={`flex-row items-center rounded-full px-3 py-1.5 mr-2 border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700"
+                    : "bg-white border-gray-300"
+                } shadow-sm`}
               >
-                <ThemedText className="text-sm mr-2 font-medium">
-                  {player.username}
+                <ThemedText
+                  className={`text-sm mr-1.5 font-medium ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                  style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
+                >
+                  {player.username || player.name}
                 </ThemedText>
-                <TouchableOpacity onPress={() => handleRemovePlayer(index)}>
+                <Ionicons
+                  name="pencil"
+                  size={12}
+                  color={isDarkMode ? "#93C5FD" : "#2563EB"}
+                  style={{ marginRight: 6 }}
+                />
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleRemovePlayer(index);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   <Ionicons
                     name="close-circle"
-                    size={20}
+                    size={18}
                     color={isDarkMode ? "#9CA3AF" : "#6B7280"}
                   />
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
@@ -2030,6 +2344,115 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
               </ThemedText>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      {/* Edit Player Name Modal for Added Players */}
+      <Modal
+        visible={editingPlayerIndex !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setEditingPlayerIndex(null)}
+      >
+        <View className="flex-1 justify-center items-center px-5 bg-black/60">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            className="w-full max-w-sm"
+          >
+            <View
+              className={`rounded-3xl p-5 shadow-2xl border ${
+                isDarkMode
+                  ? "bg-gray-800 border-gray-700"
+                  : "bg-white border-gray-100"
+              }`}
+            >
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-10 h-10 rounded-full bg-blue-600/15 items-center justify-center mr-3">
+                    <Ionicons name="pencil" size={20} color="#2563EB" />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText className="text-lg font-bold text-gray-900 dark:text-white">
+                      Edit Player Name
+                    </ThemedText>
+                    {editingPlayerIndex !== null && addedPlayers[editingPlayerIndex]?.mobile && (
+                      <ThemedText className="text-xs text-gray-500 dark:text-gray-400">
+                        {addedPlayers[editingPlayerIndex].mobile}
+                      </ThemedText>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setEditingPlayerIndex(null)}
+                  className="p-1 rounded-full bg-gray-500/10"
+                >
+                  <Ionicons
+                    name="close"
+                    size={20}
+                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <ThemedText className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase">
+                Player Name
+              </ThemedText>
+              <View
+                className={`flex-row items-center px-3.5 py-3 rounded-xl border mb-5 ${
+                  isDarkMode
+                    ? "bg-gray-900 border-gray-700"
+                    : "bg-gray-50 border-gray-300"
+                }`}
+              >
+                <TextInput
+                  className={`flex-1 text-base font-medium ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                  style={{ color: isDarkMode ? "#FFFFFF" : "#111827" }}
+                  value={editingPlayerName}
+                  onChangeText={setEditingPlayerName}
+                  placeholder="Enter player name"
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  autoFocus
+                  selectTextOnFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveEditedPlayer}
+                />
+                {editingPlayerName.length > 0 && (
+                  <TouchableOpacity onPress={() => setEditingPlayerName("")}>
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View className="flex-row items-center gap-3">
+                <TouchableOpacity
+                  onPress={() => setEditingPlayerIndex(null)}
+                  className={`flex-1 py-3 rounded-xl items-center border ${
+                    isDarkMode
+                      ? "border-gray-700 bg-gray-700/50"
+                      : "border-gray-300 bg-gray-100"
+                  }`}
+                >
+                  <ThemedText className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Cancel
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveEditedPlayer}
+                  className="flex-1 py-3 rounded-xl items-center bg-blue-600 shadow-md"
+                >
+                  <ThemedText className="text-sm font-bold text-white">
+                    Save Name
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 

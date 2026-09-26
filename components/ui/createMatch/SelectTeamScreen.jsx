@@ -27,6 +27,235 @@ import { showGlobalAlert } from "@/components/ui/custom/AppAlertModal";
 // In-memory cache for instant pre-scorer screen loading
 let cachedTeams = null;
 let cachedTournamentTeams = {};
+let cachedTournamentTitles = {};
+let prefetchPromise = null;
+let prefetchKey = null;
+
+export const normalizeTeam = (t, isMy = false, currentUserId = "") => {
+  const raw =
+    t?.teamId && typeof t.teamId === "object"
+      ? { ...t.teamId, ...t }
+      : t?.team?.[0] || t;
+  const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
+  const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
+  const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
+
+  // Safely extract players without them getting overwritten by an empty outer array
+  const rawPlayers =
+    Array.isArray(t?.teamId?.players) && t.teamId.players.length > 0
+      ? t.teamId.players
+      : Array.isArray(t?.players) && t.players.length > 0
+      ? t.players
+      : Array.isArray(raw?.players) && raw.players.length > 0
+      ? raw.players
+      : [];
+
+  const createdByStr = String(raw?.createdBy?._id || raw?.createdBy || "");
+  const captainStr = String(raw?.captain?._id || raw?.captain || "");
+
+  const isOrganizer = Array.isArray(raw?.organizer)
+    ? raw.organizer.some((o) => {
+        const oId = String(o?._id || o?.id || o || "");
+        return Boolean(oId && currentUserId && oId === currentUserId);
+      })
+    : typeof raw?.organizer === "object"
+    ? Boolean(
+        currentUserId &&
+          String(raw.organizer?._id || raw.organizer?.id || "") === currentUserId
+      )
+    : Boolean(currentUserId && String(raw?.organizer || "") === currentUserId);
+
+  const isPlayer = Array.isArray(rawPlayers)
+    ? rawPlayers.some((p) => {
+        const pId = String(p?.id || p?._id || p?.playerId || "");
+        return Boolean(pId && currentUserId && pId === currentUserId);
+      })
+    : false;
+
+  const isOwner = Boolean(
+    currentUserId &&
+      (createdByStr === currentUserId ||
+        captainStr === currentUserId ||
+        isOrganizer ||
+        isPlayer)
+  );
+
+  return {
+    ...raw,
+    id: teamId,
+    _id: teamId,
+    teamId,
+    name: teamName,
+    title: teamName,
+    location: raw?.location || "Location not specified",
+    image: rawImg
+      ? rawImg.startsWith("http")
+        ? rawImg
+        : getImageFullUrl(rawImg)
+      : null,
+    players: rawPlayers,
+    isMyTeam: Boolean(isMy || isOwner),
+  };
+};
+
+export const prefetchTeams = async ({
+  tournamentId = null,
+  currentUserId = "",
+  isAdmin = false,
+  force = false,
+} = {}) => {
+  const uid =
+    currentUserId ||
+    String(User.id || User.user?._id || User.user?.id || "");
+  const admin =
+    isAdmin !== undefined
+      ? isAdmin
+      : Boolean(
+          User?.isAdmin?.() ||
+            User?.user?.role === 1 ||
+            User?.user?.role === 2
+        );
+
+  const key = `${tournamentId || ""}_${uid}_${admin}`;
+
+  if (!force && cachedTeams && (!tournamentId || cachedTournamentTeams[tournamentId])) {
+    return {
+      cachedTeams,
+      tournamentTeams: (tournamentId && cachedTournamentTeams[tournamentId]) || [],
+      tournamentTitle: (tournamentId && cachedTournamentTitles[tournamentId]) || "",
+    };
+  }
+
+  if (!force && prefetchPromise && prefetchKey === key) {
+    return prefetchPromise;
+  }
+
+  prefetchKey = key;
+  prefetchPromise = (async () => {
+    try {
+      const promises = [
+        teamsApi.getMyTeams().catch(() => null),
+        teamsApi.getOpponentTeams().catch(() => null),
+      ];
+
+      if (tournamentId) {
+        promises.push(
+          tournamentsApi.getTournamentById(tournamentId).catch(() => null)
+        );
+      }
+
+      const results = await Promise.all(promises);
+      const myRes = results[0];
+      const oppRes = results[1];
+      const tournRes = tournamentId ? results[2] : null;
+
+      // 1. Process user teams
+      const rawUserTeams = extractTeamList(myRes);
+      const userTeamsMap = new Map();
+      rawUserTeams.forEach((t) => {
+        const norm = normalizeTeam(t, true, uid);
+        if (norm.id) {
+          userTeamsMap.set(norm.id, norm);
+        }
+      });
+
+      // 2. Process opponent teams directly from getOpponentTeams API
+      const rawOppTeams = extractTeamList(oppRes);
+      const oppTeamsMap = new Map();
+      rawOppTeams.forEach((t) => {
+        const norm = normalizeTeam(t, false, uid);
+        // Only include if it's NOT the user's team (unless Admin, where all opponents are accessible)
+        if (norm.id && (!userTeamsMap.has(norm.id) || admin)) {
+          oppTeamsMap.set(norm.id, norm);
+        }
+      });
+
+      const finalUserTeams = Array.from(userTeamsMap.values());
+      const finalOppTeams = Array.from(oppTeamsMap.values());
+      const combined = [...finalUserTeams, ...finalOppTeams];
+
+      cachedTeams = combined;
+
+      // 3. Process tournament teams if applicable
+      let parsedTournamentTeams = [];
+      let tTitle = "";
+      if (tournamentId && tournRes) {
+        let tData =
+          tournRes?.data?.content ||
+          tournRes?.data?.tournament ||
+          tournRes?.data;
+        if (tData?.content) tData = tData.content;
+        if (tData) {
+          tTitle = tData.title || tData.name || "Tournament";
+          cachedTournamentTitles[tournamentId] = tTitle;
+          if (Array.isArray(tData.teams)) {
+            parsedTournamentTeams = tData.teams.map((t) => {
+              const innerTeam =
+                t?.teamId && typeof t.teamId === "object"
+                  ? { ...t.teamId, ...t }
+                  : t?.team?.[0] || t;
+              const normalized = normalizeTeam(innerTeam, false, uid);
+              const tId = normalized.id;
+
+              // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents
+              if (!normalized.players || normalized.players.length === 0) {
+                const matched = combined.find(
+                  (ct) => String(ct.id) === String(tId)
+                );
+                if (
+                  matched &&
+                  Array.isArray(matched.players) &&
+                  matched.players.length > 0
+                ) {
+                  normalized.players = matched.players;
+                }
+              }
+              return normalized;
+            });
+
+            cachedTournamentTeams[tournamentId] = parsedTournamentTeams;
+
+            // Background-fetch details for any tournament teams still missing players
+            parsedTournamentTeams.forEach((pt) => {
+              if (!pt.players || pt.players.length === 0) {
+                teamsApi
+                  .getTeamById(pt.id)
+                  .then((teamDetailRes) => {
+                    const teamDataObj = Array.isArray(teamDetailRes?.data)
+                      ? teamDetailRes.data[0]
+                      : teamDetailRes?.data?.data ||
+                        teamDetailRes?.data?.team ||
+                        teamDetailRes?.data;
+                    const pl = teamDataObj?.players;
+                    if (Array.isArray(pl) && pl.length > 0) {
+                      const curr = cachedTournamentTeams[tournamentId] || [];
+                      cachedTournamentTeams[tournamentId] = curr.map((item) =>
+                        item.id === pt.id ? { ...item, players: pl } : item
+                      );
+                    }
+                  })
+                  .catch(() => {});
+              }
+            });
+          }
+        }
+      }
+
+      return {
+        cachedTeams,
+        tournamentTeams: parsedTournamentTeams,
+        tournamentTitle: tTitle,
+      };
+    } catch (err) {
+      console.warn("[prefetchTeams] Failed:", err);
+      return null;
+    } finally {
+      prefetchPromise = null;
+    }
+  })();
+
+  return prefetchPromise;
+};
 
 const extractTeamList = (res) => {
   if (!res) return [];
@@ -105,8 +334,12 @@ export default function SelectTeamScreen() {
   );
   
   const [teams, setTeams] = useState(() => cachedTeams || []);
-  const [tournamentTeams, setTournamentTeams] = useState(() => (tournamentId && cachedTournamentTeams[tournamentId]) || []);
-  const [tournamentTitle, setTournamentTitle] = useState("");
+  const [tournamentTeams, setTournamentTeams] = useState(
+    () => (tournamentId && cachedTournamentTeams[tournamentId]) || []
+  );
+  const [tournamentTitle, setTournamentTitle] = useState(
+    () => (tournamentId && cachedTournamentTitles[tournamentId]) || ""
+  );
   const [loading, setLoading] = useState(() => {
     if (tournamentId) {
       return !cachedTournamentTeams[tournamentId] && !cachedTeams;
@@ -124,157 +357,28 @@ export default function SelectTeamScreen() {
   const [myTeamsSearchQuery, setMyTeamsSearchQuery] = useState("");
   const [opponentSearchQuery, setOpponentSearchQuery] = useState("");
 
-  const normalizeTeam = (t, isMy = false) => {
-    const raw =
-      t?.teamId && typeof t.teamId === "object"
-        ? { ...t.teamId, ...t }
-        : t?.team?.[0] || t;
-    const teamId = String(raw?._id || raw?.id || raw?.teamId || "");
-    const teamName = raw?.teamName || raw?.title || raw?.name || "Unnamed Team";
-    const rawImg = raw?.teamLogo || raw?.logoImage || raw?.image || raw?.logo || null;
-    
-    // Safely extract players without them getting overwritten by an empty outer array
-    const rawPlayers =
-      (Array.isArray(t?.teamId?.players) && t.teamId.players.length > 0)
-        ? t.teamId.players
-        : (Array.isArray(t?.players) && t.players.length > 0)
-        ? t.players
-        : (Array.isArray(raw?.players) && raw.players.length > 0)
-        ? raw.players
-        : [];
-
-    const createdByStr = String(raw?.createdBy?._id || raw?.createdBy || "");
-    const captainStr = String(raw?.captain?._id || raw?.captain || "");
-
-    const isOrganizer = Array.isArray(raw?.organizer)
-      ? raw.organizer.some((o) => {
-          const oId = String(o?._id || o?.id || o || "");
-          return Boolean(oId && currentUserId && oId === currentUserId);
-        })
-      : typeof raw?.organizer === "object"
-      ? Boolean(currentUserId && String(raw.organizer?._id || raw.organizer?.id || "") === currentUserId)
-      : Boolean(currentUserId && String(raw?.organizer || "") === currentUserId);
-
-    const isPlayer = Array.isArray(rawPlayers)
-      ? rawPlayers.some((p) => {
-          const pId = String(p?.id || p?._id || p?.playerId || "");
-          return Boolean(pId && currentUserId && pId === currentUserId);
-        })
-      : false;
-
-    const isOwner = Boolean(
-      currentUserId &&
-      (createdByStr === currentUserId || captainStr === currentUserId || isOrganizer || isPlayer)
-    );
-
-    return {
-      ...raw,
-      id: teamId,
-      _id: teamId,
-      teamId,
-      name: teamName,
-      title: teamName,
-      location: raw?.location || "Location not specified",
-      image: rawImg ? (rawImg.startsWith("http") ? rawImg : getImageFullUrl(rawImg)) : null,
-      players: rawPlayers,
-      isMyTeam: Boolean(isMy || isOwner),
-    };
-  };
-
-  const fetchTeams = async () => {
+  const fetchTeams = async (force = false) => {
     try {
-      const promises = [
-        teamsApi.getMyTeams().catch(() => null),
-        teamsApi.getOpponentTeams().catch(() => null),
-      ];
-
-      if (tournamentId) {
-        promises.push(tournamentsApi.getTournamentById(tournamentId).catch(() => null));
+      if (!cachedTeams && (!tournamentId || !cachedTournamentTeams[tournamentId])) {
+        setLoading(true);
       }
 
-      const results = await Promise.all(promises);
-      const myRes = results[0];
-      const oppRes = results[1];
-      const tournRes = tournamentId ? results[2] : null;
-
-      // 1. Process user teams
-      const rawUserTeams = extractTeamList(myRes);
-      const userTeamsMap = new Map();
-      rawUserTeams.forEach((t) => {
-        const norm = normalizeTeam(t, true);
-        if (norm.id) {
-          userTeamsMap.set(norm.id, norm);
-        }
+      const res = await prefetchTeams({
+        tournamentId,
+        currentUserId,
+        isAdmin,
+        force,
       });
 
-      // 2. Process opponent teams directly from getOpponentTeams API
-      const rawOppTeams = extractTeamList(oppRes);
-      const oppTeamsMap = new Map();
-      rawOppTeams.forEach((t) => {
-        const norm = normalizeTeam(t, false);
-        // Only include if it's NOT the user's team (unless Admin, where all opponents are accessible)
-        if (norm.id && (!userTeamsMap.has(norm.id) || isAdmin)) {
-          oppTeamsMap.set(norm.id, norm);
+      if (res?.cachedTeams || cachedTeams) {
+        setTeams(res?.cachedTeams || cachedTeams);
+      }
+      if (tournamentId) {
+        if (res?.tournamentTeams || cachedTournamentTeams[tournamentId]) {
+          setTournamentTeams(res?.tournamentTeams || cachedTournamentTeams[tournamentId]);
         }
-      });
-
-      const finalUserTeams = Array.from(userTeamsMap.values());
-      const finalOppTeams = Array.from(oppTeamsMap.values());
-      const combined = [...finalUserTeams, ...finalOppTeams];
-
-      cachedTeams = combined;
-      setTeams(combined);
-      setLoading(false);
-
-      // 3. Process tournament teams if applicable
-      if (tournamentId && tournRes) {
-        let tData =
-          tournRes?.data?.content ||
-          tournRes?.data?.tournament ||
-          tournRes?.data;
-        if (tData?.content) tData = tData.content;
-        if (tData) {
-          setTournamentTitle(tData.title || tData.name || "Tournament");
-          if (Array.isArray(tData.teams)) {
-            const parsedTeams = tData.teams.map((t) => {
-              const innerTeam = t?.teamId && typeof t.teamId === "object" ? { ...t.teamId, ...t } : (t?.team?.[0] || t);
-              const normalized = normalizeTeam(innerTeam, false);
-              const tId = normalized.id;
-
-              // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents
-              if (!normalized.players || normalized.players.length === 0) {
-                const matched = combined.find((ct) => String(ct.id) === String(tId));
-                if (matched && Array.isArray(matched.players) && matched.players.length > 0) {
-                  normalized.players = matched.players;
-                }
-              }
-              return normalized;
-            });
-
-            setTournamentTeams(parsedTeams);
-            cachedTournamentTeams[tournamentId] = parsedTeams;
-
-            // Background-fetch details for any tournament teams still missing players
-            parsedTeams.forEach((pt) => {
-              if (!pt.players || pt.players.length === 0) {
-                teamsApi.getTeamById(pt.id).then((teamDetailRes) => {
-                  const teamDataObj = Array.isArray(teamDetailRes?.data)
-                    ? teamDetailRes.data[0]
-                    : (teamDetailRes?.data?.data || teamDetailRes?.data?.team || teamDetailRes?.data);
-                  const pl = teamDataObj?.players;
-                  if (Array.isArray(pl) && pl.length > 0) {
-                    setTournamentTeams((prev) => {
-                      const updated = prev.map((item) =>
-                        item.id === pt.id ? { ...item, players: pl } : item
-                      );
-                      cachedTournamentTeams[tournamentId] = updated;
-                      return updated;
-                    });
-                  }
-                }).catch(() => {});
-              }
-            });
-          }
+        if (res?.tournamentTitle || cachedTournamentTitles[tournamentId]) {
+          setTournamentTitle(res?.tournamentTitle || cachedTournamentTitles[tournamentId]);
         }
       }
     } catch (error) {
@@ -287,12 +391,12 @@ export default function SelectTeamScreen() {
 
   useEffect(() => {
     fetchTeams();
-  }, [currentUserId]);
+  }, [currentUserId, tournamentId]);
 
   useFocusEffect(
     useCallback(() => {
       fetchTeams();
-    }, [currentUserId])
+    }, [currentUserId, tournamentId])
   );
 
   const debouncedTeamSearch = useCallback(
@@ -308,7 +412,7 @@ export default function SelectTeamScreen() {
           res?.data?.[0]?.data ||
           (Array.isArray(res?.data) ? res.data : []);
         setSearchResults(
-          (Array.isArray(list) ? list : []).map((t) => normalizeTeam(t, false))
+          (Array.isArray(list) ? list : []).map((t) => normalizeTeam(t, false, currentUserId))
         );
       } catch (err) {
         console.warn("[SelectTeamScreen] Global search error:", err);
@@ -317,7 +421,7 @@ export default function SelectTeamScreen() {
         setIsSearching(false);
       }
     }, 300),
-    []
+    [currentUserId]
   );
 
   const handleSearchQueryChange = (text) => {
@@ -334,7 +438,7 @@ export default function SelectTeamScreen() {
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchTeams();
+    fetchTeams(true);
   };
 
   const handleGlobalSearchFromTab = (query = "") => {
@@ -372,7 +476,8 @@ export default function SelectTeamScreen() {
     navigation.navigate(SCREENS.CreateTeam, {
       onTeamCreated: (newTeam) => {
         if (newTeam) {
-          const normalized = normalizeTeam(newTeam, true);
+          const normalized = normalizeTeam(newTeam, true, currentUserId);
+          cachedTeams = [normalized, ...(cachedTeams || [])];
           setTeams((prev) => [normalized, ...prev]);
           setActiveTab("myTeams");
         }

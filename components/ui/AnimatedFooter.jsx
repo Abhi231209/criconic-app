@@ -18,16 +18,12 @@ import {
 import Svg, { Path } from "react-native-svg";
 import {
   Home,
-  Search,
   Plus,
   User,
   Users,
   Trophy,
-  Calendar,
-  Sparkles,
   X,
   ArrowRight,
-  Activity,
 } from "lucide-react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import SCREENS from "@/screens";
@@ -35,12 +31,9 @@ import { useNavigation } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
 import ThemedText from "./custom/ThemedText";
 import useAppTheme from "@/hooks/useAppTheme";
-import { useSelector } from "react-redux";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import CurrentUser from "@/utils/User";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import analytics from "@/utils/analytics";
-import { request, tournamentsApi, teamsApi } from "@/utils/api";
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;
@@ -159,58 +152,6 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const colors = theme;
-
-  const authUser = useSelector((state) => state.auth?.user);
-  const userId = CurrentUser.id || authUser?._id || authUser?.id;
-  const [quickStats, setQuickStats] = useState({
-    tournaments: 0,
-    matches: 0,
-    players: 0,
-  });
-
-  useEffect(() => {
-    if (!userId) return;
-    let isMounted = true;
-    (async () => {
-      const [tourRes, teamsRes, profileRes] = await Promise.all([
-        tournamentsApi.getMyTournaments({ errorAlert: false }).catch(() => null),
-        teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
-        request(`api/users/profile/${userId}`, {
-          method: "GET",
-          errorAlert: false,
-        }).catch(() => null),
-      ]);
-      if (!isMounted) return;
-
-      const tournamentsList = Array.isArray(tourRes?.data?.content)
-        ? tourRes.data.content
-        : Array.isArray(tourRes?.data)
-        ? tourRes.data
-        : [];
-
-      const rawTeams = Array.isArray(teamsRes?.data) ? teamsRes.data : [];
-      const playersCount = rawTeams.reduce((sum, tm) => {
-        const raw = tm?.team?.[0] || tm;
-        return sum + (Array.isArray(raw?.players) ? raw.players.length : 0);
-      }, 0);
-
-      const profileStats =
-        profileRes?.data?.data?.stats || profileRes?.data?.stats || {};
-      const matchesCount = Math.max(
-        profileStats?.batting?.matches || 0,
-        profileStats?.bowling?.matches || 0
-      );
-
-      setQuickStats({
-        tournaments: tournamentsList.length,
-        matches: matchesCount,
-        players: playersCount,
-      });
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, [userId]);
 
   const navigateToScreen = (screenName, params) => {
     const currentRoutes = navigation.getState?.()?.routeNames || [];
@@ -488,18 +429,8 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
         )}
 
         <View style={styles.createMenuContent}>
-          {/* Header with icon */}
+          {/* Header */}
           <View style={styles.createMenuHeader}>
-            <View style={styles.createMenuHeaderIconWrapper}>
-              <LinearGradient
-                colors={colors.gradient}
-                style={styles.createMenuHeaderGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Sparkles size={24} color={colors.primary} strokeWidth={1.5} />
-              </LinearGradient>
-            </View>
             <View style={styles.createMenuHeaderText}>
               <ThemedText
                 style={[styles.createMenuHeaderTitle, { color: colors.text }]}
@@ -540,68 +471,6 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
                 colors={colors}
               />
             ))}
-          </View>
-
-          {/* Stats Section */}
-          <View
-            style={[styles.createMenuStats, { borderTopColor: colors.border }]}
-          >
-            <View style={styles.statCard}>
-              <View
-                style={[
-                  styles.statIcon,
-                  { backgroundColor: `${colors.primary}15` },
-                ]}
-              >
-                <Trophy size={16} color={colors.primary} />
-              </View>
-              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                {quickStats.tournaments}
-              </ThemedText>
-              <ThemedText
-                style={[styles.statName, { color: colors.textSecondary }]}
-              >
-                Tournaments
-              </ThemedText>
-            </View>
-
-            <View style={styles.statCard}>
-              <View
-                style={[
-                  styles.statIcon,
-                  { backgroundColor: `${colors.primary}15` },
-                ]}
-              >
-                <Activity size={16} color={colors.primary} />
-              </View>
-              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                {quickStats.matches}
-              </ThemedText>
-              <ThemedText
-                style={[styles.statName, { color: colors.textSecondary }]}
-              >
-                Matches
-              </ThemedText>
-            </View>
-
-            <View style={styles.statCard}>
-              <View
-                style={[
-                  styles.statIcon,
-                  { backgroundColor: `${colors.primary}15` },
-                ]}
-              >
-                <Users size={16} color={colors.primary} />
-              </View>
-              <ThemedText style={[styles.statNumber, { color: colors.text }]}>
-                {quickStats.players}
-              </ThemedText>
-              <ThemedText
-                style={[styles.statName, { color: colors.textSecondary }]}
-              >
-                Players
-              </ThemedText>
-            </View>
           </View>
         </View>
       </Animated.View>
@@ -776,17 +645,7 @@ const styles = StyleSheet.create({
   createMenuHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 24,
-  },
-  createMenuHeaderIconWrapper: {
-    marginRight: 12,
-  },
-  createMenuHeaderGradient: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
+    marginBottom: 20,
   },
   createMenuHeaderText: {
     flex: 1,
@@ -811,7 +670,6 @@ const styles = StyleSheet.create({
 
   // Menu Items Grid
   createMenuItemsGrid: {
-    marginBottom: 24,
     gap: 12,
   },
   createMenuItemWrapper: {
@@ -860,38 +718,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  // Stats Section
-  createMenuStats: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: 20,
-    borderTopWidth: 1,
-  },
-  statCard: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
-    letterSpacing: -0.3,
-  },
-  statName: {
-    fontSize: 11,
-    fontWeight: "500",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
 });
 

@@ -26,6 +26,7 @@ import User from "@/utils/User";
 import squadSelectionStore from "./squadSelectionStore";
 import { matchesApi, tournamentsApi } from "@/utils/api";
 import analytics from "@/utils/analytics";
+import { prefetchTeams } from "./SelectTeamScreen";
 
 // In-memory cache for instant modal display
 let cachedAuthorizedTournaments = null;
@@ -140,6 +141,15 @@ export default function CreateMatch() {
         setLoadingTournaments(false);
       });
   }, [initialTournamentId, currentUserId, isAdmin]);
+
+  // Pre-fetch teams on mount or when tournament changes so SelectTeamScreen loads instantly
+  useEffect(() => {
+    prefetchTeams({
+      tournamentId,
+      currentUserId,
+      isAdmin,
+    });
+  }, [tournamentId, currentUserId, isAdmin]);
 
   // Detect initiator screen before match creation flow
   const routes = navigation.getState?.()?.routes || [];
