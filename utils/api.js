@@ -576,6 +576,16 @@ export const userApi = {
       method: "GET",
       errorAlert: false,
     }),
+  registerPushToken: (token) =>
+    request("api/users/push-token", { method: "POST", data: { token }, errorAlert: false }),
+  removePushToken: (token) =>
+    request("api/users/push-token", { method: "DELETE", data: { token }, errorAlert: false }),
+  updateNotificationPreferences: (preferences) =>
+    request("api/users/notification-preferences", {
+      method: "PATCH",
+      data: preferences,
+      errorAlert: false,
+    }),
 };
 
 export const rankingsApi = {
