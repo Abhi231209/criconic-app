@@ -308,38 +308,31 @@ export default function AddPlayer({
 
         {!showSearchBar && (
           <>
-            {/* Option 2: Upload without number (NEW OPTION - redirects to name-only upload) */}
+            {/* Option 2: Upload without number */}
             <TouchableOpacity
               onPress={() => setShowUploadWithoutNumber(true)}
               className={`mb-4 rounded-xl p-4 border ${
-                isDarkMode ? "bg-gray-800 border-amber-600/40" : "bg-white border-amber-200"
+                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
               } shadow-sm`}
             >
               <View className="flex-row items-center">
                 <View className="w-1/5 items-center justify-center">
-                  <View className="w-12 h-12 rounded-2xl bg-amber-500/10 items-center justify-center">
+                  <View className={`w-12 h-12 rounded-2xl ${isDarkMode ? "bg-gray-700" : "bg-gray-100"} items-center justify-center`}>
                     <Ionicons
                       name="person-add"
                       size={24}
-                      color="#D97706"
+                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
                     />
                   </View>
                 </View>
                 <View className="ml-4 flex-1">
-                  <View className="flex-row items-center justify-between">
-                    <ThemedText
-                      className={`font-bold text-lg ${
-                        isDarkMode ? "text-white" : "text-gray-900"
-                      }`}
-                    >
-                      Upload without number
-                    </ThemedText>
-                    <View className="bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/30">
-                      <ThemedText className="text-amber-500 text-[10px] font-bold">
-                        Add number later
-                      </ThemedText>
-                    </View>
-                  </View>
+                  <ThemedText
+                    className={`font-bold text-lg ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
+                    Upload without number
+                  </ThemedText>
                   <ThemedText
                     className={`text-xs mt-0.5 ${
                       isDarkMode ? "text-gray-400" : "text-gray-600"
@@ -504,9 +497,6 @@ export default function AddPlayer({
             <View className="flex-1">
               <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
                 Upload without number
-              </ThemedText>
-              <ThemedText className="text-xs text-amber-500 font-semibold">
-                Add number later
               </ThemedText>
             </View>
           </View>
@@ -808,8 +798,8 @@ function UploadWithoutNumber({ teamID, setShowUploadWithoutNumber, cb, isTeamOwn
                 className="flex-row items-center"
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="people-outline" size={13} color="#D97706" />
-                <ThemedText className="text-xs text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                <Ionicons name="people-outline" size={13} color="#2563EB" />
+                <ThemedText className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-1">
                   From Contacts
                 </ThemedText>
               </TouchableOpacity>
@@ -1779,29 +1769,6 @@ function AddWithPhoneNumber({ teamID, setShowAddMobile, cb, isEmbedded }) {
           </View>
         </TouchableOpacity>
 
-        {/* Secondary Option: Pick a single contact */}
-        <TouchableOpacity
-          onPress={handlePickContact}
-          disabled={isPickingContact}
-          activeOpacity={0.7}
-          className={`flex-row items-center justify-between py-2.5 px-3.5 rounded-xl border ${
-            isDarkMode
-              ? "bg-gray-800/80 border-gray-700"
-              : "bg-white border-gray-200"
-          }`}
-        >
-          <View className="flex-row items-center flex-1 mr-2">
-            <Ionicons name="person-add-outline" size={16} color="#2563EB" style={{ marginRight: 8 }} />
-            <ThemedText className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-              Or pick a single contact directly from phone
-            </ThemedText>
-          </View>
-          {isPickingContact ? (
-            <ActivityIndicator size="small" color="#2563EB" />
-          ) : (
-            <Ionicons name="chevron-forward" size={14} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
-          )}
-        </TouchableOpacity>
       </View>
 
       <View

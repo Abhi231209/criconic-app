@@ -31,6 +31,7 @@ import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import useAppTheme from "@/hooks/useAppTheme";
 
 const { height } = Dimensions.get("window");
 
@@ -46,8 +47,9 @@ function generateValidationID(length = 8) {
 export default function SignUpScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
+  const { isDark } = useAppTheme();
   const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
   const [username, setUsername] = useState("");
   const [mobile, setMobile] = useState("");
@@ -412,7 +414,11 @@ export default function SignUpScreen() {
             <View className="items-center z-10">
               <View className="p-2 rounded-2xl bg-white/15 backdrop-blur-md items-center justify-center mb-2 border border-white/25 shadow-lg">
                 <Image
-                  source={require("../assets/Logo.png")}
+                  source={
+                    isDarkMode
+                      ? require("../assets/Logo-dark.png")
+                      : require("../assets/Logo.png")
+                  }
                   className="w-28 h-9"
                   resizeMode="contain"
                 />

@@ -294,7 +294,11 @@ export default function SelectSquadScreen() {
       <Image
         source={{ uri: item.image }}
         className="w-10 h-10 rounded-full mr-3"
-        defaultSource={require("../../../assets/Logo.png")}
+        defaultSource={
+          isDarkMode
+            ? require("../../../assets/Logo-dark.png")
+            : require("../../../assets/Logo.png")
+        }
       />
 
       <View className="flex-1">

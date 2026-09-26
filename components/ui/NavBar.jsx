@@ -15,10 +15,12 @@ import {
 } from "@expo/vector-icons";
 import SCREENS from "@/screens";
 import { SafeAreaView } from "react-native-safe-area-context";
+import useAppTheme from "@/hooks/useAppTheme";
 
 export default function NavBar({ handleSearch }) {
+  const { isDark } = useAppTheme();
   const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === 'dark';
+  const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
   
   const [searchValue, setSearchValue] = useState("");
   const [showInput, setShowInput] = useState(false);
@@ -113,7 +115,11 @@ export default function NavBar({ handleSearch }) {
               className="flex-row items-center"
             >
               <Image
-                source={require("../../assets/Logo.png")}
+                source={
+                  isDarkMode
+                    ? require("../../assets/Logo-dark.png")
+                    : require("../../assets/Logo.png")
+                }
                 className="w-24 h-9"
                 resizeMode="contain"
               />

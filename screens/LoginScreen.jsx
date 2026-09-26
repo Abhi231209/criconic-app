@@ -26,6 +26,7 @@ import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareS
 import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import useAppTheme from "@/hooks/useAppTheme";
 
 import SCREENS from ".";
 import { login as loginAction } from "@/redux/authSlice";
@@ -48,8 +49,9 @@ const LoginScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
 
+  const { isDark } = useAppTheme();
   const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
   // Auto-redirect if already logged in AND LoginScreen is the active focused screen
   useEffect(() => {
@@ -256,7 +258,11 @@ const LoginScreen = () => {
             <View className="items-center z-10">
               <View className="p-3 rounded-2xl bg-white/15 items-center justify-center mb-2.5 border border-white/30 shadow-lg backdrop-blur-md">
                 <Image
-                  source={require("../assets/Logo.png")}
+                  source={
+                    isDarkMode
+                      ? require("../assets/Logo-dark.png")
+                      : require("../assets/Logo.png")
+                  }
                   className="w-32 h-10"
                   resizeMode="contain"
                 />
