@@ -172,7 +172,12 @@ export const prefetchTeams = async ({
 
       const finalUserTeams = Array.from(userTeamsMap.values());
       const finalOppTeams = Array.from(oppTeamsMap.values());
-      const combined = [...finalUserTeams, ...finalOppTeams];
+
+      // Deduplicate combined teams
+      const combinedMap = new Map();
+      finalUserTeams.forEach((t) => t.id && combinedMap.set(t.id, t));
+      finalOppTeams.forEach((t) => t.id && !combinedMap.has(t.id) && combinedMap.set(t.id, t));
+      const combined = Array.from(combinedMap.values());
 
       cachedTeams = combined;
 
@@ -189,13 +194,18 @@ export const prefetchTeams = async ({
           tTitle = tData.title || tData.name || "Tournament";
           cachedTournamentTitles[tournamentId] = tTitle;
           if (Array.isArray(tData.teams)) {
-            parsedTournamentTeams = tData.teams.map((t) => {
+            const seenTournamentIds = new Set();
+            parsedTournamentTeams = [];
+            tData.teams.forEach((t) => {
               const innerTeam =
                 t?.teamId && typeof t.teamId === "object"
                   ? { ...t.teamId, ...t }
                   : t?.team?.[0] || t;
               const normalized = normalizeTeam(innerTeam, false, uid);
-              const tId = normalized.id;
+              const tId = String(normalized.id || "");
+
+              if (tId && seenTournamentIds.has(tId)) return;
+              if (tId) seenTournamentIds.add(tId);
 
               // Cross-reference: if tournament team has 0 players, populate from My Teams / Opponents
               if (!normalized.players || normalized.players.length === 0) {
@@ -210,7 +220,7 @@ export const prefetchTeams = async ({
                   normalized.players = matched.players;
                 }
               }
-              return normalized;
+              parsedTournamentTeams.push(normalized);
             });
 
             cachedTournamentTeams[tournamentId] = parsedTournamentTeams;
@@ -507,7 +517,17 @@ export default function SelectTeamScreen() {
           (t.location || "").toLowerCase().includes(query)
       );
     }
-    return filtered;
+
+    // Deduplicate to guarantee no duplicate team keys
+    const seen = new Set();
+    return filtered.filter((t) => {
+      const id = String(t.id || t._id || t.teamId || "");
+      if (id) {
+        if (seen.has(id)) return false;
+        seen.add(id);
+      }
+      return true;
+    });
   };
 
   const getFilteredTournamentTeams = () => {
@@ -526,7 +546,16 @@ export default function SelectTeamScreen() {
           (t.location || "").toLowerCase().includes(query)
       );
     }
-    return list;
+
+    const seen = new Set();
+    return list.filter((t) => {
+      const id = String(t.id || t._id || t.teamId || "");
+      if (id) {
+        if (seen.has(id)) return false;
+        seen.add(id);
+      }
+      return true;
+    });
   };
 
   const getFilteredSearchResults = () => {
@@ -536,7 +565,16 @@ export default function SelectTeamScreen() {
         (t) => String(t.id || t._id || t.teamId) !== String(blockedTeamId)
       );
     }
-    return list;
+
+    const seen = new Set();
+    return list.filter((t) => {
+      const id = String(t.id || t._id || t.teamId || "");
+      if (id) {
+        if (seen.has(id)) return false;
+        seen.add(id);
+      }
+      return true;
+    });
   };
 
   const renderTabButton = (tabName, label, iconName) => (
@@ -759,7 +797,7 @@ const TeamList = ({
 
       <FlatList
         data={teams}
-        keyExtractor={(item, idx) => item?.id ? String(item.id) : `team_${idx}`}
+        keyExtractor={(item, idx) => (item?.id || item?._id) ? `${String(item.id || item._id)}_${idx}` : `team_${idx}`}
         ListFooterComponent={<View style={{ height: 20 }} />}
         refreshControl={
           onRefresh ? (
@@ -927,7 +965,7 @@ const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, 
       
       <FlatList
         data={teams}
-        keyExtractor={(item, idx) => item?.id ? String(item.id) : `search_team_${idx}`}
+        keyExtractor={(item, idx) => (item?.id || item?._id) ? `${String(item.id || item._id)}_${idx}` : `search_team_${idx}`}
         renderItem={({ item }) => (
           <TouchableOpacity
             onPress={() => onTeamSelect(item)}
