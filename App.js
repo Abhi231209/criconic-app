@@ -25,17 +25,19 @@ import { PersistGate } from "redux-persist/integration/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useEffect, useRef } from "react";
 import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from "@react-navigation/native";
+import { useSelector } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SocketProvider } from "./contexts/SocketContext";
+import { SocketProvider, useSocket } from "./contexts/SocketContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import useAppTheme from "./hooks/useAppTheme";
 import { BottomSheetProvider } from "./components/ui/custom/CustomBottomSheet";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { AlertProvider } from "./contexts/AlertContext";
+import { AlertProvider, showGlobalAlert } from "./contexts/AlertContext";
 import { initSessionCookie, authApi } from "./utils/api";
 import { login as loginAction } from "./redux/authSlice";
 import User from "./utils/User";
 import analytics from "./utils/analytics";
+import { registerForPushNotificationsAsync, unregisterPushNotifications } from "./utils/notifications";
 
 import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-reanimated";
 
@@ -45,10 +47,46 @@ configureReanimatedLogger({
   strict: false,
 });
 
+// Real-time in-app alert for whichever match/team events the server decides
+// this user should see (see server NotificationService) — the foreground
+// counterpart to the push notifications handled in utils/notifications.js,
+// which take over once the app is backgrounded. Rendered inside
+// SocketProvider (below) so useSocket() resolves to the real connection.
+function SocketNotificationListener() {
+  const { on, off } = useSocket();
+
+  useEffect(() => {
+    const handleNotification = (payload) => {
+      if (!payload?.title) return;
+      showGlobalAlert({
+        title: payload.title,
+        message: payload.body || "",
+        confirmText: "OK",
+      });
+    };
+    on("notification", handleNotification);
+    return () => off("notification", handleNotification);
+  }, [on, off]);
+
+  return null;
+}
+
 function AppContent() {
   const { isDark } = useAppTheme();
   const navigationRef = useNavigationContainerRef();
   const routeNameRef = useRef();
+  const isLoggedIn = useSelector((state) => state.auth.is_logged_in);
+
+  // Register (or re-register) this device for push once we have an
+  // authenticated session — covers both a fresh login and session restore
+  // on app start, since both dispatch the same redux auth state.
+  useEffect(() => {
+    if (isLoggedIn) {
+      registerForPushNotificationsAsync();
+    } else {
+      unregisterPushNotifications();
+    }
+  }, [isLoggedIn]);
 
   return (
     <NavigationContainer
@@ -77,6 +115,7 @@ function AppContent() {
       }}
     >
       <SocketProvider>
+        <SocketNotificationListener />
         <BottomSheetModalProvider>
           <BottomSheetProvider>
             <AlertProvider>
