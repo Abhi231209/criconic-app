@@ -299,7 +299,7 @@ export default function EditTeam() {
 
       <AppKeyboardAwareScrollView
         extraHeight={80}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
           {/* Logo Upload */}

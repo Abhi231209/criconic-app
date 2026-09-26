@@ -7,8 +7,9 @@ import {
   useColorScheme,
   Image,
   Share,
+  ScrollView,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -19,6 +20,7 @@ import { authApi, userApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 
 export default function MyQR({ navigation }) {
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -152,7 +154,16 @@ export default function MyQR({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 20,
+          paddingBottom: Math.max(insets.bottom + 20, 24),
+        }}
+        showsVerticalScrollIndicator={false}
+      >
         <View
           style={[
             styles.card,
@@ -279,7 +290,7 @@ export default function MyQR({ navigation }) {
             </ThemedText>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

@@ -8,7 +8,7 @@ import {
   Switch,
   Alert,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -61,6 +61,7 @@ export default function EditPlayerProfile() {
   const navigation = useNavigation();
   const route = useRoute();
   const dispatch = useDispatch();
+  const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const isDarkMode = isDark;
 
@@ -198,46 +199,48 @@ export default function EditPlayerProfile() {
   useEffect(() => {
     let isMounted = true;
     setLoadingTeams(true);
-    Promise.all([
-      teamsApi.getMyTeams({ errorAlert: false }).catch(() => null),
-      teamsApi.getAllTeams({ errorAlert: false }).catch(() => null),
-    ]).then(([myRes, allRes]) => {
-      if (!isMounted) return;
 
-      const extractTeams = (res) => {
-        if (!res) return [];
-        if (Array.isArray(res)) return res;
-        if (Array.isArray(res.data)) return res.data;
-        if (Array.isArray(res.data?.content?.teams)) return res.data.content.teams;
-        if (Array.isArray(res.data?.content)) return res.data.content;
-        if (Array.isArray(res.data?.teams)) return res.data.teams;
-        if (Array.isArray(res.data?.data?.teams)) return res.data.data.teams;
-        if (Array.isArray(res.data?.data)) return res.data.data;
-        return [];
-      };
+    const extractTeams = (res) => {
+      if (!res) return [];
+      if (Array.isArray(res)) return res;
+      if (Array.isArray(res.data)) return res.data;
+      if (Array.isArray(res.data?.content?.teams)) return res.data.content.teams;
+      if (Array.isArray(res.data?.content?.playerDetail?.teams)) return res.data.content.playerDetail.teams;
+      if (Array.isArray(res.data?.content)) return res.data.content;
+      if (Array.isArray(res.data?.teams)) return res.data.teams;
+      if (Array.isArray(res.data?.data?.teams)) return res.data.data.teams;
+      if (Array.isArray(res.data?.data)) return res.data.data;
+      return [];
+    };
 
-      const combined = [...extractTeams(myRes), ...extractTeams(allRes)];
-      const map = new Map();
-      combined.forEach((item) => {
-        const t =
-          item?.teamId && typeof item.teamId === "object"
-            ? item.teamId
-            : item?.team?.[0] || item;
-        const id = String(t?._id || t?.id || "");
-        const name = String(t?.title || t?.name || t?.teamName || "").trim();
-        if (name && !map.has(name.toLowerCase())) {
-          map.set(name.toLowerCase(), { label: name, value: name, teamId: id });
-        }
+    const targetUid = authUser?._id || authUser?.id || User.id;
+    teamsApi
+      .getMyTeams({ userId: targetUid, errorAlert: false })
+      .catch(() => null)
+      .then((myRes) => {
+        if (!isMounted) return;
+        const myTeams = extractTeams(myRes);
+        const map = new Map();
+        myTeams.forEach((item) => {
+          const t =
+            item?.team?.[0] ||
+            (item?.teamId && typeof item.teamId === "object" ? item.teamId : null) ||
+            item;
+          const id = String(t?._id || t?.id || t?.teamId || "");
+          const name = String(t?.title || t?.name || t?.teamName || "").trim();
+          if (name && !map.has(name.toLowerCase())) {
+            map.set(name.toLowerCase(), { label: name, value: name, teamId: id });
+          }
+        });
+
+        setTeamsList(Array.from(map.values()));
+        setLoadingTeams(false);
       });
-
-      setTeamsList(Array.from(map.values()));
-      setLoadingTeams(false);
-    });
 
     return () => {
       isMounted = false;
     };
-  }, [authUser?._id]);
+  }, [authUser?._id, authUser?.id]);
 
   const teamOptions = React.useMemo(() => {
     const options = [{ label: "None / Unassigned", value: "" }];
@@ -540,7 +543,7 @@ export default function EditPlayerProfile() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 + insets.bottom }}
       >
         {/* Profile Photo Section */}
         <View

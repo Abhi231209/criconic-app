@@ -2093,7 +2093,7 @@ export default function MatchScoreCard({
 
     return (
         <SafeAreaProvider>
-            <SafeAreaView style={containerStyle} edges={['top', 'right', 'left']}>
+            <SafeAreaView style={containerStyle} edges={['top', 'right', 'left', 'bottom']}>
 
 
 

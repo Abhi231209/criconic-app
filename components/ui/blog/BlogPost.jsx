@@ -63,7 +63,7 @@ export default function BlogPost() {
   return (
     <SafeAreaView
       style={[styles.safe, isDarkMode ? styles.bgDark : styles.bgLight]}
-      edges={["top"]}
+      edges={["top", "bottom", "left", "right"]}
     >
       <LinearGradient
         colors={isDarkMode ? ["#1F2937", "#111827"] : ["#3B82F6", "#1D4ED8"]}

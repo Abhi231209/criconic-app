@@ -13,7 +13,7 @@ import {
   Modal,
   Image,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -135,6 +135,7 @@ const swatchStyles = StyleSheet.create({
 
 // ===== MAIN SCREEN =====
 export default function GoLiveSetupScreen() {
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const isDark = isDarkMode;
@@ -1087,7 +1088,7 @@ export default function GoLiveSetupScreen() {
       {/* Main Content */}
       <ScrollView
         style={{ flex: 1, paddingHorizontal: 16, paddingTop: 14 }}
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {isLoading ? (
@@ -1107,7 +1108,16 @@ export default function GoLiveSetupScreen() {
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
-      <View style={[styles.bottomBar, { backgroundColor: C.card, borderTopColor: C.border }]}>
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: C.card,
+            borderTopColor: C.border,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={[styles.launchBtn, { backgroundColor: COLORS.live }]}
           onPress={handleLaunchLive}

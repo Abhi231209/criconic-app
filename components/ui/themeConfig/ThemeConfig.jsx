@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { request } from '@/utils/api';
 import { ChevronLeft, Check, Sparkles, Sliders } from 'lucide-react-native';
 import DesktopOverlayPreview, { THEME_STRIP_PREVIEWS } from './DesktopOverlayPreview';
@@ -141,6 +141,7 @@ const BUILT_IN_THEMES = [
 
 // ============ Main Component ============
 export default function ThemeConfig() {
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const navigation = useNavigation();
   const route = useRoute();
@@ -532,7 +533,7 @@ export default function ThemeConfig() {
       <ScrollView
         style={{ flex: 1, paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
       >
         {/* Sticky-Style Live 16:9 Broadcast Monitor Preview */}
         <DesktopOverlayPreview
@@ -577,7 +578,16 @@ export default function ThemeConfig() {
       </ScrollView>
 
       {/* Save Button Footer */}
-      <View style={[saveStyles.footer, { backgroundColor: C.bg, borderTopColor: C.border }]}>
+      <View
+        style={[
+          saveStyles.footer,
+          {
+            backgroundColor: C.bg,
+            borderTopColor: C.border,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={[
             saveStyles.saveBtn,

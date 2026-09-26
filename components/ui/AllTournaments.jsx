@@ -11,7 +11,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -22,6 +22,7 @@ import { tournamentsApi } from "@/utils/api";
 
 export default function AllTournaments() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -484,7 +485,7 @@ export default function AllTournaments() {
         data={filteredTournaments}
         keyExtractor={(item) => item.id}
         renderItem={renderTournamentCard}
-        contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 120 + insets.bottom }}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         ListFooterComponent={

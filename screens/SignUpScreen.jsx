@@ -3,7 +3,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   useColorScheme,
   Alert,
   ActivityIndicator,
@@ -11,6 +10,7 @@ import {
   ImageBackground,
   Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Eye,
   EyeOff,
@@ -386,7 +386,7 @@ export default function SignUpScreen() {
     <SafeAreaView className={`flex-1 ${isDarkMode ? "bg-gray-950" : "bg-slate-900"}`}>
       <AppKeyboardAwareScrollView
         extraHeight={80}
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Upper Hero Section */}

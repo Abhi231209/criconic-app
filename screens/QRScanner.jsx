@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   TouchableOpacity,
@@ -13,7 +13,7 @@ import {
   useColorScheme,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions, Camera } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -27,6 +27,7 @@ import analytics from "@/utils/analytics";
 
 export default function QRScanner({ navigation, route }) {
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const scanAreaSize = Math.min(windowWidth * 0.72, 280);
   const isDarkMode = colorScheme === "dark";
@@ -91,6 +92,14 @@ export default function QRScanner({ navigation, route }) {
   const [targetTournament, setTargetTournament] = useState(null);
   const [myTeams, setMyTeams] = useState([]);
   const [selectedTeamId, setSelectedTeamId] = useState(null);
+  const selectedTournamentTeam = useMemo(() => {
+    if (!selectedTeamId) return null;
+    return (
+      myTeams.find(
+        (t) => String(t._id || t.id || t.teamId) === String(selectedTeamId)
+      ) || null
+    );
+  }, [myTeams, selectedTeamId]);
   const [loadingTournament, setLoadingTournament] = useState(false);
   const [joiningTournament, setJoiningTournament] = useState(false);
 
@@ -106,13 +115,89 @@ export default function QRScanner({ navigation, route }) {
   const [loadingPlayer, setLoadingPlayer] = useState(false);
   const [addingPlayerToTeam, setAddingPlayerToTeam] = useState(false);
 
+  const normalizeTeams = (list) => {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const result = [];
+
+    for (const item of list) {
+      if (!item) continue;
+      const actual =
+        item?.team?.[0] ||
+        (item?.teamId && typeof item.teamId === "object" ? item.teamId : null) ||
+        item;
+      const id = String(
+        actual?._id || actual?.id || actual?.teamId || item?._id || item?.id || ""
+      );
+      const name = String(
+        actual?.title ||
+          actual?.name ||
+          actual?.teamName ||
+          item?.title ||
+          item?.name ||
+          item?.teamName ||
+          "Team"
+      ).trim();
+      const logo =
+        actual?.teamLogo ||
+        actual?.logo ||
+        actual?.image ||
+        item?.teamLogo ||
+        item?.logo ||
+        null;
+      const shortName =
+        actual?.shortName ||
+        item?.shortName ||
+        (name ? name.slice(0, 3).toUpperCase() : "TM");
+      const location = actual?.location || item?.location || "";
+
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        result.push({
+          ...actual,
+          _id: id,
+          id: id,
+          teamId: id,
+          title: name,
+          name: name,
+          teamName: name,
+          teamLogo: logo,
+          shortName: shortName,
+          location: location,
+        });
+      }
+    }
+    return result;
+  };
+
   const extractTeamsList = (teamsRes) => {
-    const raw =
-      teamsRes?.data?.content?.teams ||
-      teamsRes?.data?.teams ||
-      teamsRes?.data?.data?.teams ||
-      teamsRes?.data;
-    return Array.isArray(raw) ? raw : [];
+    if (!teamsRes) return [];
+    if (Array.isArray(teamsRes)) return normalizeTeams(teamsRes);
+
+    const raw = teamsRes?.data || teamsRes;
+    const content = raw?.content || raw;
+
+    const fromContentTeams = Array.isArray(content?.teams) ? content.teams : [];
+    const fromPlayerDetailTeams = Array.isArray(content?.playerDetail?.teams)
+      ? content.playerDetail.teams
+      : [];
+    const fromRawTeams = Array.isArray(raw?.teams) ? raw.teams : [];
+    const fromDataTeams = Array.isArray(raw?.data?.teams) ? raw.data.teams : [];
+    const fromData = Array.isArray(raw?.data) ? raw.data : [];
+    const fromContent = Array.isArray(content) ? content : [];
+    const fromRawArray = Array.isArray(raw) ? raw : [];
+
+    const combined = [
+      ...fromContentTeams,
+      ...fromPlayerDetailTeams,
+      ...fromRawTeams,
+      ...fromDataTeams,
+      ...fromData,
+      ...fromContent,
+      ...fromRawArray,
+    ];
+
+    return normalizeTeams(combined);
   };
 
   // Request permissions on mount
@@ -276,8 +361,25 @@ export default function QRScanner({ navigation, route }) {
       }
       setTargetPlayer(pData);
 
-      const teamsRes = await teamsApi.getMyTeams();
-      const loadedTeams = extractTeamsList(teamsRes);
+      let loadedTeams = [];
+      try {
+        const teamsRes = await teamsApi.getMyTeams({ userId: currentUserId });
+        loadedTeams = extractTeamsList(teamsRes);
+      } catch (_) {}
+
+      if (loadedTeams.length === 0 && currentUserId) {
+        try {
+          const directRes = await userApi.getProfile(currentUserId);
+          const pTeams =
+            directRes?.data?.data?.teams ||
+            directRes?.data?.user?.teams ||
+            directRes?.data?.teams;
+          if (Array.isArray(pTeams) && pTeams.length > 0) {
+            loadedTeams = extractTeamsList(pTeams);
+          }
+        } catch (_) {}
+      }
+
       setMyTeams(loadedTeams);
       if (preselectedTeamId) {
         setSelectedTeamId(preselectedTeamId);
@@ -369,11 +471,32 @@ export default function QRScanner({ navigation, route }) {
       setTargetTournament(tData || { _id: tournamentId, title: "Tournament" });
 
       // Fetch user's teams to allow selecting which team joins
-      const teamsRes = await teamsApi.getMyTeams();
-      const loadedTeams = extractTeamsList(teamsRes);
+      let loadedTeams = [];
+      try {
+        const teamsRes = await teamsApi.getMyTeams({ userId: currentUserId });
+        loadedTeams = extractTeamsList(teamsRes);
+      } catch (_) {}
+
+      if (loadedTeams.length === 0 && currentUserId) {
+        try {
+          const directRes = await userApi.getProfile(currentUserId);
+          const pTeams =
+            directRes?.data?.data?.teams ||
+            directRes?.data?.user?.teams ||
+            directRes?.data?.teams;
+          if (Array.isArray(pTeams) && pTeams.length > 0) {
+            loadedTeams = extractTeamsList(pTeams);
+          }
+        } catch (_) {}
+      }
+
       setMyTeams(loadedTeams);
-      if (loadedTeams.length > 0) {
+      if (preselectedTeamId) {
+        setSelectedTeamId(preselectedTeamId);
+      } else if (loadedTeams.length === 1) {
         setSelectedTeamId(loadedTeams[0]._id || loadedTeams[0].id);
+      } else {
+        setSelectedTeamId(null);
       }
     } catch (err) {
       console.warn("[QRScanner] Failed to fetch tournament details:", err);
@@ -559,7 +682,9 @@ export default function QRScanner({ navigation, route }) {
                 color={isDarkMode ? "#FFFFFF" : "#111827"}
               />
             </TouchableOpacity>
-            <ThemedText className="text-lg font-bold">QR Scanner</ThemedText>
+            <ThemedText className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              QR Scanner
+            </ThemedText>
             <View className="w-10" />
           </View>
 
@@ -567,7 +692,7 @@ export default function QRScanner({ navigation, route }) {
             <View className="w-24 h-24 rounded-full bg-blue-100 dark:bg-blue-900/30 items-center justify-center mb-6">
               <Ionicons name="camera-outline" size={48} color="#2563EB" />
             </View>
-            <ThemedText className="text-xl font-bold text-center mb-2">
+            <ThemedText className={`text-xl font-bold text-center mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
               Camera Access Required
             </ThemedText>
             <ThemedText
@@ -594,7 +719,7 @@ export default function QRScanner({ navigation, route }) {
                 isDarkMode ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-white"
               } mb-3`}
             >
-              <ThemedText className="font-semibold text-sm">
+              <ThemedText className={`font-semibold text-sm ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
                 Enter Code Manually
               </ThemedText>
             </TouchableOpacity>
@@ -644,7 +769,7 @@ export default function QRScanner({ navigation, route }) {
         </View>
 
         {/* Bottom mask */}
-        <View style={styles.maskBottom}>
+        <View style={[styles.maskBottom, { paddingBottom: Math.max(insets.bottom, 24) }]}>
           <ThemedText className="text-white text-center font-medium text-sm mt-4 px-6">
             Align QR code inside the frame to scan
           </ThemedText>
@@ -740,7 +865,8 @@ export default function QRScanner({ navigation, route }) {
           <View
             className={`rounded-t-3xl max-h-[85%] ${
               isDarkMode ? "bg-gray-800" : "bg-white"
-            } p-6 shadow-xl`}
+            } p-6 shadow-xl flex-col`}
+            style={{ paddingBottom: Math.max(insets.bottom, 24) }}
           >
             {/* Header */}
             <View className="flex-row items-center justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -749,7 +875,12 @@ export default function QRScanner({ navigation, route }) {
                   <Ionicons name="trophy-outline" size={22} color="#2563EB" />
                 </View>
                 <View className="flex-1">
-                  <ThemedText className="font-bold text-lg" numberOfLines={1}>
+                  <ThemedText
+                    className={`font-bold text-lg ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                    numberOfLines={1}
+                  >
                     Join Tournament
                   </ThemedText>
                   <ThemedText
@@ -777,174 +908,238 @@ export default function QRScanner({ navigation, route }) {
             {loadingTournament ? (
               <View className="py-16 items-center justify-center">
                 <ActivityIndicator size="large" color="#2563EB" />
-                <ThemedText className="mt-3 text-sm font-medium">
+                <ThemedText
+                  className={`mt-3 text-sm font-medium ${
+                    isDarkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
                   Loading tournament details...
                 </ThemedText>
               </View>
             ) : (
-              <ScrollView showsVerticalScrollIndicator={false} className="mt-4">
-                {/* Tournament Card */}
-                <View
-                  className={`p-4 rounded-2xl mb-5 flex-row items-center ${
-                    isDarkMode ? "bg-gray-700/60" : "bg-blue-50"
-                  }`}
+              <>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  className="mt-4 flex-1"
+                  contentContainerStyle={{ paddingBottom: 12 }}
                 >
-                  {targetTournament?.logoImage ? (
-                    <Image
-                      source={{ uri: getImageFullUrl(targetTournament.logoImage) }}
-                      className="w-14 h-14 rounded-full mr-3 bg-gray-200"
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View className="w-14 h-14 rounded-full bg-blue-600 items-center justify-center mr-3">
-                      <Ionicons name="trophy" size={24} color="#FFFFFF" />
-                    </View>
-                  )}
-                  <View className="flex-1">
-                    <ThemedText className="font-bold text-base" numberOfLines={1}>
-                      {targetTournament?.title || "Tournament"}
-                    </ThemedText>
-                    {targetTournament?.location && (
+                  {/* Tournament Card */}
+                  <View
+                    className={`p-4 rounded-2xl mb-5 flex-row items-center ${
+                      isDarkMode ? "bg-gray-700/60" : "bg-blue-50"
+                    }`}
+                  >
+                    {targetTournament?.logoImage ? (
+                      <Image
+                        source={{ uri: getImageFullUrl(targetTournament.logoImage) }}
+                        className="w-14 h-14 rounded-full mr-3 bg-gray-200"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View className="w-14 h-14 rounded-full bg-blue-600 items-center justify-center mr-3">
+                        <Ionicons name="trophy" size={24} color="#FFFFFF" />
+                      </View>
+                    )}
+                    <View className="flex-1">
                       <ThemedText
-                        className={`text-xs mt-0.5 ${
-                          isDarkMode ? "text-gray-300" : "text-gray-600"
+                        className={`font-bold text-base ${
+                          isDarkMode ? "text-white" : "text-gray-900"
                         }`}
                         numberOfLines={1}
                       >
-                        📍 {targetTournament.location}
+                        {targetTournament?.title || "Tournament"}
                       </ThemedText>
-                    )}
-                    {targetTournament?.date?.start && (
+                      {targetTournament?.location && (
+                        <ThemedText
+                          className={`text-xs mt-0.5 ${
+                            isDarkMode ? "text-gray-300" : "text-gray-600"
+                          }`}
+                          numberOfLines={1}
+                        >
+                          📍 {targetTournament.location}
+                        </ThemedText>
+                      )}
+                      {targetTournament?.date?.start && (
+                        <ThemedText
+                          className={`text-xs mt-0.5 ${
+                            isDarkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          📅 Start:{" "}
+                          {new Date(targetTournament.date.start).toLocaleDateString()}
+                        </ThemedText>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Team Selection List */}
+                  <ThemedText
+                    className={`text-sm font-bold mb-2 ${
+                      isDarkMode ? "text-gray-200" : "text-gray-800"
+                    }`}
+                  >
+                    Select Team to Register:
+                  </ThemedText>
+
+                  {myTeams.length === 0 ? (
+                    <View
+                      className={`py-6 items-center px-4 rounded-xl mb-4 ${
+                        isDarkMode ? "bg-gray-700/40" : "bg-gray-100"
+                      }`}
+                    >
+                      <Ionicons
+                        name="shirt-outline"
+                        size={32}
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
                       <ThemedText
-                        className={`text-xs mt-0.5 ${
+                        className={`font-semibold text-sm mt-2 text-center ${
+                          isDarkMode ? "text-white" : "text-gray-900"
+                        }`}
+                      >
+                        No Teams Found
+                      </ThemedText>
+                      <ThemedText
+                        className={`text-xs text-center mt-1 ${
                           isDarkMode ? "text-gray-400" : "text-gray-500"
                         }`}
                       >
-                        📅 Start:{" "}
-                        {new Date(targetTournament.date.start).toLocaleDateString()}
+                        You need to create a team before you can join tournaments.
                       </ThemedText>
-                    )}
-                  </View>
-                </View>
-
-                {/* Team Selection List */}
-                <ThemedText className="text-sm font-bold mb-2">
-                  Select Team to Register:
-                </ThemedText>
-
-                {myTeams.length === 0 ? (
-                  <View className="py-6 items-center px-4 bg-gray-100 dark:bg-gray-700/40 rounded-xl mb-4">
-                    <Ionicons
-                      name="shirt-outline"
-                      size={32}
-                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                    />
-                    <ThemedText className="font-semibold text-sm mt-2 text-center">
-                      No Teams Found
-                    </ThemedText>
-                    <ThemedText
-                      className={`text-xs text-center mt-1 ${
-                        isDarkMode ? "text-gray-400" : "text-gray-500"
-                      }`}
-                    >
-                      You need to create a team before you can join tournaments.
-                    </ThemedText>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setTournamentModalVisible(false);
-                        navigation.navigate(SCREENS.CreateTeam);
-                      }}
-                      className="mt-4 bg-blue-600 px-5 py-2 rounded-full"
-                    >
-                      <ThemedText className="text-white text-xs font-bold">
-                        Create a Team
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  myTeams.map((team) => {
-                    const isSelected = selectedTeamId === (team._id || team.id);
-                    return (
                       <TouchableOpacity
-                        key={team._id || team.id}
-                        onPress={() => setSelectedTeamId(team._id || team.id)}
-                        activeOpacity={0.8}
-                        className={`flex-row items-center p-3.5 rounded-xl mb-2 border ${
-                          isSelected
-                            ? "border-blue-600 bg-blue-50 dark:bg-blue-900/30"
-                            : isDarkMode
-                            ? "border-gray-700 bg-gray-750"
-                            : "border-gray-200 bg-white"
-                        }`}
+                        onPress={() => {
+                          setTournamentModalVisible(false);
+                          navigation.navigate(SCREENS.CreateTeam);
+                        }}
+                        className="mt-4 bg-blue-600 px-5 py-2 rounded-full"
                       >
-                        {team.teamLogo ? (
-                          <Image
-                            source={{ uri: getImageFullUrl(team.teamLogo) }}
-                            className="w-10 h-10 rounded-full mr-3 bg-gray-200"
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View className="w-10 h-10 rounded-full bg-blue-600 items-center justify-center mr-3">
-                            <ThemedText className="text-white font-bold text-sm">
-                              {(team.shortName || team.title || "TM")
-                                .slice(0, 2)
-                                .toUpperCase()}
-                            </ThemedText>
-                          </View>
-                        )}
-
-                        <View className="flex-1">
-                          <ThemedText className="font-semibold text-sm" numberOfLines={1}>
-                            {team.title || team.name}
-                          </ThemedText>
-                          {team.location && (
-                            <ThemedText
-                              className={`text-xs ${
-                                isDarkMode ? "text-gray-400" : "text-gray-500"
-                              }`}
-                            >
-                              {team.location}
-                            </ThemedText>
-                          )}
-                        </View>
-
-                        <View
-                          className={`w-6 h-6 rounded-full border items-center justify-center ${
+                        <ThemedText className="text-white text-xs font-bold">
+                          Create a Team
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    myTeams.map((team, idx) => {
+                      const tId = team._id || team.id || team.teamId;
+                      const isSelected = String(selectedTeamId) === String(tId);
+                      return (
+                        <TouchableOpacity
+                          key={String(tId || idx)}
+                          onPress={() => setSelectedTeamId(tId)}
+                          activeOpacity={0.8}
+                          className={`flex-row items-center p-3.5 rounded-xl mb-2 border ${
                             isSelected
-                              ? "border-blue-600 bg-blue-600"
+                              ? "border-blue-600 bg-blue-50 dark:bg-blue-900/30"
                               : isDarkMode
-                              ? "border-gray-600"
-                              : "border-gray-300"
+                              ? "border-gray-700 bg-gray-700/50"
+                              : "border-gray-200 bg-white"
                           }`}
                         >
-                          {isSelected && (
-                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                          {team.teamLogo ? (
+                            <Image
+                              source={{ uri: getImageFullUrl(team.teamLogo) }}
+                              className="w-10 h-10 rounded-full mr-3 bg-gray-200"
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View className="w-10 h-10 rounded-full bg-blue-600 items-center justify-center mr-3">
+                              <ThemedText className="text-white font-bold text-sm">
+                                {(team.shortName || team.title || "TM")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </ThemedText>
+                            </View>
                           )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
 
-                {/* Submit Action */}
-                {myTeams.length > 0 && (
-                  <TouchableOpacity
-                    onPress={handleConfirmJoinTournament}
-                    disabled={joiningTournament || !selectedTeamId}
-                    className={`py-3.5 rounded-xl items-center mt-4 mb-2 shadow-sm ${
-                      joiningTournament || !selectedTeamId ? "bg-blue-400" : "bg-blue-600"
-                    }`}
-                  >
-                    {joiningTournament ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <ThemedText className="text-white font-bold text-base">
-                        Register Team for Tournament
+                          <View className="flex-1">
+                            <ThemedText
+                              className={`font-semibold text-sm ${
+                                isSelected
+                                  ? isDarkMode
+                                    ? "text-blue-400 font-bold"
+                                    : "text-blue-700 font-bold"
+                                  : isDarkMode
+                                  ? "text-white"
+                                  : "text-gray-900"
+                              }`}
+                              numberOfLines={1}
+                            >
+                              {team.title || team.name || team.teamName || "Team"}
+                            </ThemedText>
+                            {team.location && (
+                              <ThemedText
+                                className={`text-xs ${
+                                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                                }`}
+                              >
+                                {team.location}
+                              </ThemedText>
+                            )}
+                          </View>
+
+                          <View
+                            className={`w-6 h-6 rounded-full border items-center justify-center ${
+                              isSelected
+                                ? "border-blue-600 bg-blue-600"
+                                : isDarkMode
+                                ? "border-gray-600"
+                                : "border-gray-300"
+                            }`}
+                          >
+                            {isSelected && (
+                              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                {/* Fixed CTA Action Button at Bottom */}
+                {selectedTeamId ? (
+                  <View className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <TouchableOpacity
+                      onPress={handleConfirmJoinTournament}
+                      disabled={joiningTournament}
+                      activeOpacity={0.85}
+                      className={`py-3.5 rounded-xl items-center shadow-md ${
+                        joiningTournament
+                          ? "bg-blue-400"
+                          : "bg-blue-600 active:bg-blue-700"
+                      }`}
+                    >
+                      {joiningTournament ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <ThemedText className="text-white font-bold text-base">
+                          {selectedTournamentTeam?.title
+                            ? `Join Tournament as ${selectedTournamentTeam.title}`
+                            : "Join Tournament"}
+                        </ThemedText>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : myTeams.length > 0 ? (
+                  <View className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <View
+                      className={`py-3 px-4 rounded-xl items-center border border-dashed ${
+                        isDarkMode
+                          ? "bg-gray-700/30 border-gray-600"
+                          : "bg-gray-50 border-gray-300"
+                      }`}
+                    >
+                      <ThemedText
+                        className={`text-xs font-semibold ${
+                          isDarkMode ? "text-gray-300" : "text-gray-600"
+                        }`}
+                      >
+                        👆 Select a team above to join the tournament
                       </ThemedText>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
+                    </View>
+                  </View>
+                ) : null}
+              </>
             )}
           </View>
         </View>
@@ -965,6 +1160,7 @@ export default function QRScanner({ navigation, route }) {
             className={`rounded-t-3xl max-h-[80%] ${
               isDarkMode ? "bg-gray-800" : "bg-white"
             } p-6 shadow-xl`}
+            style={{ paddingBottom: Math.max(insets.bottom, 24) }}
           >
             {/* Header */}
             <View className="flex-row items-center justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -973,7 +1169,12 @@ export default function QRScanner({ navigation, route }) {
                   <Ionicons name="shirt-outline" size={22} color="#2563EB" />
                 </View>
                 <View className="flex-1">
-                  <ThemedText className="font-bold text-lg" numberOfLines={1}>
+                  <ThemedText
+                    className={`font-bold text-lg ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                    numberOfLines={1}
+                  >
                     Join Team
                   </ThemedText>
                   <ThemedText
@@ -1001,7 +1202,11 @@ export default function QRScanner({ navigation, route }) {
             {loadingTeam ? (
               <View className="py-16 items-center justify-center">
                 <ActivityIndicator size="large" color="#2563EB" />
-                <ThemedText className="mt-3 text-sm font-medium">
+                <ThemedText
+                  className={`mt-3 text-sm font-medium ${
+                    isDarkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
                   Loading team details...
                 </ThemedText>
               </View>
@@ -1024,7 +1229,11 @@ export default function QRScanner({ navigation, route }) {
                       </ThemedText>
                     </View>
                   )}
-                  <ThemedText className="font-bold text-xl text-center">
+                  <ThemedText
+                    className={`font-bold text-xl text-center ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
                     {targetTeam?.title || targetTeam?.name || "Team"}
                   </ThemedText>
                   {targetTeam?.location && (
@@ -1050,7 +1259,11 @@ export default function QRScanner({ navigation, route }) {
                     </ThemedText>
                   </View>
                   <View className="flex-1">
-                    <ThemedText className="font-semibold text-sm">
+                    <ThemedText
+                      className={`font-semibold text-sm ${
+                        isDarkMode ? "text-white" : "text-gray-900"
+                      }`}
+                    >
                       {currentUserName}
                     </ThemedText>
                     <ThemedText
@@ -1100,6 +1313,7 @@ export default function QRScanner({ navigation, route }) {
             className={`rounded-t-3xl max-h-[85%] ${
               isDarkMode ? "bg-gray-800" : "bg-white"
             } p-6 shadow-xl`}
+            style={{ paddingBottom: Math.max(insets.bottom, 24) }}
           >
             {/* Header */}
             <View className="flex-row items-center justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -1108,7 +1322,12 @@ export default function QRScanner({ navigation, route }) {
                   <Ionicons name="person-outline" size={22} color="#2563EB" />
                 </View>
                 <View className="flex-1">
-                  <ThemedText className="font-bold text-lg" numberOfLines={1}>
+                  <ThemedText
+                    className={`font-bold text-lg ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                    numberOfLines={1}
+                  >
                     Player Found
                   </ThemedText>
                   <ThemedText
@@ -1136,7 +1355,11 @@ export default function QRScanner({ navigation, route }) {
             {loadingPlayer ? (
               <View className="py-16 items-center justify-center">
                 <ActivityIndicator size="large" color="#2563EB" />
-                <ThemedText className="mt-3 text-sm font-medium">
+                <ThemedText
+                  className={`mt-3 text-sm font-medium ${
+                    isDarkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
                   Loading player details...
                 </ThemedText>
               </View>
@@ -1168,7 +1391,12 @@ export default function QRScanner({ navigation, route }) {
                     </View>
                   )}
                   <View className="flex-1">
-                    <ThemedText className="font-bold text-base" numberOfLines={1}>
+                    <ThemedText
+                      className={`font-bold text-base ${
+                        isDarkMode ? "text-white" : "text-gray-900"
+                      }`}
+                      numberOfLines={1}
+                    >
                       {targetPlayer?.username || targetPlayer?.name || "Player"}
                     </ThemedText>
                     {targetPlayer?.sharingCode && (
@@ -1196,28 +1424,43 @@ export default function QRScanner({ navigation, route }) {
                 {/* Team Selection if user has teams */}
                 {myTeams.length > 0 && (
                   <>
-                    <ThemedText className="text-sm font-bold mb-2">
+                    <ThemedText
+                      className={`text-sm font-bold mb-2 ${
+                        isDarkMode ? "text-gray-200" : "text-gray-800"
+                      }`}
+                    >
                       Add Player to Team:
                     </ThemedText>
-                    {myTeams.map((team) => {
-                      const tId = team._id || team.id;
+                    {myTeams.map((team, idx) => {
+                      const tId = team._id || team.id || team.teamId;
                       const isSelected = String(selectedTeamId) === String(tId);
                       return (
                         <TouchableOpacity
-                          key={tId}
+                          key={String(tId || idx)}
                           onPress={() => setSelectedTeamId(tId)}
                           activeOpacity={0.8}
                           className={`flex-row items-center p-3 rounded-xl mb-2 border ${
                             isSelected
                               ? "border-blue-600 bg-blue-50 dark:bg-blue-900/30"
                               : isDarkMode
-                              ? "border-gray-700 bg-gray-750"
+                              ? "border-gray-700 bg-gray-700/50"
                               : "border-gray-200 bg-white"
                           }`}
                         >
                           <View className="flex-1">
-                            <ThemedText className="font-semibold text-sm" numberOfLines={1}>
-                              {team.title || team.name}
+                            <ThemedText
+                              className={`font-semibold text-sm ${
+                                isSelected
+                                  ? isDarkMode
+                                    ? "text-blue-400 font-bold"
+                                    : "text-blue-700 font-bold"
+                                  : isDarkMode
+                                  ? "text-white"
+                                  : "text-gray-900"
+                              }`}
+                              numberOfLines={1}
+                            >
+                              {team.title || team.name || team.teamName || "Team"}
                             </ThemedText>
                           </View>
                           <View
@@ -1275,7 +1518,11 @@ export default function QRScanner({ navigation, route }) {
                       : "border-gray-300 bg-gray-100"
                   }`}
                 >
-                  <ThemedText className="font-bold text-sm">
+                  <ThemedText
+                    className={`font-bold text-sm ${
+                      isDarkMode ? "text-white" : "text-gray-800"
+                    }`}
+                  >
                     View Player Profile
                   </ThemedText>
                 </TouchableOpacity>
@@ -1298,7 +1545,11 @@ export default function QRScanner({ navigation, route }) {
               isDarkMode ? "bg-gray-800" : "bg-white"
             }`}
           >
-            <ThemedText className="text-lg font-bold mb-2">
+            <ThemedText
+              className={`text-lg font-bold mb-2 ${
+                isDarkMode ? "text-white" : "text-gray-900"
+              }`}
+            >
               Enter Code Manually
             </ThemedText>
             <ThemedText
@@ -1327,7 +1578,13 @@ export default function QRScanner({ navigation, route }) {
                   isDarkMode ? "bg-gray-700" : "bg-gray-200"
                 }`}
               >
-                <ThemedText className="font-semibold text-sm">Cancel</ThemedText>
+                <ThemedText
+                  className={`font-semibold text-sm ${
+                    isDarkMode ? "text-gray-200" : "text-gray-700"
+                  }`}
+                >
+                  Cancel
+                </ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleManualCodeSubmit}

@@ -390,13 +390,16 @@ export const teamsApi = {
   getMyTeams: (options = {}) => {
     const state = store?.getState?.();
     const uid =
+      options?.userId ||
       state?.auth?.user?._id ||
       state?.auth?.user?.id ||
       state?.auth?.user?.userId ||
+      state?.auth?.user?.user?._id ||
+      state?.auth?.user?.user?.id ||
       User.id ||
       User.user?._id ||
       User.user?.id;
-    const role = state?.auth?.user?.role ?? User.role;
+    const role = state?.auth?.user?.role ?? state?.auth?.user?.user?.role ?? User.role;
     const isUserAdmin = role === 1 || role === 2 || (typeof User.isAdmin === 'function' && User.isAdmin());
     const endpoint = uid
       ? `api/users/withTeam/${uid}?isAdmin=${isUserAdmin ? 1 : 0}`

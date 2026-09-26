@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   DeviceEventEmitter,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -26,6 +26,7 @@ import User from "@/utils/User";
 export default function MyCricket({ route: propRoute }) {
   const navigation = useNavigation();
   const route = propRoute || useRoute();
+  const insets = useSafeAreaInsets();
   const authUser = useSelector((state) => state.auth?.user);
   const userId = User.id || authUser?._id || authUser?.id;
   const isAdmin = Boolean(
@@ -418,7 +419,7 @@ export default function MyCricket({ route: propRoute }) {
       }
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ paddingBottom: 110 }}
+      contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={5}
@@ -447,7 +448,7 @@ export default function MyCricket({ route: propRoute }) {
     <ScrollView
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 110 }}
+      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -624,7 +625,7 @@ export default function MyCricket({ route: propRoute }) {
     <ScrollView
       showsVerticalScrollIndicator={false}
       className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 110 }}
+      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}

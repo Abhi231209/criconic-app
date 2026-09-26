@@ -10,7 +10,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -49,6 +49,7 @@ export default function CompleteProfileScreen() {
   const dispatch = useDispatch();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
+  const insets = useSafeAreaInsets();
 
   const authUser = useSelector((state) => state.auth?.user);
   const routeUser = route.params?.user;
@@ -264,7 +265,7 @@ export default function CompleteProfileScreen() {
         className="flex-1"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 110 + insets.bottom }}
       >
         <Animated.View
           style={{
@@ -656,6 +657,7 @@ export default function CompleteProfileScreen() {
         style={{
           backgroundColor: isDark ? "#111827" : "#FFFFFF",
           borderTopColor: isDark ? "#1F2937" : "#E5E7EB",
+          paddingBottom: Math.max(insets.bottom, 16),
         }}
       >
         <TouchableOpacity
