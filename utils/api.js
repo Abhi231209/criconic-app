@@ -576,25 +576,56 @@ export const userApi = {
 };
 
 export const rankingsApi = {
+  getScopes: () =>
+    request("api/rankings/scopes", { method: "GET", errorAlert: false }),
+  getRankings: (params = {}, typeFallback = "batting", options = {}) => {
+    let queryObj = {};
+    if (typeof params === "object" && params !== null) {
+      queryObj = { ...params, ...options };
+    } else {
+      queryObj = { region: params, type: typeFallback, ...options };
+    }
+    const query = new URLSearchParams();
+    Object.entries(queryObj).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        query.append(key, val);
+      }
+    });
+    const queryString = query.toString();
+    console.log("[rankingsApi.getRankings] Query String:", queryString);
+    return request(`api/rankings${queryString ? `?${queryString}` : ""}`, {
+      method: "GET",
+      errorAlert: false,
+    });
+  },
+  getPlayerRankings: (playerId, params = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        query.append(key, val);
+      }
+    });
+    const queryString = query.toString();
+    return request(
+      `api/rankings/players/${playerId}${queryString ? `?${queryString}` : ""}`,
+      { method: "GET", errorAlert: false }
+    );
+  },
+  getPlayerHistory: (playerId, params = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        query.append(key, val);
+      }
+    });
+    const queryString = query.toString();
+    return request(
+      `api/rankings/players/${playerId}/history${queryString ? `?${queryString}` : ""}`,
+      { method: "GET", errorAlert: false }
+    );
+  },
   getRegions: () =>
     request("api/rankings/regions", { method: "GET", errorAlert: false }),
-  getRankings: (filter, type = "overall", options = {}) => {
-    let queryParts = [];
-    if (typeof filter === "object" && filter !== null) {
-      if (filter.country) queryParts.push(`country=${encodeURIComponent(filter.country)}`);
-      if (filter.state) queryParts.push(`state=${encodeURIComponent(filter.state)}`);
-      if (filter.district) queryParts.push(`district=${encodeURIComponent(filter.district)}`);
-      if (filter.region) queryParts.push(`region=${encodeURIComponent(filter.region)}`);
-      const page = filter.page || options.page || 1;
-      const limit = filter.limit || options.limit || 30;
-      const resolvedType = filter.type || type || "overall";
-      queryParts.push(`type=${resolvedType}&page=${page}&limit=${limit}`);
-    } else {
-      const regionStr = filter || "";
-      queryParts.push(`region=${encodeURIComponent(regionStr)}&type=${type}&page=${options.page || 1}&limit=${options.limit || 30}`);
-    }
-    return request(`api/rankings?${queryParts.join("&")}`, { method: "GET", errorAlert: false });
-  },
 };
 
 export default request;

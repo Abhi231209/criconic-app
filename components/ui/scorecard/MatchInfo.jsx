@@ -460,6 +460,17 @@ export default function MatchInfo({
       label: 'Venue',
       value: score?.address,
     },
+    score?.pitchType && {
+      icon: <MaterialCommunityIcons name="stadium-variant" size={20} color="#0ea5e9" />,
+      label: 'Pitch Type',
+      value: {
+        turf: "Turf / Grass",
+        cement: "Cement",
+        matting: "Matting",
+        astroturf: "AstroTurf",
+        mud_rough: "Rough / Soil",
+      }[score.pitchType] || capitalizeFirstWord(String(score.pitchType).replace(/_/g, ' ')),
+    },
     score?.ballType && {
       icon: <Ionicons name="baseball" size={20} color="#f97316" />,
       label: 'Ball Type',

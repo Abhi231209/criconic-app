@@ -49,6 +49,7 @@ export default function MatchDetailsScreen() {
   const [matchDetails, setMatchDetails] = useState({
     matchType: "limited",
     ballType: "tennis",
+    pitchType: "",
     date: new Date(),
     overs: 20,
     powerplay: 6,
@@ -98,6 +99,7 @@ export default function MatchDetailsScreen() {
             if (m.totalOvers) handleInputChange("overs", m.totalOvers);
             if (m.type) handleInputChange("matchType", m.type);
             if (m.ballType) handleInputChange("ballType", m.ballType);
+            if (m.pitchType) handleInputChange("pitchType", m.pitchType);
             if (m.location || m.address) handleInputChange("location", m.location || m.address);
             if (m.locationId) handleInputChange("locationId", m.locationId);
             if (m.powerplayOvers) handleInputChange("powerplay", m.powerplayOvers);
@@ -336,6 +338,7 @@ export default function MatchDetailsScreen() {
       const updatePayload = {
         type: matchDetails.matchType,
         ballType: matchDetails.ballType,
+        pitchType: matchDetails.pitchType,
         totalOvers: Number(matchDetails.overs),
         startDate,
         powerplayOvers: Number(matchDetails.powerplay || 0),
@@ -404,7 +407,11 @@ export default function MatchDetailsScreen() {
           },
         ];
 
-        const dataToSend = { teams };
+        const dataToSend = {
+          teams,
+          pitchType: matchDetails.pitchType,
+          ballType: matchDetails.ballType,
+        };
         if (route.params?.tournamentId || route.params?.tournamentID) {
           dataToSend.tournamentID =
             route.params?.tournamentId || route.params?.tournamentID;
@@ -584,6 +591,28 @@ export default function MatchDetailsScreen() {
     </TouchableOpacity>
   );
 
+  const renderPitchTypeOption = (value, label, isSelected) => (
+    <TouchableOpacity
+      key={value}
+      onPress={() => handleInputChange("pitchType", value)}
+      className={`p-3 rounded-lg mx-1 items-center justify-center ${
+        isSelected
+          ? "bg-blue-500 border-blue-600"
+          : isDarkMode
+          ? "bg-gray-800 border-gray-700"
+          : "bg-white border-gray-200"
+      } border-2`}
+    >
+      <ThemedText
+        className={`font-medium ${
+          isSelected ? "text-white" : "text-gray-900 dark:text-white"
+        }`}
+      >
+        {label}
+      </ThemedText>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView
       className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
@@ -664,8 +693,21 @@ export default function MatchDetailsScreen() {
             <View className="flex-row flex-wrap">
               {renderBallTypeOption("tennis", "Tennis Ball", matchDetails.ballType === "tennis")}
               {renderBallTypeOption("leather", "Leather Ball", matchDetails.ballType === "leather")}
-              {renderBallTypeOption("plastic", "Plastic Ball", matchDetails.ballType === "plastic")}
             </View>
+          </View>
+
+          {/* Pitch Type Selection */}
+          <View className="mb-6">
+            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+              Pitch Type
+            </ThemedText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+              {renderPitchTypeOption("turf", "Turf / Grass", matchDetails.pitchType === "turf")}
+              {renderPitchTypeOption("cement", "Cement", matchDetails.pitchType === "cement")}
+              {renderPitchTypeOption("matting", "Matting", matchDetails.pitchType === "matting")}
+              {renderPitchTypeOption("astroturf", "AstroTurf", matchDetails.pitchType === "astroturf")}
+              {renderPitchTypeOption("mud_rough", "Rough / Soil", matchDetails.pitchType === "mud_rough")}
+            </ScrollView>
           </View>
 
           {/* Date Selection */}

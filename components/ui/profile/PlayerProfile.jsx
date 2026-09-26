@@ -13,11 +13,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
 import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
-import request, { matchesApi, userApi } from "@/utils/api";
+import request, { matchesApi, userApi, rankingsApi } from "@/utils/api";
 import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
 import { toShortBattingStyle, toShortBowlingStyle } from "@/utils";
 
@@ -64,6 +65,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const authUser = useSelector((state) => state?.auth?.user);
   const [fetchedPlayer, setFetchedPlayer] = useState(null);
   const [userStats, setUserStats] = useState(null);
+
+  // Rankings Standings state
+  const [playerRankings, setPlayerRankings] = useState(null);
+  const [loadingRankings, setLoadingRankings] = useState(false);
+  const [standingDiscipline, setStandingDiscipline] = useState("batting"); // "batting" | "bowling" | "allRounder"
 
   // Matches pagination state
   const [playerMatches, setPlayerMatches] = useState([]);
@@ -218,10 +224,26 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     }
   }, [targetId, routePlayerId, authUser?._id, authUser?.id]);
 
+  const fetchPlayerRankings = useCallback(async () => {
+    if (!targetId || String(targetId) === "1") return;
+    setLoadingRankings(true);
+    try {
+      const res = await rankingsApi.getPlayerRankings(targetId);
+      if (res?.data?.success || res?.data?.rankings) {
+        setPlayerRankings(res.data);
+      }
+    } catch (err) {
+      console.log("[PlayerProfile] Rankings fetch error:", err);
+    } finally {
+      setLoadingRankings(false);
+    }
+  }, [targetId]);
+
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
-    }, [fetchProfile])
+      fetchPlayerRankings();
+    }, [fetchProfile, fetchPlayerRankings])
   );
 
   const MATCHES_PER_PAGE = 10;
@@ -452,6 +474,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     if (!targetId || String(targetId) === "1") return;
 
     fetchProfile();
+    fetchPlayerRankings();
 
     // Initial page 1 fetch for matches and teams
     setMatchesPage(1);
@@ -716,8 +739,8 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   ];
 
   const statsTabs = [
-    { value: "batting", label: "Batting", icon: "baseball-outline" },
-    { value: "bowling", label: "Bowling", icon: "baseball-outline" },
+    { value: "batting", label: "Batting", icon: "cricket", iconType: "material" },
+    { value: "bowling", label: "Bowling", icon: "baseball-outline", iconType: "ion" },
   ];
 
   const ballTypeTabs = [
@@ -777,7 +800,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     </TouchableOpacity>
   );
 
-  const StatsTabButton = ({ title, tabName, icon }) => (
+  const StatsTabButton = ({ title, tabName, icon, iconType }) => (
     <TouchableOpacity
       onPress={() => switchStatsTab(tabName)}
       className={`flex-row items-center px-4 py-3 rounded-lg mx-1 ${
@@ -786,14 +809,25 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           : isDarkMode ? "bg-gray-700" : "bg-gray-200"
       }`}
     >
-      <Ionicons
-        name={icon}
-        size={16}
-        color={
-          activeStatsTab === tabName ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
-        }
-        style={{ marginRight: 6 }}
-      />
+      {iconType === "material" ? (
+        <MaterialCommunityIcons
+          name={icon}
+          size={16}
+          color={
+            activeStatsTab === tabName ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
+          }
+          style={{ marginRight: 6 }}
+        />
+      ) : (
+        <Ionicons
+          name={icon}
+          size={16}
+          color={
+            activeStatsTab === tabName ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
+          }
+          style={{ marginRight: 6 }}
+        />
+      )}
       <ThemedText
         className={`font-medium ${
           activeStatsTab === tabName
@@ -855,6 +889,16 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       className="flex-1" 
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={loadingRankings}
+          onRefresh={() => {
+            fetchProfile();
+            fetchPlayerRankings();
+          }}
+          tintColor={isDarkMode ? "#FFFFFF" : "#3B82F6"}
+        />
+      }
     >
       {/* Player Info Card */}
       <View
@@ -947,33 +991,246 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         </View>
       </View>
 
-      {/* Local Rankings CTA */}
-      <TouchableOpacity
-        onPress={() =>
-          navigation.navigate(SCREENS.PlayerRankings, {
-            initialRegion: teams?.[0]?.location || undefined,
-          })
-        }
-        activeOpacity={0.8}
-        className={`flex-row items-center p-4 rounded-xl mb-4 ${
-          isDarkMode ? "bg-blue-900/30" : "bg-blue-50"
-        }`}
-      >
-        <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3">
-          <Ionicons name="podium-outline" size={20} color="#3B82F6" />
-        </View>
-        <View className="flex-1">
-          <ThemedText className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            See your local ranking
-          </ThemedText>
-          <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {teams?.[0]?.location
-              ? `How you rank among players in ${teams[0].location}`
-              : "How you rank among players in your area"}
-          </ThemedText>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
-      </TouchableOpacity>
+      {/* Rankings Standing Card */}
+      {(() => {
+        const discData = playerRankings?.rankings?.[standingDiscipline];
+        const scopes = discData?.scopes || [];
+        const parsedLoc = (() => {
+          const locStr = resolvedLocation || target?.city || target?.location || "";
+          if (!locStr) return {};
+          const parts = locStr.split(",").map((p) => p.trim());
+          if (parts.length >= 2) {
+            return { district: parts[0], state: parts[1], country: parts[2] || "India" };
+          }
+          return { district: parts[0], state: "Haryana", country: "India" };
+        })();
+
+        const hierarchy =
+          playerRankings?.player?.locationHierarchy ||
+          target?.locationHierarchy ||
+          parsedLoc ||
+          {};
+
+        const tiers = [
+          {
+            key: "district",
+            label: "District",
+            emoji: "🏙️",
+            defaultName: hierarchy.district || "Hisar",
+          },
+          {
+            key: "state",
+            label: "State",
+            emoji: "🗺️",
+            defaultName: hierarchy.state || "Haryana",
+          },
+          {
+            key: "country",
+            label: "Country",
+            emoji: "🇮🇳",
+            defaultName: hierarchy.country || "India",
+          },
+        ].map((t) => {
+          const matched = scopes.find(
+            (s) => s.scopeType?.toLowerCase() === t.key.toLowerCase()
+          );
+          return {
+            ...t,
+            name: matched?.scopeId || t.defaultName,
+            rank: matched?.rank,
+            rankDelta: matched?.rankDelta,
+            rating: matched?.rating,
+            score: matched?.score,
+            eligibilityStatus: matched?.eligibilityStatus,
+          };
+        });
+
+        const activeRating = discData?.rating || 0;
+
+        return (
+          <View
+            className={`p-4 rounded-xl mb-4 ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            } shadow-sm border ${
+              isDarkMode ? "border-gray-700" : "border-gray-200"
+            }`}
+          >
+            {/* Header */}
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center">
+                <View className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/40 items-center justify-center mr-2.5">
+                  <ThemedText style={{ fontSize: 18 }}>🏆</ThemedText>
+                </View>
+                <View>
+                  <ThemedText
+                    className={`text-base font-bold ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
+                    Rankings & Standings
+                  </ThemedText>
+                  <ThemedText
+                    className={`text-[11px] ${
+                      isDarkMode ? "text-gray-400" : "text-gray-500"
+                    }`}
+                  >
+                    Leaderboard ranks across scopes
+                  </ThemedText>
+                </View>
+              </View>
+
+              {activeRating > 0 && (
+                <View className="px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
+                  <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                    {activeRating} pts
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+
+            {/* Discipline Selector: Batting, Bowling, All-Rounder */}
+            <View
+              className={`flex-row p-1 rounded-lg mb-3 ${
+                isDarkMode ? "bg-gray-900" : "bg-gray-100"
+              }`}
+            >
+              {[
+                { value: "batting", label: "Batting 🏏" },
+                { value: "bowling", label: "Bowling ⚾" },
+                { value: "allRounder", label: "All-Rounder ⚡" },
+              ].map((tab) => {
+                const isSelected = standingDiscipline === tab.value;
+                return (
+                  <TouchableOpacity
+                    key={tab.value}
+                    onPress={() => setStandingDiscipline(tab.value)}
+                    activeOpacity={0.8}
+                    className={`flex-1 py-1.5 rounded-md items-center justify-center ${
+                      isSelected
+                        ? isDarkMode
+                          ? "bg-blue-600"
+                          : "bg-white shadow-sm"
+                        : "bg-transparent"
+                    }`}
+                  >
+                    <ThemedText
+                      className={`text-xs font-semibold ${
+                        isSelected
+                          ? isDarkMode
+                            ? "text-white"
+                            : "text-blue-600"
+                          : isDarkMode
+                          ? "text-gray-400"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {tab.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Scopes Grid */}
+            {loadingRankings && !playerRankings ? (
+              <View className="py-6 items-center justify-center">
+                <ActivityIndicator size="small" color="#3B82F6" />
+              </View>
+            ) : (
+              <View className="flex-row justify-between">
+                {tiers.map((tier) => (
+                  <TouchableOpacity
+                    key={tier.key}
+                    activeOpacity={0.75}
+                    onPress={() =>
+                      navigation.navigate(SCREENS.PlayerRankings, {
+                        initialRegion: tier.name,
+                        discipline: standingDiscipline,
+                        scope: tier.key,
+                      })
+                    }
+                    className={`w-[31.5%] p-2.5 rounded-xl mb-2 border ${
+                      isDarkMode
+                        ? "bg-gray-900/60 border-gray-700"
+                        : "bg-gray-50 border-gray-200"
+                    }`}
+                  >
+                    <View className="flex-row items-center justify-between mb-1">
+                      <ThemedText className="text-base">{tier.emoji}</ThemedText>
+                      {tier.rankDelta !== undefined && (
+                        <ThemedText
+                          className={`text-[10px] font-bold ${
+                            tier.rankDelta > 0
+                              ? "text-emerald-500"
+                              : tier.rankDelta < 0
+                              ? "text-rose-500"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {tier.rankDelta > 0
+                            ? `▲ ${tier.rankDelta}`
+                            : tier.rankDelta < 0
+                            ? `▼ ${Math.abs(tier.rankDelta)}`
+                            : "–"}
+                        </ThemedText>
+                      )}
+                    </View>
+
+                    <ThemedText
+                      numberOfLines={1}
+                      className={`text-[11px] font-medium ${
+                        isDarkMode ? "text-gray-400" : "text-gray-600"
+                      }`}
+                    >
+                      {tier.label} ({tier.name})
+                    </ThemedText>
+
+                    <View className="flex-row items-baseline mt-1">
+                      <ThemedText
+                        className={`text-xl font-extrabold ${
+                          tier.rank
+                            ? isDarkMode
+                              ? "text-white"
+                              : "text-gray-900"
+                            : isDarkMode
+                            ? "text-gray-500"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {tier.rank ? `#${tier.rank}` : "–"}
+                      </ThemedText>
+                      {tier.eligibilityStatus === "PROVISIONAL" && (
+                        <ThemedText className="ml-1 text-[9px] font-bold text-amber-500">
+                          PROV
+                        </ThemedText>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Bottom Link to PlayerRankings */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() =>
+                navigation.navigate(SCREENS.PlayerRankings, {
+                  initialRegion:
+                    hierarchy.district ||
+                    resolvedLocation,
+                  discipline: standingDiscipline,
+                })
+              }
+              className="flex-row items-center justify-between pt-2.5 mt-1 border-t border-gray-200 dark:border-gray-700"
+            >
+              <ThemedText className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                Explore Full Leaderboards & History
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={14} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {/* Career Summary */}
       <View
@@ -1063,6 +1320,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             title={tab.label}
             tabName={tab.value}
             icon={tab.icon}
+            iconType={tab.iconType}
           />
         ))}
       </View>
@@ -1080,7 +1338,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           >
             <View className="flex-row items-center mb-4">
               <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3">
-                <Ionicons name="baseball-outline" size={20} color="#3B82F6" />
+                <MaterialCommunityIcons name="cricket" size={20} color="#3B82F6" />
               </View>
               <ThemedText
                 className={`text-xl font-bold ${
