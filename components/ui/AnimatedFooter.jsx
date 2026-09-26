@@ -29,7 +29,7 @@ import {
   ArrowRight,
   Activity,
 } from "lucide-react-native";
-import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import SCREENS from "@/screens";
 import { useNavigation } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
@@ -40,7 +40,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import CurrentUser from "@/utils/User";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import analytics from "@/utils/analytics";
-import { tournamentsApi } from "@/utils/api";
+import { request, tournamentsApi, teamsApi } from "@/utils/api";
 
 const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
   const itemAnimation = useRef(new Animated.Value(0)).current;
@@ -369,7 +369,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
         style={[styles.tabItem, isCreate && styles.createTabItem]}
         activeOpacity={0.7}
       >
-        <Center>
+        <Center style={styles.tabCenter}>
           {isCreate ? (
             <Animated.View
               style={[
@@ -392,8 +392,6 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
           {!isCreate && (
             <Text
               numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}
               style={[
                 styles.tabLabel,
                 {
@@ -615,6 +613,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
           height={totalFooterHeight}
           viewBox={`0 0 ${width} ${totalFooterHeight}`}
           style={styles.footerSvg}
+          pointerEvents="none"
         >
           <Path
             d={createFooterPath()}
@@ -655,11 +654,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 1,
-  },
-  footerSvg: {
-    position: "absolute",
-    bottom: 0,
+    zIndex: 10,
+    elevation: 10,
+    overflow: "visible",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -667,32 +664,48 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 10,
+  },
+  footerSvg: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+    elevation: 0,
   },
   footerContent: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 20,
+    elevation: 12,
+    overflow: "visible",
   },
   footerItemsContainer: {
     flex: 1,
+    flexDirection: "row",
     paddingHorizontal: 16,
-    paddingBottom: 8,
-    alignItems: "flex-end",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
   // Tab Items
   tabItem: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "flex-end",
-    paddingVertical: 8,
+    justifyContent: "center",
     height: "100%",
+    overflow: "visible",
   },
   createTabItem: {
+    alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 35,
+  },
+  tabCenter: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
   },
   regularTab: {
     alignItems: "center",
@@ -701,12 +714,13 @@ const styles = StyleSheet.create({
   },
   createButton: {
     position: "relative",
-    bottom: 25,
+    bottom: 18,
     width: 56,
     height: 56,
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -718,6 +732,7 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 11,
     marginTop: 2,
+    textAlign: "center",
   },
 
   // Overlay

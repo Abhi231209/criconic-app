@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -163,33 +163,38 @@ export default function SelectSquadScreen() {
     Array.isArray(team?.players) ? team.players : []
   );
 
+  const fetchTeamSquad = useCallback(async (teamId) => {
+    if (!teamId) return;
+    try {
+      const res = await teamsApi.getTeamById(teamId);
+      const fetchedTeam = Array.isArray(res?.data)
+        ? res.data[0]
+        : (res?.data?.data || res?.data?.team || res?.data);
+      const players = fetchedTeam?.players;
+      if (Array.isArray(players) && players.length > 0) {
+        setTeamSquad(players);
+        setSelectedPlayers(
+          players.map((p, idx) => {
+            const rawId = p?.id?._id || p?.id || p?._id;
+            const idStr =
+              rawId && typeof rawId === "object"
+                ? String(rawId._id || rawId.id || "")
+                : String(rawId || "");
+            return idStr || `p_${idx}`;
+          })
+        );
+      }
+    } catch (err) {
+      console.warn("[SelectSquadScreen] Error fetching team players:", err);
+    }
+  }, []);
+
   useEffect(() => {
     const teamId = team?._id || team?.id || team?.teamId;
     if (teamId) {
-      teamsApi
-        .getTeamById(teamId)
-        .then((res) => {
-          const fetchedTeam = res?.data?.[0] || res?.data;
-          const players = fetchedTeam?.players;
-          if (Array.isArray(players) && players.length > 0) {
-            setTeamSquad(players);
-            setSelectedPlayers(
-              players.map((p, idx) => {
-                const rawId = p?.id?._id || p?.id || p?._id;
-                const idStr =
-                  rawId && typeof rawId === "object"
-                    ? String(rawId._id || rawId.id || "")
-                    : String(rawId || "");
-                return idStr || `p_${idx}`;
-              })
-            );
-          }
-        })
-        .catch((err) =>
-          console.warn("[SelectSquadScreen] Error fetching team players:", err)
-        );
+      fetchTeamSquad(teamId);
     }
-  }, [team?._id, team?.id, team?.teamId]);
+  }, [team?._id, team?.id, team?.teamId, fetchTeamSquad]);
 
   const playersWithImages = teamSquad.map((player, idx) => {
     const rawId = player?.id?._id || player?.id || player?._id;
@@ -363,15 +368,31 @@ export default function SelectSquadScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#2563EB" />
         </TouchableOpacity>
-        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-          Select Squad for {team.name}
+        <ThemedText
+          numberOfLines={1}
+          className="text-lg font-bold text-gray-900 dark:text-white flex-1 mr-2"
+        >
+          Select Squad for {team?.name || "Team"}
         </ThemedText>
-        <View style={{ width: 24 }} />
+        {activeTab === "mySquad" ? (
+          <TouchableOpacity
+            onPress={() => setActiveTab("addPlayer")}
+            className="flex-row items-center bg-blue-600 px-3 py-1.5 rounded-full shadow-sm"
+            activeOpacity={0.8}
+          >
+            <Ionicons name="person-add" size={14} color="#FFFFFF" />
+            <ThemedText className="text-white text-xs font-bold ml-1">
+              Add Player
+            </ThemedText>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
 
       {/* Selected Count */}
       <View className={`p-3 ${isDarkMode ? "bg-gray-800" : "bg-blue-50"}`}>
-        <ThemedText className="text-center text-gray-900 dark:text-white">
+        <ThemedText className="text-center text-gray-900 dark:text-white font-medium">
           {selectedPlayers.length} players selected
         </ThemedText>
       </View>
@@ -386,8 +407,8 @@ export default function SelectSquadScreen() {
         {renderTabButton("addPlayer", "Add Player", "person-add")}
       </View>
 
-      {/* Select All Button */}
-      {activeTab === "mySquad" && (
+      {/* Select All Button - only show when there are players */}
+      {activeTab === "mySquad" && playersWithImages.length > 0 && (
         <TouchableOpacity
           onPress={selectAllPlayers}
           className={`mx-3 my-2 p-2 rounded-xl flex-row items-center justify-center ${
@@ -424,14 +445,43 @@ export default function SelectSquadScreen() {
               renderPlayerCard({ item, isMySquad: false })
             }
             ListEmptyComponent={
-              <View className="py-12 items-center justify-center">
-                <Ionicons name="people-outline" size={48} color={isDarkMode ? "#6B7280" : "#9CA3AF"} />
-                <ThemedText className={`text-base font-semibold mt-3 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                  No players in team yet
+              <View className="py-14 px-6 items-center justify-center">
+                <View
+                  className={`w-20 h-20 rounded-full items-center justify-center mb-4 ${
+                    isDarkMode ? "bg-blue-900/30" : "bg-blue-50"
+                  }`}
+                >
+                  <Ionicons
+                    name="people-outline"
+                    size={40}
+                    color="#3B82F6"
+                  />
+                </View>
+                <ThemedText
+                  className={`text-lg font-bold text-center ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  No Players in this Team
                 </ThemedText>
-                <ThemedText className={`text-xs text-center mt-1 px-8 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                  Switch to the "Add Player" tab above to add players to this squad.
+                <ThemedText
+                  className={`text-sm text-center mt-2 px-4 leading-5 ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  This team doesn&apos;t have any players yet. Add players to create the playing squad for this match.
                 </ThemedText>
+
+                <TouchableOpacity
+                  onPress={() => setActiveTab("addPlayer")}
+                  className="mt-6 flex-row items-center bg-blue-600 px-6 py-3.5 rounded-xl shadow-md active:bg-blue-700"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="person-add" size={18} color="#FFFFFF" />
+                  <ThemedText className="text-white text-base font-bold ml-2">
+                    Add Players Now
+                  </ThemedText>
+                </TouchableOpacity>
               </View>
             }
           />
@@ -441,30 +491,15 @@ export default function SelectSquadScreen() {
         {activeTab === "addPlayer" && (
           <AddPlayer
             showHeader={false}
+            isEmbedded={true}
+            team={team}
             teamID={team?._id || team?.id || team?.teamId}
             cb={(newPlayer) => {
               const teamId = team?._id || team?.id || team?.teamId;
               if (teamId) {
-                teamsApi
-                  .getTeamById(teamId)
-                  .then((res) => {
-                    const fetchedTeam = res?.data?.[0] || res?.data;
-                    const players = fetchedTeam?.players;
-                    if (Array.isArray(players) && players.length > 0) {
-                      setTeamSquad(players);
-                      setSelectedPlayers(
-                        players.map((p, idx) => {
-                          const rawId = p?.id?._id || p?.id || p?._id;
-                          const idStr =
-                            rawId && typeof rawId === "object"
-                              ? String(rawId._id || rawId.id || "")
-                              : String(rawId || "");
-                          return idStr || `p_${idx}`;
-                        })
-                      );
-                    }
-                  })
-                  .catch(() => {});
+                fetchTeamSquad(teamId);
+              } else if (Array.isArray(newPlayer) && newPlayer.length > 0) {
+                setTeamSquad((prev) => [...prev, ...newPlayer]);
               }
               setActiveTab("mySquad");
             }}
@@ -472,20 +507,40 @@ export default function SelectSquadScreen() {
         )}
       </View>
 
-      {/* Save Button */}
-      <View className="p-3 border-t border-gray-200 dark:border-gray-700">
-        <TouchableOpacity
-          onPress={handleSaveSquad}
-          disabled={selectedPlayers.length === 0}
-          className={`p-3 rounded-xl ${
-            selectedPlayers.length === 0 ? "bg-gray-400" : "bg-blue-500"
-          }`}
-        >
-          <ThemedText className="text-white text-center text-base font-semibold">
-            Save Squad ({selectedPlayers.length} players)
-          </ThemedText>
-        </TouchableOpacity>
-      </View>
+      {/* Bottom Sticky Action Bar (Only shown on My Squad tab) */}
+      {activeTab === "mySquad" && (
+        <View className="p-3 border-t border-gray-200 dark:border-gray-700">
+          {playersWithImages.length === 0 ? (
+            <TouchableOpacity
+              onPress={() => setActiveTab("addPlayer")}
+              className="p-3.5 rounded-xl bg-blue-600 flex-row items-center justify-center shadow-sm"
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="person-add"
+                size={20}
+                color="#FFFFFF"
+                style={{ marginRight: 8 }}
+              />
+              <ThemedText className="text-white text-center text-base font-bold">
+                Add Player to Squad
+              </ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={handleSaveSquad}
+              disabled={selectedPlayers.length === 0}
+              className={`p-3.5 rounded-xl ${
+                selectedPlayers.length === 0 ? "bg-gray-400" : "bg-blue-600"
+              }`}
+            >
+              <ThemedText className="text-white text-center text-base font-bold">
+                Save Squad ({selectedPlayers.length} players)
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
