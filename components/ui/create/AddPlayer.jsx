@@ -24,6 +24,7 @@ import { showGlobalAlert } from "@/contexts/AlertContext";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
 import * as Contacts from "expo-contacts";
+import SCREENS from "@/screens";
 
 export default function AddPlayer({
   showHeader = true,
@@ -437,20 +438,39 @@ export default function AddPlayer({
             }`}
           >
             <View className="items-center">
-              <QRCode
-                value={JSON.stringify({
-                  type: SCANNER_TYPE_ACTION?.TEAM?.type,
-                  action: SCANNER_TYPE_ACTION?.TEAM?.action?.JOIN?.type,
-                  value: teamID,
-                })}
-                size={200}
-              />
+              <View className="p-4 bg-white rounded-xl shadow-sm">
+                <QRCode
+                  value={JSON.stringify({
+                    type: SCANNER_TYPE_ACTION?.TEAM?.type || "TEAM",
+                    action: SCANNER_TYPE_ACTION?.TEAM?.action?.JOIN?.type || "JOIN",
+                    value: teamID,
+                  })}
+                  size={200}
+                  backgroundColor="#FFFFFF"
+                  color="#0F172A"
+                />
+              </View>
               <ThemedText className="text-center mt-4 text-base font-semibold">
-                * Scan this QR code through player's app to join the team
+                * Scan this QR code through player&apos;s app to join the team
               </ThemedText>
               <TouchableOpacity
+                onPress={() => {
+                  setShowQrCode(false);
+                  navigation.navigate(SCREENS.QRScanner, {
+                    teamId: teamID,
+                    cb,
+                  });
+                }}
+                className="mt-4 flex-row items-center bg-emerald-600 px-5 py-2.5 rounded-full"
+              >
+                <Ionicons name="scan-outline" size={18} color="#FFFFFF" />
+                <ThemedText className="text-white font-semibold ml-2">
+                  Scan Player&apos;s QR
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => setShowQrCode(false)}
-                className="mt-6 bg-blue-500 px-6 py-2 rounded-full"
+                className="mt-3 bg-blue-500 px-6 py-2 rounded-full"
               >
                 <ThemedText className="text-white">Close</ThemedText>
               </TouchableOpacity>
