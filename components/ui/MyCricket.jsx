@@ -90,27 +90,31 @@ export default function MyCricket({ route: propRoute }) {
     return rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
   };
 
-  const mapMatchItem = (m) => ({
-    id: String(m._id || m.id || m.matchId),
-    matchId: String(m._id || m.id || m.matchId),
-    team1:
-      m?.teams?.[0]?.title ||
-      m?.teams?.[0]?.name ||
-      m?.teams?.[0]?.teamName ||
-      "Team 1",
-    team2:
-      m?.teams?.[1]?.title ||
-      m?.teams?.[1]?.name ||
-      m?.teams?.[1]?.teamName ||
-      "Team 2",
-    score: m.title || "Match",
-    result: m.status || "Scheduled",
-    status: m.status || "SCHEDULED",
-    date: m.startDate
-      ? new Date(m.startDate).toLocaleDateString()
-      : "Recent",
-    raw: m,
-  });
+  const mapMatchItem = (m) => {
+    const rawId = m?._id || m?.id || m?.matchId || (typeof m === "string" ? m : "");
+    const id = String(rawId);
+    return {
+      id,
+      matchId: id,
+      team1:
+        m?.teams?.[0]?.title ||
+        m?.teams?.[0]?.name ||
+        m?.teams?.[0]?.teamName ||
+        "Team 1",
+      team2:
+        m?.teams?.[1]?.title ||
+        m?.teams?.[1]?.name ||
+        m?.teams?.[1]?.teamName ||
+        "Team 2",
+      score: m?.title || "Match",
+      result: m?.status || "Scheduled",
+      status: m?.status || "SCHEDULED",
+      date: m?.startDate
+        ? new Date(m.startDate).toLocaleDateString()
+        : "Recent",
+      raw: typeof m === "object" && m !== null ? m : { _id: id, id },
+    };
+  };
 
   const extractArray = (res) => {
     if (!res) return [];
@@ -256,10 +260,13 @@ export default function MyCricket({ route: propRoute }) {
     }
   };
 
+  const loadingMoreRef = useRef(false);
+
   const loadMoreMatches = async () => {
-    if (loading || loadingMoreMatches || !hasMoreMatches || !userId) return;
+    if (loading || loadingMoreMatches || loadingMoreRef.current || !hasMoreMatches || !userId) return;
+    loadingMoreRef.current = true;
+    setLoadingMoreMatches(true);
     try {
-      setLoadingMoreMatches(true);
       const nextPage = matchPage + 1;
       const resList = await Promise.all([
         matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
@@ -268,14 +275,24 @@ export default function MyCricket({ route: propRoute }) {
       const rawCombined = resList.flatMap(extractArray);
       if (rawCombined.length > 0) {
         setRecentMatches((prev) => {
-          const seen = new Set(prev.map((item) => item.id));
-          const newItems = rawCombined
-            .filter((m) => {
-              const id = String(m?._id || m?.id || m?.matchId || "");
-              return id && !seen.has(id);
-            })
-            .map(mapMatchItem);
-          return [...prev, ...newItems];
+          const seen = new Set();
+          const result = [];
+          for (const item of prev) {
+            const id = String(item?.id || item?.matchId || item?._id || "");
+            if (id && !seen.has(id)) {
+              seen.add(id);
+              result.push(item);
+            }
+          }
+          for (const m of rawCombined) {
+            const mapped = mapMatchItem(m);
+            const id = String(mapped.id || "");
+            if (id && !seen.has(id)) {
+              seen.add(id);
+              result.push(mapped);
+            }
+          }
+          return result;
         });
         setMatchPage(nextPage);
         setHasMoreMatches(rawCombined.length >= 6);
@@ -285,6 +302,7 @@ export default function MyCricket({ route: propRoute }) {
     } catch (e) {
       console.warn("[MyCricket] Failed to load more matches:", e);
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMoreMatches(false);
     }
   };
