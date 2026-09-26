@@ -356,9 +356,11 @@ export default function MyCricket({ route: propRoute }) {
   const renderMatchesTab = () => (
     <FlatList
       data={recentMatches}
-      keyExtractor={(item, index) => item?.id || String(index)}
+      keyExtractor={(item, index) =>
+        item?.id ? `${item.id}-${index}` : String(index)
+      }
       renderItem={({ item }) => (
-        <View className="mb-3 w-full max-w-md self-center">
+        <View className="mb-2">
           <ScoreCard
             matchId={item.id}
             match={item.raw || item}
@@ -367,7 +369,7 @@ export default function MyCricket({ route: propRoute }) {
         </View>
       )}
       ListHeaderComponent={
-        <View className="flex-row justify-between items-center w-full max-w-md self-center mb-4 mt-2">
+        <View className="flex-row justify-between items-center mb-3 mt-2">
           <ThemedText
             className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
           >
@@ -385,11 +387,11 @@ export default function MyCricket({ route: propRoute }) {
       }
       ListEmptyComponent={
         loading ? (
-          <View className="items-center py-16 w-full">
+          <View className="items-center py-16">
             <ActivityIndicator size="large" color="#3B82F6" />
           </View>
         ) : (
-          <View className="items-center py-8 w-full">
+          <View className="items-center py-8">
             <Ionicons
               name="trophy-outline"
               size={48}
@@ -419,8 +421,11 @@ export default function MyCricket({ route: propRoute }) {
         )
       }
       showsVerticalScrollIndicator={false}
-      className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 120 + insets.bottom,
+      }}
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={5}
@@ -448,8 +453,11 @@ export default function MyCricket({ route: propRoute }) {
   const renderTournamentsTab = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 120 + insets.bottom,
+      }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -460,7 +468,7 @@ export default function MyCricket({ route: propRoute }) {
       }
     >
       {/* Header row with Create Tournament action */}
-      <View className="flex-row justify-between items-center w-full max-w-md mb-4 mt-2">
+      <View className="flex-row justify-between items-center mb-3 mt-2">
         <ThemedText
           className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
@@ -476,10 +484,10 @@ export default function MyCricket({ route: propRoute }) {
         </TouchableOpacity>
       </View>
 
-      {tournaments.map((tournament) => (
+      {tournaments.map((tournament, idx) => (
         <TouchableOpacity
-          key={tournament.id}
-          className={`p-4 rounded-xl mb-4 w-full max-w-md ${
+          key={tournament.id ? `${tournament.id}-${idx}` : idx}
+          className={`p-4 rounded-xl mb-4 w-full ${
             isDarkMode ? "bg-gray-800" : "bg-white"
           } shadow-sm`}
           onPress={() =>
@@ -625,8 +633,11 @@ export default function MyCricket({ route: propRoute }) {
   const renderTeamsTab = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      className="px-4"
-      contentContainerStyle={{ alignItems: "center", paddingBottom: 120 + insets.bottom }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 120 + insets.bottom,
+      }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -637,7 +648,7 @@ export default function MyCricket({ route: propRoute }) {
       }
     >
       {/* Header row with Create Team action */}
-      <View className="flex-row justify-between items-center w-full max-w-md mb-4 mt-2">
+      <View className="flex-row justify-between items-center mb-3 mt-2">
         <ThemedText
           className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
@@ -653,10 +664,10 @@ export default function MyCricket({ route: propRoute }) {
         </TouchableOpacity>
       </View>
 
-      {teams.map((team) => (
+      {teams.map((team, idx) => (
         <TouchableOpacity
-          key={team.id}
-          className={`p-4 rounded-2xl mb-3 w-full max-w-md ${
+          key={team.id ? `${team.id}-${idx}` : idx}
+          className={`p-4 rounded-2xl mb-3 w-full ${
             isDarkMode ? "bg-gray-800" : "bg-white"
           } shadow-sm border ${isDarkMode ? "border-gray-700" : "border-gray-100"}`}
           activeOpacity={0.8}

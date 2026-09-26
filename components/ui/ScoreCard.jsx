@@ -482,7 +482,7 @@ function ScoreCard({
 
   return (
     <View
-      className={`rounded-2xl overflow-hidden mb-4 border ${
+      className={`rounded-2xl overflow-hidden mb-3 border ${
         isDarkMode
           ? "bg-gray-800/90 border-gray-700/80 shadow-black/40"
           : "bg-white border-gray-100 shadow-slate-200"
@@ -490,13 +490,12 @@ function ScoreCard({
       style={[
         {
           width: fullWidth ? "100%" : 300,
-          alignSelf: "center",
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: isDarkMode ? 0.3 : 0.08,
           shadowRadius: 10,
           elevation: 4,
           marginHorizontal: fullWidth ? 0 : 4,
-          marginVertical: 4,
+          marginVertical: 2,
         },
         style,
       ]}
