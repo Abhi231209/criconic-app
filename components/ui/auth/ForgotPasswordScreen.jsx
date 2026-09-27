@@ -533,15 +533,20 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
               ? "bg-slate-900 border-slate-800"
               : "bg-white border-slate-100"
           }`}
-          style={{
-            minHeight: Math.max(height * 0.65, 480),
-            paddingBottom: Math.max((insets.bottom || 0) + 28, 44),
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: isDarkMode ? 0.4 : 0.08,
-            shadowRadius: 12,
-            elevation: 8,
-          }}
+          style={[
+            {
+              minHeight: Math.max(height * 0.65, 480),
+              paddingBottom: Math.max((insets.bottom || 0) + 28, 44),
+            },
+            Platform.OS === "ios"
+              ? {
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: -4 },
+                  shadowOpacity: isDarkMode ? 0.4 : 0.08,
+                  shadowRadius: 12,
+                }
+              : { elevation: 8 },
+          ]}
         >
           {/* STEP 1: MOBILE NUMBER */}
           {step === STEP_MOBILE && (
