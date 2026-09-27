@@ -27,7 +27,7 @@ import {
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
-import { useNavigation } from "@react-navigation/native";
+import { navigationRef } from "@/navigation/navigationRef";
 import axios from "axios";
 import { BASE_URL as API_URL } from "@/config";
 import { showGlobalAlert } from "@/contexts/AlertContext";
@@ -55,8 +55,8 @@ const sanitizeMobileNumber = (val) => {
   return digits;
 };
 
-export default function ForgotPasswordScreen() {
-  const navigation = useNavigation();
+export default function ForgotPasswordScreen({ navigation: propNavigation }) {
+  const navigation = propNavigation || navigationRef;
   const insets = useSafeAreaInsets();
   const { isDark } = useAppTheme();
   const colorScheme = useColorScheme();
