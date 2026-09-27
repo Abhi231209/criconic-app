@@ -24,6 +24,7 @@ import {
 import SCREENS from "@/screens";
 import WagonPitchViewerModal from "../createMatch/WagonPitchViewerModal";
 import analytics from "@/utils/analytics";
+import MatchPlayerCardModal from "../card/MatchPlayerCardModal";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -49,6 +50,13 @@ export default function FullScoreCard({
   const [trackerModalTab, setTrackerModalTab] = useState("wagon");
   const [trackerModalRole, setTrackerModalRole] = useState("all");
   const [selectedTrackerPlayer, setSelectedTrackerPlayer] = useState(null);
+  const [playerCardModalVisible, setPlayerCardModalVisible] = useState(false);
+  const [selectedStoryPlayer, setSelectedStoryPlayer] = useState(null);
+
+  const openPlayerCardModal = (player) => {
+    setSelectedStoryPlayer(player);
+    setPlayerCardModalVisible(true);
+  };
 
   // Build comprehensive player lookup map to prevent raw ObjectIds from leaking
   const playerMap = React.useMemo(() => {
@@ -257,6 +265,24 @@ export default function FullScoreCard({
 
   const selectedInningObj = inningsList.find(i => i.number === activeInning) || inningsList[0];
   const currentInning = selectedInningObj?.data || emptyInning;
+
+  const allScorecardPlayers = React.useMemo(() => {
+    const map = new Map();
+    (currentInning?.playedBatsman || []).forEach((b) => {
+      const key = String(b?.playerId || b?.id || b?._id || b?.name);
+      if (key && !map.has(key)) map.set(key, b);
+    });
+    (currentInning?.bowling?.allBowlers || []).forEach((b) => {
+      const key = String(b?.playerId || b?.id || b?._id || b?.name);
+      if (key && !map.has(key)) {
+        map.set(key, b);
+      } else if (key && map.has(key)) {
+        const existing = map.get(key);
+        map.set(key, { ...existing, wicketsTaken: b?.wicketsTaken ?? b?.wickets, over: b?.over, runsGiven: b?.runsGiven ?? b?.runs, eco: b?.eco });
+      }
+    });
+    return Array.from(map.values());
+  }, [currentInning]);
 
   const redirectToPlayerProfile = (player) => {
     if (!player) return;
@@ -471,13 +497,20 @@ export default function FullScoreCard({
                 <TableCell>{player?.fours ?? 0}</TableCell>
                 <TableCell>{player?.sixes ?? 0}</TableCell>
                 <TableCell>{player?.sr ?? "0.00"}</TableCell>
-                <View className="w-5 items-center justify-center">
+                <Pressable
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    openPlayerCardModal(player);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  className="w-6 items-center justify-center"
+                >
                   <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color={isDark ? "#94A3B8" : "#64748B"}
+                    name="sparkles"
+                    size={14}
+                    color={isDark ? "#4DD6C7" : "#0D9488"}
                   />
-                </View>
+                </Pressable>
               </Pressable>
             ))
           ) : (
@@ -581,13 +614,20 @@ export default function FullScoreCard({
                 <TableCell>{player?.runsGiven ?? player?.runs ?? 0}</TableCell>
                 <TableCell>{player?.wicketsTaken ?? player?.wickets ?? 0}</TableCell>
                 <TableCell>{player?.eco ?? "0.00"}</TableCell>
-                <View className="w-5 items-center justify-center">
+                <Pressable
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    openPlayerCardModal(player);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  className="w-6 items-center justify-center"
+                >
                   <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color={isDark ? "#94A3B8" : "#64748B"}
+                    name="sparkles"
+                    size={14}
+                    color={isDark ? "#4DD6C7" : "#0D9488"}
                   />
-                </View>
+                </Pressable>
               </Pressable>
             ))
           ) : (
@@ -664,6 +704,15 @@ export default function FullScoreCard({
         matchDetails={score?.matchDetails || score}
         score={score}
         onViewProfile={redirectToPlayerProfile}
+      />
+
+      {/* Match Player Story Card Modal */}
+      <MatchPlayerCardModal
+        visible={playerCardModalVisible}
+        onClose={() => setPlayerCardModalVisible(false)}
+        initialPlayer={selectedStoryPlayer}
+        matchData={score}
+        playersList={allScorecardPlayers}
       />
     </ScrollView>
   );

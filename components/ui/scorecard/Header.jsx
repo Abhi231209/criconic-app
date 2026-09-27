@@ -4,7 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Marquee from "../Marquee";
 
-export default function Header({ description }) {
+export default function Header({ description, onOpenPlayerCard }) {
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -37,6 +37,19 @@ export default function Header({ description }) {
           textStyle={{ color: isDark ? "#FFFFFF" : "#0F172A", fontSize: 18, fontWeight: "600" }}
         />
       </View>
+      {Boolean(onOpenPlayerCard) && (
+        <TouchableOpacity
+          className="justify-center items-center shrink-0 px-2.5 py-1.5 ml-2 rounded-full bg-amber-500/15 border border-amber-400/40 flex-row"
+          onPress={onOpenPlayerCard}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="sparkles" size={14} color="#F59E0B" />
+          <ThemedText className="text-amber-400 text-xs font-black ml-1">
+            Story Card
+          </ThemedText>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

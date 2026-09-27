@@ -36,6 +36,7 @@ import MatchVideoPlayer from "./MatchVideoPlayer";
 import ThemedText from "../custom/ThemedText";
 import { getMatchStatusDisplay } from "@/utils/Common";
 import User from "@/utils/User";
+import MatchPlayerCardModal from "../card/MatchPlayerCardModal";
 
 export default function MatchScoreCard({
     matchID: matchIDProp,
@@ -60,6 +61,7 @@ export default function MatchScoreCard({
     const [headToHeadStats, setHeadToHeadStats] = useState({});
     const [teamsRecentForm, setTeamsRecentForm] = useState({});
     const [isStreamModalVisible, setIsStreamModalVisible] = useState(false);
+    const [headerCardModalVisible, setHeaderCardModalVisible] = useState(false);
     const [streamInput, setStreamInput] = useState("");
     const [isSavingStream, setIsSavingStream] = useState(false);
     const isFirstMountRef = useRef(true);
@@ -2078,6 +2080,45 @@ export default function MatchScoreCard({
         return liveIdx !== -1 ? liveIdx : 0;
     }, [isMatchNotStarted, isMatchEnded, tabs]);
 
+    const headerPlayerList = useMemo(() => {
+        const map = new Map();
+        const rawMom = score?.mom || score?.manOfTheMatch;
+        if (rawMom) {
+            const name = rawMom?.playerName || rawMom?.name || (typeof rawMom === "string" ? rawMom : "Player");
+            const key = String(rawMom?.playerId || rawMom?.id || rawMom?._id || name);
+            map.set(key, {
+                name,
+                playerId: rawMom?.playerId || rawMom?.id || rawMom?._id,
+                team: rawMom?.team || "",
+                isMom: true,
+                runs: rawMom?.contributions?.batting?.runs ?? rawMom?.performance?.runs ?? 0,
+                ballsFaced: rawMom?.contributions?.batting?.balls ?? rawMom?.performance?.balls ?? 0,
+                wicketsTaken: rawMom?.contributions?.bowling?.wickets ?? rawMom?.performance?.wickets ?? 0,
+                economy: rawMom?.contributions?.bowling?.economy ?? rawMom?.performance?.economy ?? "0.0",
+            });
+        }
+        (score?.inning || []).forEach(inn => {
+            (inn?.playedBatsman || []).forEach(b => {
+                const key = String(b?.playerId || b?.id || b?._id || b?.name);
+                if (key && !map.has(key)) map.set(key, b);
+            });
+            (inn?.bowling?.allBowlers || inn?.bowling?.bowlers || inn?.bowlers || []).forEach(b => {
+                const key = String(b?.playerId || b?.id || b?._id || b?.name);
+                if (key && !map.has(key)) {
+                    map.set(key, b);
+                } else if (key && map.has(key)) {
+                    const existing = map.get(key);
+                    map.set(key, { ...existing, wicketsTaken: b?.wicketsTaken ?? b?.wickets, over: b?.over, runsGiven: b?.runsGiven ?? b?.runs, eco: b?.eco });
+                }
+            });
+        });
+        (score?.batting?.batsman || []).forEach(b => {
+            const key = String(b?.playerId || b?.id || b?._id || b?.name);
+            if (key && !map.has(key)) map.set(key, b);
+        });
+        return Array.from(map.values());
+    }, [score]);
+
     // Defensive render if loading or score data not yet received (placed after all hooks to respect Rules of Hooks)
     const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
     if (loading || score.isLoading || isScoreEmpty) {
@@ -2106,6 +2147,9 @@ export default function MatchScoreCard({
                                     ? `${score.teams[0].title} vs ${score.teams[1].title}`
                                     : "Match Scorecard")
                             }
+                            onOpenPlayerCard={() => {
+                                setHeaderCardModalVisible(true);
+                            }}
                         />
                     )}
 
@@ -2334,6 +2378,15 @@ export default function MatchScoreCard({
                             </Animated.View>
                         </View>
                     )}
+
+                    {/* Match Player Story Card Modal */}
+                    <MatchPlayerCardModal
+                        visible={headerCardModalVisible}
+                        onClose={() => setHeaderCardModalVisible(false)}
+                        initialPlayer={headerPlayerList[0]}
+                        matchData={score}
+                        playersList={headerPlayerList}
+                    />
             </SafeAreaView>
         </SafeAreaProvider>
     );

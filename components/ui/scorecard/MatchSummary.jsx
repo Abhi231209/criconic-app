@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, ScrollView, Pressable, useWindowDimensions, useColorScheme } from "react-native";
+import { View, ScrollView, Pressable, useWindowDimensions, useColorScheme, TouchableOpacity } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { 
   Ionicons, 
@@ -9,6 +9,7 @@ import {
 } from '@expo/vector-icons';
 import ThemedText from "../custom/ThemedText";
 import SCREENS from "@/screens";
+import MatchPlayerCardModal from "../card/MatchPlayerCardModal";
 
 const StatBadge = React.memo(({ value, label, color, isDark }) => (
   <View className={`items-center p-2 rounded-lg ${
@@ -53,6 +54,13 @@ export default function MatchSummary({ matchData }) {
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const [expandedSection, setExpandedSection] = useState(null);
+  const [playerCardModalVisible, setPlayerCardModalVisible] = useState(false);
+  const [selectedStoryPlayer, setSelectedStoryPlayer] = useState(null);
+
+  const openPlayerCardModal = (player) => {
+    setSelectedStoryPlayer(player);
+    setPlayerCardModalVisible(true);
+  };
   
   const isDark = colorScheme === "dark";
 
@@ -331,6 +339,47 @@ export default function MatchSummary({ matchData }) {
   allBowlers.sort((a, b) => (b.wickets - a.wickets) || (a.runs - b.runs));
   const topBowlers = allBowlers.slice(0, 3);
 
+  const allMatchPlayers = React.useMemo(() => {
+    const map = new Map();
+    if (manOfTheMatch) {
+      map.set(String(manOfTheMatch.playerId || manOfTheMatch.name), {
+        ...manOfTheMatch,
+        isMom: true,
+        runs: manOfTheMatch.performance?.runs,
+        ballsFaced: manOfTheMatch.performance?.balls,
+        wicketsTaken: manOfTheMatch.performance?.wickets,
+        economy: manOfTheMatch.performance?.economy,
+      });
+    }
+    topBatters.forEach((b) => {
+      const key = String(b.playerId || b.name);
+      if (!map.has(key)) map.set(key, b);
+    });
+    topBowlers.forEach((b) => {
+      const key = String(b.playerId || b.name);
+      if (!map.has(key)) {
+        map.set(key, b);
+      } else {
+        const existing = map.get(key);
+        map.set(key, { ...existing, wicketsTaken: b.wickets, overs: b.overs, runsGiven: b.runs, eco: b.economy });
+      }
+    });
+    allBatters.forEach((b) => {
+      const key = String(b.playerId || b.name);
+      if (!map.has(key)) map.set(key, b);
+    });
+    allBowlers.forEach((b) => {
+      const key = String(b.playerId || b.name);
+      if (!map.has(key)) {
+        map.set(key, b);
+      } else {
+        const existing = map.get(key);
+        map.set(key, { ...existing, wicketsTaken: b.wickets, overs: b.overs, runsGiven: b.runs, eco: b.economy });
+      }
+    });
+    return Array.from(map.values());
+  }, [manOfTheMatch, topBatters, topBowlers, allBatters, allBowlers]);
+
   const keyMoments = (matchData?.fallOfWickets || []).map((fow) => ({
     over: fow.teamOvers || "0.0",
     description: `${fow.batsman?.name || fow.batsman?.username || "Batter"} dismissed for ${fow.teamRuns || 0} runs`,
@@ -464,6 +513,41 @@ export default function MatchSummary({ matchData }) {
               isDark={isDark}
             />
           </View>
+
+          {/* Share Player of the Match Story Card Button */}
+          <TouchableOpacity
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              openPlayerCardModal({
+                ...manOfTheMatch,
+                isMom: true,
+                runs: manOfTheMatch.performance?.runs,
+                ballsFaced: manOfTheMatch.performance?.balls,
+                wicketsTaken: manOfTheMatch.performance?.wickets,
+                economy: manOfTheMatch.performance?.economy,
+              });
+            }}
+            className={`mt-4 py-2.5 px-3.5 rounded-xl flex-row items-center justify-between border ${
+              isDark
+                ? "bg-amber-500/20 border-amber-500/40"
+                : "bg-amber-200/60 border-amber-300"
+            }`}
+            activeOpacity={0.8}
+          >
+            <View className="flex-row items-center">
+              <View className="w-6 h-6 rounded-full bg-amber-500/30 items-center justify-center mr-2">
+                <Ionicons name="sparkles" size={12} color={isDark ? "#F59E0B" : "#D97706"} />
+              </View>
+              <ThemedText className={`text-xs font-black ${isDark ? "text-amber-300" : "text-amber-900"}`}>
+                Share Player Card (WhatsApp / Instagram)
+              </ThemedText>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="logo-whatsapp" size={14} color={isDark ? "#4ADE80" : "#16A34A"} />
+              <Ionicons name="logo-instagram" size={14} color={isDark ? "#F43F5E" : "#E11D48"} />
+              <Ionicons name="chevron-forward" size={14} color={isDark ? "#F59E0B" : "#D97706"} />
+            </View>
+          </TouchableOpacity>
         </Pressable>
       ) : null}
 
@@ -526,6 +610,20 @@ export default function MatchSummary({ matchData }) {
                       4s/6s
                     </ThemedText>
                   </View>
+
+                  <TouchableOpacity
+                    onPress={(e) => {
+                      e?.stopPropagation?.();
+                      openPlayerCardModal({
+                        ...batter,
+                        ballsFaced: batter.balls,
+                      });
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="ml-3 p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 items-center justify-center"
+                  >
+                    <Ionicons name="sparkles" size={13} color="#0D9488" />
+                  </TouchableOpacity>
                 </View>
               </View>
             ))
@@ -587,6 +685,22 @@ export default function MatchSummary({ matchData }) {
                       Econ
                     </ThemedText>
                   </View>
+
+                  <TouchableOpacity
+                    onPress={(e) => {
+                      e?.stopPropagation?.();
+                      openPlayerCardModal({
+                        ...bowler,
+                        wicketsTaken: bowler.wickets,
+                        runsGiven: bowler.runs,
+                        economy: bowler.economy,
+                      });
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="ml-3 p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 items-center justify-center"
+                  >
+                    <Ionicons name="sparkles" size={13} color="#0D9488" />
+                  </TouchableOpacity>
                 </View>
               </View>
             ))
@@ -681,6 +795,15 @@ export default function MatchSummary({ matchData }) {
           </View>
         </View>
       </View>
+
+      {/* Match Player Story Card Modal */}
+      <MatchPlayerCardModal
+        visible={playerCardModalVisible}
+        onClose={() => setPlayerCardModalVisible(false)}
+        initialPlayer={selectedStoryPlayer}
+        matchData={matchData}
+        playersList={allMatchPlayers}
+      />
     </ScrollView>
   );
 }
