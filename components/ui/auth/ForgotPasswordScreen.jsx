@@ -8,6 +8,7 @@ import {
   ImageBackground,
   Dimensions,
   Platform,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -26,7 +27,6 @@ import {
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
-import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { BASE_URL as API_URL } from "@/config";
@@ -281,8 +281,9 @@ export default function ForgotPasswordScreen() {
     <View
       className={`flex-1 ${isDarkMode ? "bg-slate-950" : "bg-white"}`}
     >
-      <AppKeyboardAwareScrollView
-        extraHeight={80}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         style={{
           flex: 1,
           backgroundColor: isDarkMode ? "#020617" : "#FFFFFF",
@@ -291,7 +292,6 @@ export default function ForgotPasswordScreen() {
           flexGrow: 1,
           backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
         }}
-        showsVerticalScrollIndicator={false}
       >
         {/* Upper Hero Section */}
         <View
@@ -531,7 +531,6 @@ export default function ForgotPasswordScreen() {
                     }
                     keyboardType="phone-pad"
                     maxLength={10}
-                    autoFocus
                   />
                 </View>
               </View>
@@ -649,7 +648,6 @@ export default function ForgotPasswordScreen() {
                     }
                     keyboardType="number-pad"
                     maxLength={6}
-                    autoFocus
                   />
                 </View>
               </View>
@@ -777,7 +775,6 @@ export default function ForgotPasswordScreen() {
                     placeholderTextColor={
                       isDarkMode ? "#64748B" : "#94A3B8"
                     }
-                    autoFocus
                   />
 
                   <TouchableOpacity
@@ -997,7 +994,7 @@ export default function ForgotPasswordScreen() {
             </ThemedText>
           </TouchableOpacity>
         </View>
-      </AppKeyboardAwareScrollView>
+      </ScrollView>
     </View>
   );
 }
