@@ -131,11 +131,15 @@ export const AlertProvider = ({ children }) => {
         cancelText,
         onConfirm: () => {
           hideAlert();
-          onConfirm?.();
+          setTimeout(() => {
+            onConfirm?.();
+          }, 60);
         },
         onCancel: () => {
           hideAlert();
-          onCancel?.();
+          setTimeout(() => {
+            onCancel?.();
+          }, 60);
         },
       });
     },

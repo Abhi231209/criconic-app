@@ -18,6 +18,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSelector, useDispatch } from "react-redux";
 import { logout as logoutAction } from "@/redux/authSlice";
+import { clearUser } from "@/redux/userSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import { getImageFullUrl } from "@/utils";
@@ -26,6 +27,7 @@ import useRequireAuth from "@/hooks/useRequireAuth";
 import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 import analytics from "@/utils/analytics";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import { resetToAuth } from "@/navigation/navigationRef";
 
 export default function CustomDrawer(props) {
   const navigation = props?.navigation;
@@ -68,7 +70,6 @@ export default function CustomDrawer(props) {
   }, [profileImageUrl]);
 
   const handleLogout = () => {
-    // Show themed alert immediately on press (no animation delay)
     showGlobalAlert({
       title: "Sign Out",
       message: "Are you sure you want to sign out?",
@@ -76,26 +77,20 @@ export default function CustomDrawer(props) {
       confirmText: "Sign Out",
       cancelText: "Cancel",
       onConfirm: async () => {
-        props.navigation?.closeDrawer?.();
         try {
-          navigation.dispatch(DrawerActions.closeDrawer());
+          props.navigation?.closeDrawer?.();
+          navigation?.dispatch?.(DrawerActions.closeDrawer());
         } catch (_) {}
 
         try {
+          analytics.logLogout();
+          dispatch(logoutAction());
+          dispatch(clearUser());
+          User.logout();
+          resetToAuth();
           await authApi.logout();
         } catch (e) {
           console.warn("[CustomDrawer] Logout error:", e);
-        } finally {
-          analytics.logLogout();
-          dispatch(logoutAction());
-          User.logout();
-          setTimeout(() => {
-            try {
-              navigation.navigate("MainStack", { screen: SCREENS.LoginScreen });
-            } catch (_) {
-              navigation.navigate(SCREENS.LoginScreen);
-            }
-          }, 200);
         }
       },
     });

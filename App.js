@@ -24,7 +24,8 @@ import { persistor, store } from "./redux/store";
 import { PersistGate } from "redux-persist/integration/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useEffect, useRef } from "react";
-import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from "@react-navigation/native";
+import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { navigationRef, resetToAuth } from "./navigation/navigationRef";
 import { useSelector } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SocketProvider, useSocket } from "./contexts/SocketContext";
@@ -73,9 +74,17 @@ function SocketNotificationListener() {
 
 function AppContent() {
   const { isDark } = useAppTheme();
-  const navigationRef = useNavigationContainerRef();
   const routeNameRef = useRef();
-  const isLoggedIn = useSelector((state) => state.auth.is_logged_in);
+  const isLoggedIn = useSelector((state) => Boolean(state.auth.is_logged_in || state.auth.isAuthenticated));
+
+  // Automatically reset to LoginScreen whenever logout occurs anywhere in the app
+  const prevIsLoggedIn = useRef(isLoggedIn);
+  useEffect(() => {
+    if (prevIsLoggedIn.current === true && !isLoggedIn) {
+      resetToAuth();
+    }
+    prevIsLoggedIn.current = isLoggedIn;
+  }, [isLoggedIn]);
 
   // Register (or re-register) this device for push once we have an
   // authenticated session — covers both a fresh login and session restore

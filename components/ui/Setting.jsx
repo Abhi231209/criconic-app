@@ -18,11 +18,13 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { useSelector, useDispatch } from "react-redux";
 import { logout as logoutAction } from "@/redux/authSlice";
+import { clearUser } from "@/redux/userSlice";
 import { authApi } from "@/utils/api";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import useAppTheme from "@/hooks/useAppTheme";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import { resetToAuth } from "@/navigation/navigationRef";
 import analytics from "@/utils/analytics";
 
 export default function Settings() {
@@ -95,21 +97,14 @@ export default function Settings() {
       cancelText: "Cancel",
       onConfirm: async () => {
         try {
+          analytics.logLogout();
+          dispatch(logoutAction());
+          dispatch(clearUser());
+          User.logout();
+          resetToAuth();
           await authApi.logout();
         } catch (e) {
           console.warn("[Logout] Error:", e);
-        } finally {
-          analytics.logLogout();
-          dispatch(logoutAction());
-          User.logout();
-          if (navigation.reset) {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: SCREENS.LoginScreen }],
-            });
-          } else {
-            navigation.navigate(SCREENS.LoginScreen);
-          }
         }
       },
     });

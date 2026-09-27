@@ -27,8 +27,6 @@ export default function AppAlertModal({
 }) {
   const { isDark } = useAppTheme();
 
-  if (!visible) return null;
-
   const handleConfirm = () => {
     if (onConfirm) {
       onConfirm();
