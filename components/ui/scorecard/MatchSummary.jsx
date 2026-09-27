@@ -536,9 +536,6 @@ export default function MatchSummary({ matchData }) {
             activeOpacity={0.8}
           >
             <View className="flex-row items-center">
-              <View className="w-6 h-6 rounded-full bg-amber-500/30 items-center justify-center mr-2">
-                <Ionicons name="sparkles" size={12} color={isDark ? "#F59E0B" : "#D97706"} />
-              </View>
               <ThemedText className={`text-xs font-black ${isDark ? "text-amber-300" : "text-amber-900"}`}>
                 Share Player Card (WhatsApp / Instagram)
               </ThemedText>

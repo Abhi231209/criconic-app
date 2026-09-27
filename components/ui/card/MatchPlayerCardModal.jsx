@@ -295,18 +295,13 @@ export default function MatchPlayerCardModal({
         <View className="bg-[#0A0F1D] rounded-t-3xl border-t border-slate-700/60 pb-8 pt-4 px-4 max-h-[92%]">
           {/* Header Action Bar */}
           <View className="flex-row items-center justify-between pb-3 border-b border-slate-800">
-            <View className="flex-row items-center">
-              <View className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-400/40 items-center justify-center mr-2.5">
-                <Ionicons name="sparkles" size={16} color="#F59E0B" />
-              </View>
-              <View>
-                <ThemedText className="text-white text-base font-black">
-                  Match Story Card
-                </ThemedText>
-                <ThemedText className="text-slate-400 text-xs">
-                  Criconic Official Verified Spotlight
-                </ThemedText>
-              </View>
+            <View>
+              <ThemedText className="text-white text-base font-black">
+                Match Story Card
+              </ThemedText>
+              <ThemedText className="text-slate-400 text-xs">
+                Criconic Official Verified Spotlight
+              </ThemedText>
             </View>
 
             <TouchableOpacity
