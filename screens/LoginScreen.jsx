@@ -9,6 +9,7 @@ import {
   Image,
   ImageBackground,
   Dimensions,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -296,13 +297,16 @@ const LoginScreen = () => {
               ? "bg-slate-900 border-slate-800"
               : "bg-white border-slate-100"
           }`}
-          style={{
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: isDarkMode ? 0.4 : 0.08,
-            shadowRadius: 12,
-            elevation: 8,
-          }}
+          style={[
+            Platform.OS === "ios"
+              ? {
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: -4 },
+                  shadowOpacity: isDarkMode ? 0.4 : 0.08,
+                  shadowRadius: 12,
+                }
+              : { elevation: 8 },
+          ]}
         >
           {/* Welcome Header */}
           <View className="mb-6">

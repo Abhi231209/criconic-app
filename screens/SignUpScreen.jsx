@@ -9,6 +9,7 @@ import {
   Image,
   ImageBackground,
   Dimensions,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -439,13 +440,16 @@ export default function SignUpScreen() {
           className={`flex-1 -mt-6 px-6 pt-7 pb-10 rounded-t-3xl border-t ${
             isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"
           }`}
-          style={{
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -3 },
-            shadowOpacity: isDarkMode ? 0.35 : 0.08,
-            shadowRadius: 10,
-            elevation: 6,
-          }}
+          style={[
+            Platform.OS === "ios"
+              ? {
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: -3 },
+                  shadowOpacity: isDarkMode ? 0.35 : 0.08,
+                  shadowRadius: 10,
+                }
+              : { elevation: 6 },
+          ]}
         >
           {/* Header Title */}
           <View className="mb-5">
@@ -670,13 +674,16 @@ export default function SignUpScreen() {
             disabled={isLoading}
             activeOpacity={0.88}
             className="rounded-xl overflow-hidden mb-3"
-            style={{
-              shadowColor: "#2563EB",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 8,
-              elevation: 4,
-            }}
+            style={[
+              Platform.OS === "ios"
+                ? {
+                    shadowColor: "#2563EB",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                  }
+                : { elevation: 4 },
+            ]}
           >
             <LinearGradient
               colors={["#2563EB", "#1D4ED8"]}
