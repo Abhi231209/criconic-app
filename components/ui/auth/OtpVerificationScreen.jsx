@@ -41,18 +41,15 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
   const colorScheme = useColorScheme();
   const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
-  const { mobile = "", validationId: initialValidationId = "", isOTPByPass = false } =
+  const { mobile = "", validationId: initialValidationId = "" } =
     route?.params || {};
 
-  const [otp, setOtp] = useState(isOTPByPass ? "123456" : "");
+  const [otp, setOtp] = useState("");
   const [validationId, setValidationId] = useState(initialValidationId);
-  const [isBypassActive, setIsBypassActive] = useState(Boolean(isOTPByPass));
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
   const [resendTimer, setResendTimer] = useState(30);
-  const [autoReadHint, setAutoReadHint] = useState(
-    isOTPByPass ? "Test mode active (Dummy OTP: 123456)" : ""
-  );
+  const [autoReadHint, setAutoReadHint] = useState("");
 
   const validationIdRef = useRef(initialValidationId);
   const timerRef = useRef(null);
@@ -60,12 +57,7 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
   useEffect(() => {
     validationIdRef.current = initialValidationId;
     setValidationId(initialValidationId);
-    if (isOTPByPass) {
-      setIsBypassActive(true);
-      setOtp("123456");
-      setAutoReadHint("Test mode active (Dummy OTP: 123456)");
-    }
-  }, [initialValidationId, isOTPByPass]);
+  }, [initialValidationId]);
 
   useEffect(() => {
     if (resendTimer > 0) {
@@ -218,15 +210,7 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         setValidationId(receivedValidationId);
         validationIdRef.current = receivedValidationId;
         setResendTimer(30);
-
-        if (res.data?.isOTPByPass) {
-          setIsBypassActive(true);
-          setOtp("123456");
-          setAutoReadHint("Test mode active (Dummy OTP: 123456)");
-        } else {
-          setIsBypassActive(false);
-          setOtp("");
-        }
+        setOtp("");
 
         showGlobalAlert({
           title: "OTP Resent",
@@ -387,20 +371,6 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
             </TouchableOpacity>
           </View>
 
-          {/* Test Bypass Notice Banner */}
-          {isBypassActive && (
-            <View className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex-row items-center">
-              <ShieldCheck size={20} color="#F59E0B" />
-              <View className="ml-2.5 flex-1">
-                <ThemedText className="text-xs font-bold text-amber-500">
-                  Test Mode Active (Zero SMS Cost)
-                </ThemedText>
-                <ThemedText className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
-                  Dummy code 123456 has been pre-filled. You can test the verification flow without sending real SMS.
-                </ThemedText>
-              </View>
-            </View>
-          )}
 
           {/* OTP Input */}
           <View className="mb-5">
