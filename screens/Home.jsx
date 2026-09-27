@@ -313,9 +313,6 @@ export default function Home({}) {
           {/* Personalized Greeting Header */}
           <GreetingHeader />
 
-          {/* Personalized "Your Cricket Pulse" */}
-          <CricketPulse />
-
           {/* Quick-Start Actions Row */}
           <View className="mt-3 mb-2">
             <ScrollView
@@ -516,6 +513,9 @@ export default function Home({}) {
               />
             </View>
           )}
+
+          {/* Personalized "Your Cricket Pulse" */}
+          <CricketPulse />
 
           {/* Recent Matches Section */}
           <SectionHeader
