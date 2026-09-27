@@ -16,11 +16,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ArrowLeft,
   ArrowRight,
-  KeyRound,
   ShieldCheck,
   Pencil,
   RotateCcw,
-  Copy,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -47,18 +45,27 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
   const [otp, setOtp] = useState("");
   const [validationId, setValidationId] = useState(initialValidationId);
   const [loading, setLoading] = useState(false);
-  const [focusedField, setFocusedField] = useState(null);
+  const [isInputFocused, setIsInputFocused] = useState(true);
   const [resendTimer, setResendTimer] = useState(30);
-  const [autoReadHint, setAutoReadHint] = useState("");
 
   const validationIdRef = useRef(initialValidationId);
   const timerRef = useRef(null);
+  const textInputRef = useRef(null);
 
   useEffect(() => {
     validationIdRef.current = initialValidationId;
     setValidationId(initialValidationId);
   }, [initialValidationId]);
 
+  // Focus input automatically on mount
+  useEffect(() => {
+    const focusTimeout = setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 300);
+    return () => clearTimeout(focusTimeout);
+  }, []);
+
+  // Resend Countdown Timer
   useEffect(() => {
     if (resendTimer > 0) {
       timerRef.current = setTimeout(() => {
@@ -79,15 +86,15 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
       if (!trimmedOtp) {
         showGlobalAlert({
           title: "OTP Required",
-          message: "Please enter the 6-digit OTP sent to your mobile.",
+          message: "Please enter the 6-digit verification code sent to your mobile.",
           type: "warning",
         });
         return;
       }
       if (trimmedOtp.length !== 6) {
         showGlobalAlert({
-          title: "Incomplete OTP",
-          message: "Please enter the complete 6-digit OTP code.",
+          title: "Incomplete Code",
+          message: "Please enter the complete 6-digit verification code.",
           type: "warning",
         });
         return;
@@ -103,7 +110,6 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         });
 
         if (res.data?.success !== false) {
-          // Navigate directly to Reset Password screen
           navigation.navigate(SCREENS.ResetPasswordScreen, {
             mobile,
             otp: trimmedOtp,
@@ -111,8 +117,8 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
           });
         } else {
           showGlobalAlert({
-            title: "Invalid OTP",
-            message: res.data?.message || "The OTP entered is incorrect. Please try again.",
+            title: "Invalid Code",
+            message: res.data?.message || "The code entered is incorrect. Please check and try again.",
             type: "error",
           });
         }
@@ -121,7 +127,7 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         showGlobalAlert({
           title: "Verification Failed",
           message:
-            err.response?.data?.message || "OTP verification failed. Please try again.",
+            err.response?.data?.message || "Verification failed. Please try again.",
           type: "error",
         });
       } finally {
@@ -131,59 +137,34 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
     [mobile, otp, validationId, navigation]
   );
 
-  const checkClipboardForOtp = useCallback(
-    async (isManualTrigger = false) => {
-      try {
-        const text = await Clipboard.getStringAsync();
-        if (text) {
-          const match = text.match(/\b\d{6}\b/);
-          if (match && match[0]) {
-            const foundOtp = match[0];
-            setOtp(foundOtp);
-            setAutoReadHint(`Detected: ${foundOtp}`);
-            if (isManualTrigger) {
-              showGlobalAlert({
-                title: "OTP Pasted",
-                message: `Code ${foundOtp} detected from clipboard and filled.`,
-                type: "success",
-              });
-            }
-            return foundOtp;
-          }
-        }
-        if (isManualTrigger) {
-          showGlobalAlert({
-            title: "No OTP Found",
-            message: "No 6-digit code was found in your clipboard. Please check your SMS or enter the code manually.",
-            type: "info",
-          });
-        }
-      } catch (_) {
-        if (isManualTrigger) {
-          showGlobalAlert({
-            title: "Clipboard Error",
-            message: "Unable to read clipboard. Please enter the OTP manually.",
-            type: "error",
-          });
+  // Background silent clipboard detection when returning from SMS app
+  const checkClipboardSilently = useCallback(async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text) {
+        const match = text.match(/\b\d{6}\b/);
+        if (match && match[0]) {
+          const foundOtp = match[0];
+          setOtp(foundOtp);
+          verifyOtp(foundOtp);
         }
       }
-      return null;
-    },
-    []
-  );
+    } catch (_) {
+      // Silently ignore clipboard permissions or errors
+    }
+  }, [verifyOtp]);
 
-  // Auto-read on AppState active (returning from SMS app)
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active") {
-        checkClipboardForOtp(false);
+        checkClipboardSilently();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [checkClipboardForOtp]);
+  }, [checkClipboardSilently]);
 
   const handleOtpChange = (val) => {
     const cleanDigits = String(val).replace(/\D/g, "").slice(0, 6);
@@ -211,23 +192,24 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         validationIdRef.current = receivedValidationId;
         setResendTimer(30);
         setOtp("");
+        textInputRef.current?.focus();
 
         showGlobalAlert({
-          title: "OTP Resent",
-          message: `A fresh 6-digit OTP has been sent to +91 ${mobile}.`,
+          title: "Code Resent",
+          message: `A fresh 6-digit verification code has been sent to +91 ${mobile}.`,
           type: "success",
         });
       } else {
         showGlobalAlert({
-          title: "Unable to Resend OTP",
-          message: res.data?.message || "Could not resend OTP. Please try again.",
+          title: "Unable to Resend",
+          message: res.data?.message || "Could not resend verification code. Please try again.",
           type: "error",
         });
       }
     } catch (err) {
       showGlobalAlert({
-        title: "Error Sending OTP",
-        message: err.response?.data?.message || "Could not send OTP. Please try again.",
+        title: "Error",
+        message: err.response?.data?.message || "Could not resend code. Please try again.",
         type: "error",
       });
     } finally {
@@ -240,87 +222,68 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        style={{
-          flex: 1,
-          backgroundColor: isDarkMode ? "#020617" : "#FFFFFF",
-        }}
-        contentContainerStyle={{
-          flexGrow: 1,
-          backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
-        }}
+        bounces={false}
+        contentContainerStyle={{ flexGrow: 1 }}
       >
         {/* Upper Hero Section */}
         <View
           style={{
-            minHeight: Math.max(height * 0.28, 200) + (insets.top || 0),
+            minHeight: Math.max(height * 0.28, 210) + (insets.top || 0),
             width: "100%",
           }}
           className="relative overflow-hidden justify-center items-center"
         >
           <ImageBackground
             source={require("../../../assets/stadium-background-image.jpg")}
-            style={{
-              width: "100%",
-              height: "100%",
-              position: "absolute",
-            }}
+            style={{ width: "100%", height: "100%" }}
+            className="absolute inset-0"
             resizeMode="cover"
-          />
+          >
+            <LinearGradient
+              colors={
+                isDarkMode
+                  ? ["rgba(2, 6, 23, 0.70)", "rgba(2, 6, 23, 0.96)"]
+                  : ["rgba(15, 23, 42, 0.65)", "rgba(15, 23, 42, 0.92)"]
+              }
+              className="absolute inset-0"
+            />
+          </ImageBackground>
 
-          <LinearGradient
-            colors={
-              isDarkMode
-                ? [
-                    "rgba(15,23,42,0.70)",
-                    "rgba(30,27,75,0.88)",
-                    "rgba(15,23,42,0.98)",
-                  ]
-                : [
-                    "rgba(30,58,138,0.72)",
-                    "rgba(37,99,235,0.85)",
-                    "rgba(29,78,216,0.97)",
-                  ]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="absolute inset-0 px-6 pb-8 justify-between"
+          {/* Top Bar with Back Button & Logo */}
+          <View
+            className="absolute top-0 left-0 right-0 z-20 flex-row items-center justify-between px-6"
             style={{ paddingTop: Math.max(insets.top + 8, 20) }}
           >
-            {/* Top Navigation Row */}
-            <View className="flex-row items-center justify-between z-20">
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                activeOpacity={0.7}
-                className="w-10 h-10 rounded-full items-center justify-center bg-white/15 border border-white/25 active:bg-white/25"
-              >
-                <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
-              </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+              className="w-10 h-10 rounded-full items-center justify-center bg-white/15 border border-white/25 active:bg-white/25"
+            >
+              <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+            </TouchableOpacity>
 
-              <View className="px-3 py-1 rounded-full bg-white/15 border border-white/20">
-                <ThemedText className="text-blue-100 text-[11px] font-semibold tracking-wide">
-                  Step 2 of 3 • Verification
-                </ThemedText>
-              </View>
-            </View>
-
-            {/* Logo Center */}
-            <View className="items-center z-10 my-2">
-              <View className="mb-1">
-                <CriconicLogo
-                  variant="stacked"
-                  theme="dark"
-                  width={120}
-                  height={76}
-                />
-              </View>
-              <ThemedText className="text-blue-200 text-xs font-medium tracking-wide">
-                Secure Account Access
+            <View className="px-3 py-1 rounded-full bg-white/15 border border-white/20">
+              <ThemedText className="text-blue-100 text-[11px] font-semibold tracking-wide">
+                Security Verification
               </ThemedText>
             </View>
-          </LinearGradient>
+          </View>
+
+          {/* Logo Center */}
+          <View className="items-center z-10 mt-6">
+            <CriconicLogo
+              variant="stacked"
+              theme="dark"
+              width={130}
+              height={82}
+            />
+            <ThemedText className="text-blue-200 text-xs font-medium tracking-wide mt-1">
+              Secure Account Verification
+            </ThemedText>
+          </View>
         </View>
 
-        {/* Form Card */}
+        {/* Modern Form Card */}
         <View
           className={`flex-1 -mt-6 px-6 pt-7 rounded-t-3xl border-t ${
             isDarkMode
@@ -328,140 +291,136 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
               : "bg-white border-slate-100"
           }`}
           style={{
-            minHeight: Math.max(height * 0.68, 500),
-            paddingBottom: Math.max((insets.bottom || 0) + 28, 44),
+            minHeight: Math.max(height * 0.62, 440),
+            paddingBottom: Math.max((insets.bottom || 0) + 28, 40),
             shadowColor: "#000",
             shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: isDarkMode ? 0.4 : 0.08,
+            shadowOpacity: isDarkMode ? 0.35 : 0.06,
             shadowRadius: 12,
             elevation: 8,
           }}
         >
-          {/* Header Title */}
-          <View className="mb-5">
+          {/* Header Title & Details */}
+          <View className="mb-6">
             <ThemedText
               className={`text-2xl font-black tracking-tight ${
                 isDarkMode ? "text-white" : "text-slate-900"
               }`}
             >
-              Verify OTP 🛡️
+              Enter Verification Code 🔐
             </ThemedText>
-            <ThemedText
-              className={`text-xs mt-1.5 leading-5 ${
-                isDarkMode ? "text-slate-400" : "text-slate-500"
-              }`}
-            >
-              We have sent a 6-digit OTP code to{" "}
-              <ThemedText className="font-bold text-blue-500">
-                +91 {mobile}
+            <View className="flex-row items-center flex-wrap mt-2">
+              <ThemedText
+                className={`text-xs ${
+                  isDarkMode ? "text-slate-400" : "text-slate-500"
+                }`}
+              >
+                We've sent a 6-digit code to{" "}
               </ThemedText>
-              .
-            </ThemedText>
-
-            {/* Edit Mobile Number Chip */}
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.7}
-              className="flex-row items-center mt-2.5 self-start px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/25"
-            >
-              <Pencil size={12} color="#3B82F6" />
-              <ThemedText className="text-xs font-semibold text-blue-500 ml-1.5">
-                Change Mobile Number
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-
-
-          {/* OTP Input */}
-          <View className="mb-5">
-            <ThemedText
-              className={`text-xs font-bold uppercase tracking-wider mb-2 ${
-                isDarkMode ? "text-slate-300" : "text-slate-600"
-              }`}
-            >
-              Enter 6-Digit OTP
-            </ThemedText>
-
-            <View
-              className={`flex-row items-center px-4 rounded-2xl border transition-colors ${
-                focusedField === "otp"
-                  ? isDarkMode
-                    ? "border-blue-500 bg-slate-800/90"
-                    : "border-blue-600 bg-blue-50/20"
-                  : isDarkMode
-                  ? "bg-slate-800/60 border-slate-700/80"
-                  : "bg-slate-50 border-slate-200"
-              }`}
-              style={{ minHeight: 56 }}
-            >
-              <KeyRound
-                size={20}
-                color={
-                  focusedField === "otp"
-                    ? "#3B82F6"
-                    : isDarkMode
-                    ? "#94A3B8"
-                    : "#64748B"
-                }
-              />
-
-              <TextInput
-                className={`flex-1 text-center text-xl font-black ${
+              <ThemedText
+                className={`text-xs font-bold ${
                   isDarkMode ? "text-white" : "text-slate-900"
                 }`}
-                style={{ letterSpacing: 6 }}
-                value={otp}
-                onChangeText={handleOtpChange}
-                onFocus={() => setFocusedField("otp")}
-                onBlur={() => setFocusedField(null)}
-                placeholder="••••••"
-                placeholderTextColor={isDarkMode ? "#475569" : "#CBD5E1"}
-                keyboardType="number-pad"
-                maxLength={6}
-                textContentType="oneTimeCode"
-                autoComplete="sms-otp"
-              />
-            </View>
-
-            {/* Auto-read / Paste OTP Action Row */}
-            <View className="flex-row items-center justify-between mt-2.5 px-1">
-              <TouchableOpacity
-                onPress={() => checkClipboardForOtp(true)}
-                activeOpacity={0.7}
-                className="flex-row items-center px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/25"
               >
-                <Copy size={13} color="#3B82F6" />
-                <ThemedText className="text-xs font-bold text-blue-500 ml-1.5">
-                  Auto-Read / Paste OTP
+                +91 {mobile}
+              </ThemedText>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+                className="ml-2 flex-row items-center"
+              >
+                <ThemedText className="text-xs font-bold text-blue-500">
+                  Edit
                 </ThemedText>
+                <Pencil size={11} color="#3B82F6" style={{ marginLeft: 3 }} />
               </TouchableOpacity>
-
-              {autoReadHint ? (
-                <ThemedText className="text-[11px] font-semibold text-emerald-500">
-                  {autoReadHint}
-                </ThemedText>
-              ) : (
-                <ThemedText
-                  className={`text-[11px] ${
-                    isDarkMode ? "text-slate-400" : "text-slate-500"
-                  }`}
-                >
-                  SMS auto-fill ready
-                </ThemedText>
-              )}
             </View>
           </View>
 
-          {/* Action Button: Verify OTP */}
+          {/* Segmented 6-Box OTP Display with Hidden Input */}
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => textInputRef.current?.focus()}
+            className="mb-7"
+          >
+            {/* 6 Individual Segmented Digit Cells */}
+            <View className="flex-row items-center justify-between">
+              {[0, 1, 2, 3, 4, 5].map((index) => {
+                const digit = otp[index] || "";
+                const isCurrent = isInputFocused && index === otp.length;
+                const isFilled = Boolean(digit);
+
+                return (
+                  <View
+                    key={index}
+                    className={`flex-1 mx-1 h-14 rounded-2xl items-center justify-center border transition-all ${
+                      isCurrent
+                        ? isDarkMode
+                          ? "border-blue-500 bg-blue-500/15"
+                          : "border-blue-600 bg-blue-50/40"
+                        : isFilled
+                        ? isDarkMode
+                          ? "border-blue-500/50 bg-slate-800/80"
+                          : "border-blue-600/40 bg-blue-50/20"
+                        : isDarkMode
+                        ? "border-slate-800 bg-slate-800/40"
+                        : "border-slate-200 bg-slate-50"
+                    }`}
+                    style={{
+                      shadowColor: isCurrent ? "#2563EB" : "transparent",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: isCurrent ? 0.35 : 0,
+                      shadowRadius: 6,
+                      elevation: isCurrent ? 3 : 0,
+                    }}
+                  >
+                    <ThemedText
+                      className={`text-xl font-black ${
+                        isDarkMode ? "text-white" : "text-slate-900"
+                      }`}
+                    >
+                      {digit}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Invisible native text input handling OS autofill & keyboard */}
+            <TextInput
+              ref={textInputRef}
+              className="absolute inset-0 opacity-0 w-full h-full"
+              value={otp}
+              onChangeText={handleOtpChange}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              keyboardType="number-pad"
+              maxLength={6}
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
+              importantForAutofill="yes"
+              caretHidden
+            />
+          </TouchableOpacity>
+
+          {/* Action Button: Verify & Proceed */}
           <TouchableOpacity
             onPress={() => verifyOtp(otp)}
-            disabled={loading}
+            disabled={loading || otp.length !== 6}
             activeOpacity={0.88}
-            className="rounded-2xl overflow-hidden mb-4 shadow-lg shadow-blue-600/30"
-            style={{ elevation: 5 }}
+            className={`rounded-2xl overflow-hidden mb-5 ${
+              otp.length === 6 ? "shadow-lg shadow-blue-600/30" : "opacity-60"
+            }`}
+            style={{ elevation: otp.length === 6 ? 5 : 0 }}
           >
             <LinearGradient
-              colors={["#1D4ED8", "#2563EB", "#3B82F6"]}
+              colors={
+                otp.length === 6
+                  ? ["#1D4ED8", "#2563EB", "#3B82F6"]
+                  : isDarkMode
+                  ? ["#334155", "#475569"]
+                  : ["#94A3B8", "#64748B"]
+              }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-4 items-center justify-center flex-row"
@@ -479,17 +438,17 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Resend OTP Section */}
+          {/* Resend Code Section */}
           <View className="flex-row items-center justify-center py-2">
             <ThemedText
               className={`text-xs ${
                 isDarkMode ? "text-slate-400" : "text-slate-500"
               }`}
             >
-              Didn't receive code?{" "}
+              Didn't receive the code?{" "}
             </ThemedText>
             {resendTimer > 0 ? (
-              <ThemedText className="text-xs font-bold text-slate-400">
+              <ThemedText className="text-xs font-semibold text-slate-400">
                 Resend in {resendTimer}s
               </ThemedText>
             ) : (
@@ -500,7 +459,7 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
               >
                 <RotateCcw size={12} color="#3B82F6" style={{ marginRight: 4 }} />
                 <ThemedText className="text-xs font-bold text-blue-500 dark:text-blue-400">
-                  Resend OTP
+                  Resend Code
                 </ThemedText>
               </TouchableOpacity>
             )}

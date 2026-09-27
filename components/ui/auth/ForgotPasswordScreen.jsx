@@ -754,34 +754,6 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
                     importantForAutofill="yes"
                   />
                 </View>
-
-                {/* Auto-read / Paste OTP Action Row */}
-                <View className="flex-row items-center justify-between mt-2.5 px-1">
-                  <TouchableOpacity
-                    onPress={() => checkClipboardForOtp(true)}
-                    activeOpacity={0.7}
-                    className="flex-row items-center px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/25"
-                  >
-                    <Copy size={13} color="#3B82F6" />
-                    <ThemedText className="text-xs font-bold text-blue-500 ml-1.5">
-                      Auto-Read / Paste OTP
-                    </ThemedText>
-                  </TouchableOpacity>
-
-                  {autoReadHint ? (
-                    <ThemedText className="text-[11px] font-semibold text-emerald-500">
-                      {autoReadHint}
-                    </ThemedText>
-                  ) : (
-                    <ThemedText
-                      className={`text-[11px] ${
-                        isDarkMode ? "text-slate-400" : "text-slate-500"
-                      }`}
-                    >
-                      SMS auto-fill ready
-                    </ThemedText>
-                  )}
-                </View>
               </View>
 
               {/* Action Button: Verify OTP */}
