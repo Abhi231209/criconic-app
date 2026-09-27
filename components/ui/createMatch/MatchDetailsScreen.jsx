@@ -64,6 +64,7 @@ export default function MatchDetailsScreen() {
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
 
   const scrollViewRef = useRef();
   const customOversInputRef = useRef();
@@ -170,8 +171,31 @@ export default function MatchDetailsScreen() {
     };
   }, [debouncedLocationSearch]);
 
+  const handleProceedToStep2 = () => {
+    const oversNum = Number(matchDetails.overs);
+    if (!oversNum || oversNum <= 0) {
+      showGlobalAlert({
+        title: "Overs Required",
+        message: "Please select or enter the number of overs.",
+        type: "warning",
+      });
+      return;
+    }
+    setCurrentStep(2);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+    }, 50);
+  };
+
   const handleBack = () => {
-    if (matchId) {
+    if (currentStep === 2) {
+      setCurrentStep(1);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+      }, 50);
+      return;
+    }
+    if (matchId && matchDetails.location?.trim()) {
       saveMatchDetails(MATCH_STATUS.MATCH_DETAILS_ENTERED).catch((e) =>
         console.warn("[MatchDetailsScreen] auto-save on back error:", e)
       );
@@ -191,6 +215,13 @@ export default function MatchDetailsScreen() {
 
       const backAction = () => {
         if (!navigation.isFocused()) return false;
+        if (currentStep === 2) {
+          setCurrentStep(1);
+          setTimeout(() => {
+            scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+          }, 50);
+          return true;
+        }
         handleBack();
         return true;
       };
@@ -201,6 +232,14 @@ export default function MatchDetailsScreen() {
         const actionType = e.data?.action?.type;
         if (actionType !== "GO_BACK" && actionType !== "POP") return;
         if (isLeavingRef.current || !navigation.isFocused()) return;
+        if (currentStep === 2) {
+          e.preventDefault();
+          setCurrentStep(1);
+          setTimeout(() => {
+            scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+          }, 50);
+          return;
+        }
         e.preventDefault();
         handleBack();
       });
@@ -209,7 +248,7 @@ export default function MatchDetailsScreen() {
         backHandler.remove();
         unsubscribe();
       };
-    }, [navigation, fetchedMatch, route.params])
+    }, [navigation, fetchedMatch, route.params, currentStep])
   );
 
   const calculateDefaultPowerplay = (overs) => {
@@ -511,11 +550,22 @@ export default function MatchDetailsScreen() {
   };
 
   const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+    if (!date) return "";
+    const d = date instanceof Date ? date : new Date(date);
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    const formatted = d.toLocaleDateString("en-US", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
     });
+
+    return isToday ? `Today (${formatted})` : formatted;
   };
 
   const scrollToInput = (reactNode) => {
@@ -619,21 +669,106 @@ export default function MatchDetailsScreen() {
     >
       {/* Header */}
       <View
-        className={`px-4 py-4 border-b flex-row items-center ${
+        className={`px-4 py-4 border-b flex-row items-center justify-between ${
           isDarkMode
             ? "bg-gray-800 border-gray-700"
             : "bg-white border-gray-200"
         }`}
       >
+        <View className="flex-row items-center flex-1">
+          <TouchableOpacity
+            onPress={handleBack}
+            className="p-2 mr-2"
+          >
+            <Ionicons name="arrow-back" size={24} color="#2563EB" />
+          </TouchableOpacity>
+          <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+            {currentStep === 1 ? "Overs & Match Date" : "Venue & Conditions"}
+          </ThemedText>
+        </View>
+        <View className="px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950/80 border border-blue-200 dark:border-blue-800">
+          <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400">
+            Step {currentStep} of 2
+          </ThemedText>
+        </View>
+      </View>
+
+      {/* Step Indicator Progress Bar */}
+      <View
+        className={`px-4 py-2.5 border-b flex-row items-center justify-between ${
+          isDarkMode ? "bg-gray-800/90 border-gray-700" : "bg-white border-gray-100"
+        }`}
+      >
         <TouchableOpacity
-          onPress={handleBack}
-          className="p-2 mr-2"
+          onPress={() => {
+            if (currentStep === 2) {
+              setCurrentStep(1);
+              setTimeout(() => {
+                scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+              }, 50);
+            }
+          }}
+          className="flex-row items-center flex-1"
+          disabled={currentStep === 1}
+          activeOpacity={currentStep === 2 ? 0.7 : 1}
         >
-          <Ionicons name="arrow-back" size={24} color="#2563EB" />
+          <View
+            className={`w-6 h-6 rounded-full items-center justify-center mr-2 ${
+              currentStep === 1
+                ? "bg-blue-600"
+                : "bg-emerald-600"
+            }`}
+          >
+            {currentStep > 1 ? (
+              <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+            ) : (
+              <ThemedText className="text-white text-xs font-bold">1</ThemedText>
+            )}
+          </View>
+          <ThemedText
+            className={`text-xs font-bold ${
+              currentStep === 1
+                ? isDarkMode ? "text-white" : "text-gray-900"
+                : "text-gray-500 dark:text-gray-400"
+            }`}
+          >
+            Overs & Date
+          </ThemedText>
         </TouchableOpacity>
-        <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
-          Match Details
-        </ThemedText>
+
+        <View
+          className={`h-0.5 w-8 mx-2 ${
+            currentStep === 2 ? "bg-blue-600" : isDarkMode ? "bg-gray-700" : "bg-gray-200"
+          }`}
+        />
+
+        {/* Step 2 indicator: non-clickable, user must complete Step 1 */}
+        <View className="flex-row items-center flex-1 justify-end">
+          <ThemedText
+            className={`text-xs font-bold mr-2 ${
+              currentStep === 2
+                ? isDarkMode ? "text-white" : "text-gray-900"
+                : "text-gray-400 dark:text-gray-500"
+            }`}
+          >
+            Venue & Pitch
+          </ThemedText>
+          <View
+            className={`w-6 h-6 rounded-full items-center justify-center ${
+              currentStep === 2
+                ? "bg-blue-600"
+                : isDarkMode ? "bg-gray-700" : "bg-gray-200"
+            }`}
+          >
+            <ThemedText
+              className={`text-xs font-bold ${
+                currentStep === 2 ? "text-white" : isDarkMode ? "text-gray-400" : "text-gray-600"
+              }`}
+            >
+              2
+            </ThemedText>
+          </View>
+        </View>
       </View>
 
       <AppKeyboardAwareScrollView 
@@ -645,409 +780,481 @@ export default function MatchDetailsScreen() {
         contentContainerStyle={{ paddingBottom: 60 }}
         showsVerticalScrollIndicator={true}
       >
-          {/* Teams Preview */}
-          <View className={`p-4 rounded-xl mb-6 ${
-            isDarkMode ? "bg-gray-800" : "bg-white"
-          } shadow-sm border ${
-            isDarkMode ? "border-gray-700" : "border-gray-200"
-          }`}>
-            <ThemedText className="text-lg font-bold text-center mb-3 text-gray-900 dark:text-white">
-              {teamA?.name} vs {teamB?.name}
-            </ThemedText>
-            <View className="flex-row justify-between">
-              <View className="items-center">
-                <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                  Team A Players
-                </ThemedText>
-                <ThemedText className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {teamASquad?.length}
-                </ThemedText>
-              </View>
-              <View className="items-center">
-                <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                  Team B Players
-                </ThemedText>
-                <ThemedText className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {teamBSquad?.length}
-                </ThemedText>
-              </View>
-            </View>
-          </View>
-
-          {/* Match Type Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Match Type
-            </ThemedText>
-            <View className="flex-row">
-              {renderOptionButton("box", "Box Cricket", "cube", matchDetails.matchType === "box")}
-              {renderOptionButton("limited", "Limited Overs", "trophy", matchDetails.matchType === "limited")}
-            </View>
-          </View>
-
-          {/* Ball Type Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Ball Type
-            </ThemedText>
-            <View className="flex-row flex-wrap">
-              {renderBallTypeOption("tennis", "Tennis Ball", matchDetails.ballType === "tennis")}
-              {renderBallTypeOption("leather", "Leather Ball", matchDetails.ballType === "leather")}
-            </View>
-          </View>
-
-          {/* Pitch Type Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Pitch Type
-            </ThemedText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-              {renderPitchTypeOption("turf", "Turf / Grass", matchDetails.pitchType === "turf")}
-              {renderPitchTypeOption("cement", "Cement", matchDetails.pitchType === "cement")}
-              {renderPitchTypeOption("matting", "Matting", matchDetails.pitchType === "matting")}
-              {renderPitchTypeOption("astroturf", "AstroTurf", matchDetails.pitchType === "astroturf")}
-              {renderPitchTypeOption("mud_rough", "Rough / Soil", matchDetails.pitchType === "mud_rough")}
-            </ScrollView>
-          </View>
-
-          {/* Date Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Match Date
-            </ThemedText>
-            <TouchableOpacity
-              onPress={() => setShowDatePicker(true)}
-              className={`p-4 rounded-xl ${
-                isDarkMode ? "bg-gray-800" : "bg-white"
-              } border ${
-                isDarkMode ? "border-gray-700" : "border-gray-200"
-              }`}
-            >
-              <ThemedText className="text-gray-900 dark:text-white">
-                {formatDate(matchDetails.date)}
+        {currentStep === 1 ? (
+          <>
+            {/* Match Date Selection - Prominent & Clearly Visible at Top */}
+            <View className="mb-6">
+              <ThemedText className="text-base font-bold mb-2 text-gray-900 dark:text-white">
+                Match Date
               </ThemedText>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={matchDetails.date}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-              />
-            )}
-          </View>
-
-          {/* Overs Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Number of Overs
-            </ThemedText>
-            
-            {/* Custom Overs Input */}
-            {showCustomOvers ? (
-              <View className={`p-3 rounded-lg mb-3 ${
-                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-              } border-2`}>
-                <ThemedText className="text-sm font-medium mb-2 text-gray-900 dark:text-white">
-                  Enter custom overs:
-                </ThemedText>
-                <View className="flex-row items-center">
-                  <TextInput
-                    ref={customOversInputRef}
-                    placeholder="Enter number of overs"
-                    placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                    value={customOvers}
-                    onChangeText={setCustomOvers}
-                    keyboardType="numeric"
-                    className={`flex-1 p-3 rounded-lg ${
-                      isDarkMode ? "bg-gray-700 text-white" : "bg-gray-100 text-gray-900"
-                    }`}
-                    onSubmitEditing={handleCustomOversSubmit}
-                    returnKeyType="done"
-                  />
-                  <TouchableOpacity 
-                    onPress={handleCustomOversSubmit} 
-                    className="ml-2 p-3 bg-green-500 rounded-lg"
-                    disabled={!customOvers}
-                  >
-                    <Ionicons
-                      name="checkmark"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={() => {
-                      setShowCustomOvers(false);
-                      setCustomOvers("");
-                    }} 
-                    className="ml-2 p-3 bg-red-500 rounded-lg"
-                  >
-                    <Ionicons
-                      name="close"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
               <TouchableOpacity
-                onPress={focusCustomOversInput}
-                className={`p-3 rounded-lg mb-3 ${
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.75}
+                className={`p-4 rounded-xl flex-row items-center justify-between border-2 ${
                   isDarkMode
-                    ? "bg-gray-800 border-gray-700"
-                    : "bg-white border-gray-200"
-                } border-2 border-dashed flex-row items-center justify-center`}
+                    ? "bg-gray-800 border-blue-600/50"
+                    : "bg-white border-blue-200"
+                } shadow-sm`}
               >
-                <Ionicons
-                  name="add-circle"
-                  size={20}
-                  color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                  style={{ marginRight: 8 }}
-                />
-                <ThemedText className="text-gray-900 dark:text-white">
-                  Custom Overs
-                </ThemedText>
-              </TouchableOpacity>
-            )}
-            
-            <View className="flex-row flex-wrap">
-              {[1, 2, 3, 4, 5, 6, 10, 15, 20, 25, 30].map(overs => (
-                <TouchableOpacity
-                  key={overs}
-                  onPress={() => handleInputChange("overs", overs)}
-                  className={`p-3 rounded-lg mx-1 mb-2 ${
-                    matchDetails.overs === overs
-                      ? "bg-blue-500 border-blue-600"
-                      : isDarkMode
-                      ? "bg-gray-800 border-gray-700"
-                      : "bg-white border-gray-200"
-                  } border-2`}
-                >
-                  <ThemedText
-                    className={`font-medium ${
-                      matchDetails.overs === overs
-                        ? "text-white"
-                        : "text-gray-900 dark:text-white"
-                    }`}
-                  >
-                    {overs} overs
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
-              
-              {/* Show custom overs as an option if it's not in the preset list */}
-              {matchDetails.overs > 0 && ![1, 2, 3, 4, 5, 6, 10, 15, 20, 25, 30].includes(matchDetails.overs) && (
-                <TouchableOpacity
-                  className={`p-3 rounded-lg mx-1 mb-2 bg-blue-500 border-blue-600 border-2`}
-                >
-                  <ThemedText className="font-medium text-white">
-                    {matchDetails.overs} overs
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            {matchDetails.overs && (
-              <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                Selected: {matchDetails.overs} overs
-              </ThemedText>
-            )}
-          </View>
-
-          {/* Powerplay Selection */}
-          <View className="mb-6">
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Powerplay Overs
-            </ThemedText>
-            <View className="flex-row flex-wrap">
-              {["None", 1, 2, 3, 4, 6, 8, 10]
-                .filter((p) => p === "None" || p < (matchDetails.overs || 20))
-                .map((powerplay) => {
-                  const isSelected =
-                    powerplay === "None"
-                      ? !matchDetails.powerplay || matchDetails.powerplay === 0
-                      : matchDetails.powerplay === powerplay;
-                  const label = powerplay === "None" ? "None" : `${powerplay} overs`;
-
-                  return (
-                    <TouchableOpacity
-                      key={String(powerplay)}
-                      onPress={() =>
-                        handleInputChange(
-                          "powerplay",
-                          powerplay === "None" ? 0 : powerplay
-                        )
-                      }
-                      className={`p-3 rounded-lg mx-1 mb-2 ${
-                        isSelected
-                          ? "bg-blue-500 border-blue-600"
-                          : isDarkMode
-                          ? "bg-gray-800 border-gray-700"
-                          : "bg-white border-gray-200"
-                      } border-2`}
-                    >
-                      <ThemedText
-                        className={`font-medium ${
-                          isSelected
-                            ? "text-white"
-                            : "text-gray-900 dark:text-white"
-                        }`}
-                      >
-                        {label}
-                      </ThemedText>
-                    </TouchableOpacity>
-                  );
-                })}
-            </View>
-          </View>
-
-          {/* Location Input with Google Places Autocomplete */}
-          <View
-            className="mb-6"
-            onLayout={(e) => {
-              locationSectionYRef.current = e.nativeEvent.layout.y;
-            }}
-          >
-            <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
-              Location / Ground
-            </ThemedText>
-            <View className="relative">
-              <View
-                className={`flex-row items-center px-4 py-3 rounded-xl border ${
-                  isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                }`}
-              >
-                <Ionicons
-                  name="location"
-                  size={20}
-                  color={matchDetails.location ? "#2563EB" : isDarkMode ? "#9CA3AF" : "#6B7280"}
-                  style={{ marginRight: 10 }}
-                />
-                <TextInput
-                  ref={locationInputRef}
-                  placeholder="Search for ground or city location..."
-                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                  value={matchDetails.location}
-                  onChangeText={handleLocationSearch}
-                  onFocus={focusLocationInput}
-                  onBlur={() => {
-                    isLocationFocusedRef.current = false;
-                  }}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  onSubmitEditing={() => Keyboard.dismiss()}
-                  className={`flex-1 text-base ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                  style={{ fontSize: 15 }}
-                />
-                {isLoadingLocation && (
-                  <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 6 }} />
-                )}
-                {matchDetails.location ? (
-                  <TouchableOpacity onPress={clearLocation} className="p-1">
-                    <Ionicons
-                      name="close-circle"
-                      size={20}
-                      color={isDarkMode ? "#9CA3AF" : "#6B7280"}
-                    />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              {/* Suggestions dropdown */}
-              {showLocationSuggestions && locationSuggestions.length > 0 && (
-                <View
-                  className={`mt-2 rounded-xl z-20 max-h-56 ${
-                    isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                  } border shadow-lg overflow-hidden`}
-                >
-                  <ScrollView
-                    keyboardShouldPersistTaps="always"
-                    nestedScrollEnabled={true}
-                    className="max-h-56"
-                  >
-                    {locationSuggestions.map((item, index) => {
-                      const mainText =
-                        item?.structured_formatting?.main_text ||
-                        item?.description ||
-                        (typeof item === "string" ? item : "Location");
-                      const secondaryText = item?.structured_formatting?.secondary_text || "";
-
-                      return (
-                        <TouchableOpacity
-                          key={item?.place_id || index}
-                          onPress={() => selectLocation(item)}
-                          className={`p-3.5 border-b flex-row items-center ${
-                            isDarkMode
-                              ? "border-gray-700 active:bg-gray-700"
-                              : "border-gray-100 active:bg-blue-50"
-                          }`}
-                        >
-                          <Ionicons
-                            name="location-outline"
-                            size={18}
-                            color="#2563EB"
-                            style={{ marginRight: 10 }}
-                          />
-                          <View className="flex-1">
-                            <ThemedText
-                              numberOfLines={1}
-                              className={`text-sm font-semibold ${
-                                isDarkMode ? "text-white" : "text-gray-900"
-                              }`}
-                            >
-                              {mainText}
-                            </ThemedText>
-                            {secondaryText ? (
-                              <ThemedText
-                                numberOfLines={1}
-                                className={`text-xs mt-0.5 ${
-                                  isDarkMode ? "text-gray-400" : "text-gray-500"
-                                }`}
-                              >
-                                {secondaryText}
-                              </ThemedText>
-                            ) : null}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* No results notice */}
-              {showLocationSuggestions &&
-                !isLoadingLocation &&
-                locationSuggestions.length === 0 &&
-                matchDetails.location?.trim()?.length >= 3 && (
-                  <View
-                    className={`mt-2 p-3 rounded-xl ${
-                      isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                    } border`}
-                  >
-                    <ThemedText className="text-xs text-center text-gray-500 dark:text-gray-400">
-                      No Google places found. Your typed location will be used.
+                <View className="flex-row items-center flex-1 mr-3">
+                  <View className="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-900/60 items-center justify-center mr-3.5">
+                    <Ionicons name="calendar" size={22} color="#2563EB" />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-0.5">
+                      Scheduled Date
+                    </ThemedText>
+                    <ThemedText className="text-base font-bold text-gray-900 dark:text-white">
+                      {formatDate(matchDetails.date)}
                     </ThemedText>
                   </View>
-                )}
+                </View>
+                <View className="flex-row items-center px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800">
+                  <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400 mr-1">
+                    Change
+                  </ThemedText>
+                  <Ionicons name="calendar-outline" size={14} color="#2563EB" />
+                </View>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={matchDetails.date}
+                  mode="date"
+                  display="default"
+                  themeVariant={isDarkMode ? "dark" : "light"}
+                  onChange={handleDateChange}
+                />
+              )}
             </View>
-          </View>
 
-          {/* Action Buttons: Schedule and Start Match (matching sports-arena MatchDetails) */}
-          <View className="flex-row items-center gap-3 mt-6 mb-8">
+            {/* Overs Selection */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Number of Overs
+              </ThemedText>
+              
+              {/* Custom Overs Input */}
+              {showCustomOvers ? (
+                <View className={`p-3 rounded-lg mb-3 ${
+                  isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                } border-2`}>
+                  <ThemedText className="text-sm font-medium mb-2 text-gray-900 dark:text-white">
+                    Enter custom overs:
+                  </ThemedText>
+                  <View className="flex-row items-center">
+                    <TextInput
+                      ref={customOversInputRef}
+                      placeholder="Enter number of overs"
+                      placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      value={customOvers}
+                      onChangeText={setCustomOvers}
+                      keyboardType="numeric"
+                      className={`flex-1 p-3 rounded-lg ${
+                        isDarkMode ? "bg-gray-700 text-white" : "bg-gray-100 text-gray-900"
+                      }`}
+                      onSubmitEditing={handleCustomOversSubmit}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity 
+                      onPress={handleCustomOversSubmit} 
+                      className="ml-2 p-3 bg-green-500 rounded-lg"
+                      disabled={!customOvers}
+                    >
+                      <Ionicons
+                        name="checkmark"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setShowCustomOvers(false);
+                        setCustomOvers("");
+                      }} 
+                      className="ml-2 p-3 bg-red-500 rounded-lg"
+                    >
+                      <Ionicons
+                        name="close"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={focusCustomOversInput}
+                  className={`p-3 rounded-lg mb-3 ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700"
+                      : "bg-white border-gray-200"
+                  } border-2 border-dashed flex-row items-center justify-center`}
+                >
+                  <Ionicons
+                    name="add-circle"
+                    size={20}
+                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    style={{ marginRight: 8 }}
+                  />
+                  <ThemedText className="text-gray-900 dark:text-white">
+                    Custom Overs
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+              
+              <View className="flex-row flex-wrap">
+                {[6, 8, 10, 12, 15, 20, 25, 30].map(overs => (
+                  <TouchableOpacity
+                    key={overs}
+                    onPress={() => handleInputChange("overs", overs)}
+                    className={`p-3 rounded-lg mx-1 mb-2 ${
+                      matchDetails.overs === overs
+                        ? "bg-blue-500 border-blue-600"
+                        : isDarkMode
+                        ? "bg-gray-800 border-gray-700"
+                        : "bg-white border-gray-200"
+                    } border-2`}
+                  >
+                    <ThemedText
+                      className={`font-medium ${
+                        matchDetails.overs === overs
+                          ? "text-white"
+                          : "text-gray-900 dark:text-white"
+                      }`}
+                    >
+                      {overs} overs
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+                
+                {/* Show custom overs as an option if it's not in the preset list */}
+                {matchDetails.overs > 0 && ![6, 8, 10, 12, 15, 20, 25, 30].includes(matchDetails.overs) && (
+                  <TouchableOpacity
+                    className={`p-3 rounded-lg mx-1 mb-2 bg-blue-500 border-blue-600 border-2`}
+                  >
+                    <ThemedText className="font-medium text-white">
+                      {matchDetails.overs} overs
+                    </ThemedText>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {matchDetails.overs && (
+                <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  Selected: {matchDetails.overs} overs
+                </ThemedText>
+              )}
+            </View>
+
+            {/* Powerplay Selection */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Powerplay Overs
+              </ThemedText>
+              <View className="flex-row flex-wrap">
+                {["None", 1, 2, 3, 4, 6, 8, 10]
+                  .filter((p) => p === "None" || p < (matchDetails.overs || 20))
+                  .map((powerplay) => {
+                    const isSelected =
+                      powerplay === "None"
+                        ? !matchDetails.powerplay || matchDetails.powerplay === 0
+                        : matchDetails.powerplay === powerplay;
+                    const label = powerplay === "None" ? "None" : `${powerplay} overs`;
+
+                    return (
+                      <TouchableOpacity
+                        key={String(powerplay)}
+                        onPress={() =>
+                          handleInputChange(
+                            "powerplay",
+                            powerplay === "None" ? 0 : powerplay
+                          )
+                        }
+                        className={`p-3 rounded-lg mx-1 mb-2 ${
+                          isSelected
+                            ? "bg-blue-500 border-blue-600"
+                            : isDarkMode
+                            ? "bg-gray-800 border-gray-700"
+                            : "bg-white border-gray-200"
+                        } border-2`}
+                      >
+                        <ThemedText
+                          className={`font-medium ${
+                            isSelected
+                              ? "text-white"
+                              : "text-gray-900 dark:text-white"
+                          }`}
+                        >
+                          {label}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            {/* Step 1 Quick Summary Card */}
+            <View
+              className={`p-3.5 rounded-xl mb-5 flex-row items-center justify-between border ${
+                isDarkMode
+                  ? "bg-gray-800/90 border-gray-700"
+                  : "bg-blue-50/70 border-blue-100"
+              }`}
+            >
+              <View className="flex-1 mr-2">
+                <ThemedText className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1">
+                  Overs & Date Selected
+                </ThemedText>
+                <ThemedText className="text-sm font-bold text-gray-900 dark:text-white">
+                  {matchDetails.overs} Overs
+                  {matchDetails.powerplay ? ` • ${matchDetails.powerplay} PP Overs` : " • No PP"}
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {formatDate(matchDetails.date)}
+                </ThemedText>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setCurrentStep(1);
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+                  }, 50);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 active:bg-blue-700 flex-row items-center"
+              >
+                <Ionicons name="pencil" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                <ThemedText className="text-white text-xs font-semibold">
+                  Change
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {/* Match Type Selection - Moved to Step 2 */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Match Type
+              </ThemedText>
+              <View className="flex-row">
+                {renderOptionButton("box", "Box Cricket", "cube", matchDetails.matchType === "box")}
+                {renderOptionButton("limited", "Limited Overs", "trophy", matchDetails.matchType === "limited")}
+              </View>
+            </View>
+
+            {/* Location Input with Google Places Autocomplete */}
+            <View
+              className="mb-6"
+              onLayout={(e) => {
+                locationSectionYRef.current = e.nativeEvent.layout.y;
+              }}
+            >
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Location / Ground
+              </ThemedText>
+              <View className="relative">
+                <View
+                  className={`flex-row items-center px-4 py-3 rounded-xl border ${
+                    isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                  }`}
+                >
+                  <Ionicons
+                    name="location"
+                    size={20}
+                    color={matchDetails.location ? "#2563EB" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    style={{ marginRight: 10 }}
+                  />
+                  <TextInput
+                    ref={locationInputRef}
+                    placeholder="Search for ground or city location..."
+                    placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    value={matchDetails.location}
+                    onChangeText={handleLocationSearch}
+                    onFocus={focusLocationInput}
+                    onBlur={() => {
+                      isLocationFocusedRef.current = false;
+                    }}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                    className={`flex-1 text-base ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                    style={{ fontSize: 15 }}
+                  />
+                  {isLoadingLocation && (
+                    <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 6 }} />
+                  )}
+                  {matchDetails.location ? (
+                    <TouchableOpacity onPress={clearLocation} className="p-1">
+                      <Ionicons
+                        name="close-circle"
+                        size={20}
+                        color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {/* Suggestions dropdown */}
+                {showLocationSuggestions && locationSuggestions.length > 0 && (
+                  <View
+                    className={`mt-2 rounded-xl z-20 max-h-56 ${
+                      isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                    } border shadow-lg overflow-hidden`}
+                  >
+                    <ScrollView
+                      keyboardShouldPersistTaps="always"
+                      nestedScrollEnabled={true}
+                      className="max-h-56"
+                    >
+                      {locationSuggestions.map((item, index) => {
+                        const mainText =
+                          item?.structured_formatting?.main_text ||
+                          item?.description ||
+                          (typeof item === "string" ? item : "Location");
+                        const secondaryText = item?.structured_formatting?.secondary_text || "";
+
+                        return (
+                          <TouchableOpacity
+                            key={item?.place_id || index}
+                            onPress={() => selectLocation(item)}
+                            className={`p-3.5 border-b flex-row items-center ${
+                              isDarkMode
+                                ? "border-gray-700 active:bg-gray-700"
+                                : "border-gray-100 active:bg-blue-50"
+                            }`}
+                          >
+                            <Ionicons
+                              name="location-outline"
+                              size={18}
+                              color="#2563EB"
+                              style={{ marginRight: 10 }}
+                            />
+                            <View className="flex-1">
+                              <ThemedText
+                                numberOfLines={1}
+                                className={`text-sm font-semibold ${
+                                  isDarkMode ? "text-white" : "text-gray-900"
+                                }`}
+                              >
+                                {mainText}
+                              </ThemedText>
+                              {secondaryText ? (
+                                <ThemedText
+                                  numberOfLines={1}
+                                  className={`text-xs mt-0.5 ${
+                                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                                  }`}
+                                >
+                                  {secondaryText}
+                                </ThemedText>
+                              ) : null}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* No results notice */}
+                {showLocationSuggestions &&
+                  !isLoadingLocation &&
+                  locationSuggestions.length === 0 &&
+                  matchDetails.location?.trim()?.length >= 3 && (
+                    <View
+                      className={`mt-2 p-3 rounded-xl ${
+                        isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                      } border`}
+                    >
+                      <ThemedText className="text-xs text-center text-gray-500 dark:text-gray-400">
+                        No Google places found. Your typed location will be used.
+                      </ThemedText>
+                    </View>
+                  )}
+              </View>
+            </View>
+
+            {/* Ball Type Selection */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Ball Type
+              </ThemedText>
+              <View className="flex-row flex-wrap">
+                {renderBallTypeOption("tennis", "Tennis Ball", matchDetails.ballType === "tennis")}
+                {renderBallTypeOption("leather", "Leather Ball", matchDetails.ballType === "leather")}
+              </View>
+            </View>
+
+            {/* Pitch Type Selection */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Pitch Type
+              </ThemedText>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+                {renderPitchTypeOption("turf", "Turf / Grass", matchDetails.pitchType === "turf")}
+                {renderPitchTypeOption("cement", "Cement", matchDetails.pitchType === "cement")}
+                {renderPitchTypeOption("matting", "Matting", matchDetails.pitchType === "matting")}
+                {renderPitchTypeOption("astroturf", "AstroTurf", matchDetails.pitchType === "astroturf")}
+                {renderPitchTypeOption("mud_rough", "Rough / Soil", matchDetails.pitchType === "mud_rough")}
+              </ScrollView>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                setCurrentStep(1);
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
+                }, 50);
+              }}
+              className="items-center py-2.5 mb-4 flex-row justify-center"
+            >
+              <Ionicons name="arrow-back" size={16} color={isDarkMode ? "#9CA3AF" : "#6B7280"} style={{ marginRight: 6 }} />
+              <ThemedText className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Back to Overs & Date
+              </ThemedText>
+            </TouchableOpacity>
+          </>
+        )}
+      </AppKeyboardAwareScrollView>
+
+      {/* Sticky Bottom Action Button Bar - ALWAYS VISIBLE */}
+      <View
+        className={`px-4 py-3 border-t ${
+          isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
+        }`}
+        style={{
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.08,
+          shadowRadius: 4,
+          elevation: 5,
+        }}
+      >
+        {currentStep === 1 ? (
+          <TouchableOpacity
+            onPress={handleProceedToStep2}
+            className="w-full py-3.5 px-4 rounded-xl items-center justify-center bg-blue-600 flex-row shadow-sm"
+            activeOpacity={0.85}
+          >
+            <ThemedText className="text-white text-base font-bold mr-2">
+              Next: Venue & Conditions
+            </ThemedText>
+            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : (
+          <View className="flex-row items-center gap-3">
             <TouchableOpacity
               onPress={handleScheduleMatch}
               disabled={isSubmitting}
-              className={`flex-1 p-4 rounded-xl items-center justify-center border ${
+              className={`flex-1 py-3.5 px-4 rounded-xl items-center justify-center border ${
                 isDarkMode
                   ? "border-blue-500/40 bg-gray-800"
                   : "border-blue-400 bg-white"
               } ${isSubmitting ? "opacity-50" : ""}`}
+              activeOpacity={0.85}
             >
               <ThemedText
                 className={`text-base font-bold ${
@@ -1061,9 +1268,10 @@ export default function MatchDetailsScreen() {
             <TouchableOpacity
               onPress={handleStartMatch}
               disabled={isSubmitting}
-              className={`flex-1 p-4 rounded-xl items-center justify-center bg-blue-600 ${
+              className={`flex-1 py-3.5 px-4 rounded-xl items-center justify-center bg-blue-600 ${
                 isSubmitting ? "bg-blue-400" : ""
               }`}
+              activeOpacity={0.85}
             >
               {isSubmitting ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
@@ -1074,7 +1282,8 @@ export default function MatchDetailsScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </AppKeyboardAwareScrollView>
-      </SafeAreaView>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }

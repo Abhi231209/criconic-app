@@ -123,10 +123,6 @@ export default function CreateTeam() {
     teamName: '',
     shortName: '',
     teamType: 'club',
-    captainName: '',
-    captainPhone: '',
-    coachName: '',
-    coachPhone: '',
     homeGround: '',
     city: '',
     cityLocationId: '',
@@ -224,26 +220,6 @@ export default function CreateTeam() {
       return;
     }
 
-    const cleanCaptainPhone = (formData.captainPhone || '').replace(/[^0-9]/g, '');
-    if (cleanCaptainPhone && cleanCaptainPhone.length !== 10) {
-      showGlobalAlert({
-        title: 'Invalid Phone',
-        message: 'Captain phone must be a valid 10-digit number if provided.',
-        type: 'warning',
-      });
-      return;
-    }
-
-    const cleanCoachPhone = (formData.coachPhone || '').replace(/[^0-9]/g, '');
-    if (cleanCoachPhone && cleanCoachPhone.length !== 10) {
-      showGlobalAlert({
-        title: 'Invalid Phone',
-        message: 'Coach phone must be a valid 10-digit number if provided.',
-        type: 'warning',
-      });
-      return;
-    }
-
     setIsLoading(true);
 
     try {
@@ -259,10 +235,6 @@ export default function CreateTeam() {
         location: formData.city.trim() || "Local",
         ...(formData.cityLocationId ? { locationId: formData.cityLocationId } : {}),
         teamType: formData.teamType,
-        captainName: formData.captainName.trim(),
-        captainPhone: cleanCaptainPhone,
-        coachName: formData.coachName.trim(),
-        coachPhone: cleanCoachPhone,
         homeGround: formData.homeGround.trim(),
         establishedYear: formData.establishedYear,
         jerseyColor: formData.jerseyColor,
@@ -468,49 +440,6 @@ export default function CreateTeam() {
             placeholder="e.g., Blue, Red, etc."
           />
 
-          {/* Captain Details */}
-          <ThemedText className={`text-lg font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            Captain Details
-          </ThemedText>
-
-          <InputField
-            label="Captain Name *"
-            value={formData.captainName}
-            onChange={(text) => setFormData({ ...formData, captainName: text })}
-            onFocus={handleInputFocus}
-            placeholder="Enter captain name"
-          />
-
-          <InputField
-            label="Captain Phone"
-            value={formData.captainPhone}
-            onChange={(text) => setFormData({ ...formData, captainPhone: text })}
-            onFocus={handleInputFocus}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
-          />
-
-          {/* Coach Details */}
-          <ThemedText className={`text-lg font-bold mb-3 mt-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            Coach Details (Optional)
-          </ThemedText>
-
-          <InputField
-            label="Coach Name"
-            value={formData.coachName}
-            onChange={(text) => setFormData({ ...formData, coachName: text })}
-            onFocus={handleInputFocus}
-            placeholder="Enter coach name"
-          />
-
-          <InputField
-            label="Coach Phone"
-            value={formData.coachPhone}
-            onChange={(text) => setFormData({ ...formData, coachPhone: text })}
-            onFocus={handleInputFocus}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
-          />
 
           {/* Description */}
           <InputField

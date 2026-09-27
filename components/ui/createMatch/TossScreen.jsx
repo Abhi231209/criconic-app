@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import RightDrawer from "@/components/ui/custom/RightDrawer";
 import MatchSetting from "./MatchSetting";
@@ -576,11 +577,12 @@ export default function TossScreen() {
             <View className="flex-row justify-between space-x-4">
               <TouchableOpacity
                 onPress={() => makeDecision("Bat")}
+                activeOpacity={0.8}
                 className={`flex-1 p-4 rounded-xl items-center ${
                   isDarkMode ? "bg-gray-700" : "bg-green-50"
                 } border-2 border-green-300`}
               >
-                <Ionicons name="baseball" size={24} color="#10B981" />
+                <MaterialCommunityIcons name="cricket" size={28} color="#10B981" />
                 <ThemedText className="font-semibold text-gray-900 dark:text-white mt-2">
                   Bat First
                 </ThemedText>
@@ -588,11 +590,12 @@ export default function TossScreen() {
 
               <TouchableOpacity
                 onPress={() => makeDecision("Bowl")}
+                activeOpacity={0.8}
                 className={`flex-1 p-4 rounded-xl items-center ${
                   isDarkMode ? "bg-gray-700" : "bg-blue-50"
                 } border-2 border-blue-300`}
               >
-                <Ionicons name="speedometer" size={24} color="#3B82F6" />
+                <MaterialCommunityIcons name="baseball" size={28} color="#3B82F6" />
                 <ThemedText className="font-semibold text-gray-900 dark:text-white mt-2">
                   Bowl First
                 </ThemedText>
@@ -614,12 +617,29 @@ export default function TossScreen() {
             <ThemedText className="text-xl font-bold text-center text-green-800 dark:text-green-200">
               {winner.name}
             </ThemedText>
-            <ThemedText className="text-lg text-center text-green-700 dark:text-green-300 mt-2">
-              chose to {decision.toLowerCase()} first
-            </ThemedText>
+            <View className="flex-row items-center justify-center mt-2">
+              <MaterialCommunityIcons
+                name={decision === "Bat" ? "cricket" : "baseball"}
+                size={22}
+                color={isDarkMode ? "#86EFAC" : "#15803D"}
+                style={{ marginRight: 6 }}
+              />
+              <ThemedText className="text-lg font-semibold text-center text-green-700 dark:text-green-300">
+                chose to {decision.toLowerCase()} first
+              </ThemedText>
+            </View>
             <ThemedText className="text-sm text-center text-green-600 dark:text-green-400 mt-1">
               {tossResult}
             </ThemedText>
+            <TouchableOpacity
+              onPress={() => setDecision(null)}
+              className="mt-3 py-1.5 px-4 self-center rounded-full bg-green-200/70 dark:bg-green-800/50"
+              activeOpacity={0.7}
+            >
+              <ThemedText className="text-xs font-semibold text-green-800 dark:text-green-200">
+                Change Decision
+              </ThemedText>
+            </TouchableOpacity>
           </View>
         )}
 
