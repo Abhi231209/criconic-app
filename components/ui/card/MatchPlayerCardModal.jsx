@@ -20,7 +20,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import FontAwesome5 from "@expo/vector-icons/FontAwesome5";
 import ThemedText from "../custom/ThemedText";
 import PlayerAvatar from "../custom/PlayerAvatar";
-import { generatePlayerHypeLines } from "@/utils/playerHypeLine";
+import { generatePlayerHypeLines, getPlayerPerformanceBadge } from "@/utils/playerHypeLine";
 import { userApi } from "@/utils/api";
 import ViewShot, { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
@@ -105,15 +105,35 @@ export default function MatchPlayerCardModal({
     (typeof matchData?.result === "string" ? matchData.result : "") ||
     "Match Performance";
 
-  // Check if player is Player of the Match
-  const rawMom = matchData?.mom || matchData?.manOfTheMatch;
-  const isMom = Boolean(
-    rawMom &&
-      (rawMom?.playerId === selectedPlayer?.playerId ||
-        rawMom?._id === selectedPlayer?._id ||
-        rawMom?.name === selectedPlayer?.name ||
-        selectedPlayer?.isMom)
-  );
+  // Check if player is strictly the real Player of the Match
+  const isMom = useMemo(() => {
+    if (!selectedPlayer) return false;
+    const momObj = matchData?.mom || matchData?.manOfTheMatch;
+    if (!momObj) return false;
+
+    const momId = String(momObj?.playerId || momObj?._id || momObj?.id || "").trim();
+    const momName = String(momObj?.playerName || momObj?.name || (typeof momObj === "string" ? momObj : "")).trim().toLowerCase();
+
+    const pId = String(selectedPlayer?.playerId || selectedPlayer?._id || selectedPlayer?.id || "").trim();
+    const pName = String(selectedPlayer?.playerName || selectedPlayer?.name || selectedPlayer?.username || (typeof selectedPlayer === "string" ? selectedPlayer : "")).trim().toLowerCase();
+
+    if (momId && pId && momId !== "undefined" && pId !== "undefined" && momId === pId) {
+      return true;
+    }
+    if (momName && pName && momName !== "player" && pName !== "player" && momName === pName) {
+      return true;
+    }
+    // Also support explicit isMom property if name matches momObj
+    if (selectedPlayer?.isMom && momName && pName && momName === pName) {
+      return true;
+    }
+    return false;
+  }, [matchData?.mom, matchData?.manOfTheMatch, selectedPlayer]);
+
+  // Dynamic performance badge (always inspiring, positive, and accurate)
+  const playerBadge = useMemo(() => {
+    return getPlayerPerformanceBadge({ player: selectedPlayer, isMom });
+  }, [selectedPlayer, isMom]);
 
   // Generate dynamic hype lines
   const hypeLines = useMemo(() => {
@@ -409,9 +429,9 @@ export default function MatchPlayerCardModal({
                       padding: 4,
                       borderRadius: 999,
                       borderWidth: 2,
-                      borderColor: isMom ? "#F59E0B" : "#4DD6C7",
+                      borderColor: isMom ? "#F59E0B" : (playerBadge?.iconColor || "#4DD6C7"),
                       backgroundColor: "rgba(15, 23, 42, 0.8)",
-                      shadowColor: isMom ? "#F59E0B" : "#4DD6C7",
+                      shadowColor: isMom ? "#F59E0B" : (playerBadge?.iconColor || "#4DD6C7"),
                       shadowOffset: { width: 0, height: 0 },
                       shadowOpacity: 0.6,
                       shadowRadius: 10,
@@ -424,25 +444,21 @@ export default function MatchPlayerCardModal({
                   {/* Player Badge */}
                   <View
                     className={`mt-2.5 px-3 py-0.5 rounded-full border flex-row items-center ${
-                      isMom
-                        ? "bg-amber-500/20 border-amber-400/60"
-                        : "bg-[#4DD6C7]/20 border-[#4DD6C7]/50"
+                      playerBadge?.badgeClass || "bg-[#4DD6C7]/20 border-[#4DD6C7]/50"
                     }`}
                   >
                     <Ionicons
-                      name={isMom ? "trophy" : "star"}
+                      name={playerBadge?.icon || (isMom ? "trophy" : "star")}
                       size={11}
-                      color={isMom ? "#F59E0B" : "#4DD6C7"}
+                      color={playerBadge?.iconColor || (isMom ? "#F59E0B" : "#4DD6C7")}
                       style={{ marginRight: 4 }}
                     />
                     <ThemedText
                       className={`text-[10px] font-black uppercase tracking-wider ${
-                        isMom ? "text-amber-300" : "text-[#8CE9DD]"
+                        playerBadge?.textClass || "text-[#8CE9DD]"
                       }`}
                     >
-                      {isMom
-                        ? "PLAYER OF THE MATCH"
-                        : selectedPlayer?.role || "MATCH PERFORMER"}
+                      {playerBadge?.label || (isMom ? "PLAYER OF THE MATCH" : "MATCH PERFORMER")}
                     </ThemedText>
                   </View>
 

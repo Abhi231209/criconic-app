@@ -270,15 +270,15 @@ export default function FullScoreCard({
     const map = new Map();
     (currentInning?.playedBatsman || []).forEach((b) => {
       const key = String(b?.playerId || b?.id || b?._id || b?.name);
-      if (key && !map.has(key)) map.set(key, b);
+      if (key && !map.has(key)) map.set(key, { ...b, isMom: false });
     });
     (currentInning?.bowling?.allBowlers || []).forEach((b) => {
       const key = String(b?.playerId || b?.id || b?._id || b?.name);
       if (key && !map.has(key)) {
-        map.set(key, b);
+        map.set(key, { ...b, isMom: false });
       } else if (key && map.has(key)) {
         const existing = map.get(key);
-        map.set(key, { ...existing, wicketsTaken: b?.wicketsTaken ?? b?.wickets, over: b?.over, runsGiven: b?.runsGiven ?? b?.runs, eco: b?.eco });
+        map.set(key, { ...existing, isMom: false, wicketsTaken: b?.wicketsTaken ?? b?.wickets, over: b?.over, runsGiven: b?.runsGiven ?? b?.runs, eco: b?.eco });
       }
     });
     return Array.from(map.values());

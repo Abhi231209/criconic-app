@@ -2083,10 +2083,11 @@ export default function MatchScoreCard({
     const headerPlayerList = useMemo(() => {
         const map = new Map();
         const rawMom = score?.mom || score?.manOfTheMatch;
+        let momKey = null;
         if (rawMom) {
             const name = rawMom?.playerName || rawMom?.name || (typeof rawMom === "string" ? rawMom : "Player");
-            const key = String(rawMom?.playerId || rawMom?.id || rawMom?._id || name);
-            map.set(key, {
+            momKey = String(rawMom?.playerId || rawMom?.id || rawMom?._id || name);
+            map.set(momKey, {
                 name,
                 playerId: rawMom?.playerId || rawMom?.id || rawMom?._id,
                 team: rawMom?.team || "",
@@ -2100,13 +2101,13 @@ export default function MatchScoreCard({
         (score?.inning || []).forEach(inn => {
             (inn?.playedBatsman || []).forEach(b => {
                 const key = String(b?.playerId || b?.id || b?._id || b?.name);
-                if (key && !map.has(key)) map.set(key, b);
+                if (key && !map.has(key)) map.set(key, { ...b, isMom: false });
             });
             (inn?.bowling?.allBowlers || inn?.bowling?.bowlers || inn?.bowlers || []).forEach(b => {
                 const key = String(b?.playerId || b?.id || b?._id || b?.name);
                 if (key && !map.has(key)) {
-                    map.set(key, b);
-                } else if (key && map.has(key)) {
+                    map.set(key, { ...b, isMom: false });
+                } else if (key && map.has(key) && key !== momKey) {
                     const existing = map.get(key);
                     map.set(key, { ...existing, wicketsTaken: b?.wicketsTaken ?? b?.wickets, over: b?.over, runsGiven: b?.runsGiven ?? b?.runs, eco: b?.eco });
                 }
@@ -2114,7 +2115,7 @@ export default function MatchScoreCard({
         });
         (score?.batting?.batsman || []).forEach(b => {
             const key = String(b?.playerId || b?.id || b?._id || b?.name);
-            if (key && !map.has(key)) map.set(key, b);
+            if (key && !map.has(key)) map.set(key, { ...b, isMom: false });
         });
         return Array.from(map.values());
     }, [score]);

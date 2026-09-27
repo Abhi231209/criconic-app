@@ -1,9 +1,130 @@
 /**
- * Criconic Algorithmic Player Hype Line Generator
+ * Criconic Algorithmic Player Hype Line & Badge Generator
  * 
- * Generates compelling, cricket-smart punchlines and praise lines for a player
- * based on their specific performance in a match combined with their career history.
+ * Generates compelling, cricket-smart punchlines and encouraging performance badges
+ * based on match data and player career stats.
+ * Always positive, uplifting, and role-appropriate — never negative.
  */
+
+export function getPlayerPerformanceBadge({ player, isMom }) {
+  if (isMom) {
+    return {
+      label: "PLAYER OF THE MATCH",
+      icon: "trophy",
+      badgeClass: "bg-amber-500/20 border-amber-400/60",
+      textClass: "text-amber-300",
+      iconColor: "#F59E0B",
+    };
+  }
+
+  const runs = Number(player?.runs ?? player?.batting?.runs ?? 0);
+  const balls = Number(player?.ballsFaced ?? player?.balls ?? player?.batting?.balls ?? 0);
+  const sr = Number(player?.sr ?? (balls > 0 ? (runs / balls) * 100 : 0));
+  const isNotOut = Boolean(player?.notOut || player?.isNotOut);
+
+  const wickets = Number(player?.wicketsTaken ?? player?.wickets ?? player?.bowling?.wickets ?? 0);
+  const overs = String(player?.over ?? player?.overs ?? player?.bowling?.overs ?? "0");
+  const parsedOvers = parseFloat(overs) || 0;
+  const eco = Number(player?.eco ?? player?.economy ?? 0);
+
+  // 1. All-Round Performance
+  if (runs >= 20 && wickets >= 1) {
+    return {
+      label: "ALL-ROUND IMPACT",
+      icon: "flash",
+      badgeClass: "bg-purple-500/20 border-purple-400/50",
+      textClass: "text-purple-300",
+      iconColor: "#C084FC",
+    };
+  }
+
+  // 2. High Batting Score
+  if (runs >= 50) {
+    return {
+      label: sr >= 150 ? "BLITZKRIEG BATTER" : "TOP RUN SCORER",
+      icon: "flame",
+      badgeClass: "bg-rose-500/20 border-rose-400/50",
+      textClass: "text-rose-300",
+      iconColor: "#FB7185",
+    };
+  }
+  if (runs >= 25) {
+    if (isNotOut) {
+      return {
+        label: "CLUTCH FINISHER",
+        icon: "shield-checkmark",
+        badgeClass: "bg-emerald-500/20 border-emerald-400/50",
+        textClass: "text-emerald-300",
+        iconColor: "#34D399",
+      };
+    }
+    return {
+      label: "IMPACT BATTER",
+      icon: "baseball-outline",
+      badgeClass: "bg-teal-500/20 border-teal-400/50",
+      textClass: "text-teal-300",
+      iconColor: "#2DD4BF",
+    };
+  }
+
+  // 3. High Bowling Impact
+  if (wickets >= 3) {
+    return {
+      label: "STRIKE WICKET HUNTER",
+      icon: "flash-outline",
+      badgeClass: "bg-red-500/20 border-red-400/50",
+      textClass: "text-red-300",
+      iconColor: "#F87171",
+    };
+  }
+  if (wickets >= 1) {
+    return {
+      label: parsedOvers >= 2 && eco <= 6.0 ? "LOCKDOWN SPECIALIST" : "BREAKTHROUGH BOWLER",
+      icon: "speedometer-outline",
+      badgeClass: "bg-cyan-500/20 border-cyan-400/50",
+      textClass: "text-cyan-300",
+      iconColor: "#22D3EE",
+    };
+  }
+  if (parsedOvers >= 2 && eco <= 6.0) {
+    return {
+      label: "ECONOMY DISCIPLINE",
+      icon: "lock-closed-outline",
+      badgeClass: "bg-blue-500/20 border-blue-400/50",
+      textClass: "text-blue-300",
+      iconColor: "#60A5FA",
+    };
+  }
+
+  // 4. Developing / Encouraging Badges (Uplifting & Positive)
+  if (runs >= 10) {
+    return {
+      label: "RISING BATTER",
+      icon: "trending-up-outline",
+      badgeClass: "bg-amber-500/15 border-amber-400/40",
+      textClass: "text-amber-300",
+      iconColor: "#FBBF24",
+    };
+  }
+
+  if (parsedOvers > 0) {
+    return {
+      label: "BOWL SPELL WORKHORSE",
+      icon: "hardware-chip-outline",
+      badgeClass: "bg-indigo-500/15 border-indigo-400/40",
+      textClass: "text-indigo-300",
+      iconColor: "#818CF8",
+    };
+  }
+
+  return {
+    label: "TEAM WARRIOR",
+    icon: "shield-outline",
+    badgeClass: "bg-slate-700/40 border-slate-600/50",
+    textClass: "text-slate-300",
+    iconColor: "#94A3B8",
+  };
+}
 
 export function generatePlayerHypeLines({
   player,
@@ -44,11 +165,10 @@ export function generatePlayerHypeLines({
   );
   const careerRuns = Number(careerStats?.runs ?? careerStats?.totalRuns ?? 0);
   const careerWkts = Number(careerStats?.wickets ?? careerStats?.totalWickets ?? 0);
-  const careerSr = Number(careerStats?.sr ?? careerStats?.strikeRate ?? 0);
 
   const lines = [];
 
-  // 1. Player of the Match Highlights
+  // 1. REAL Player of the Match Highlights
   if (isMom) {
     lines.push(
       `Crowned Player of the Match! A legendary display of poise, grit, and match-winning pedigree.`,
@@ -152,25 +272,31 @@ export function generatePlayerHypeLines({
     );
   }
 
-  // 12. Solid Fighting Spirit Fallbacks
+  // 12. Developing / Encouraging Spirit (Always uplifting, inspiring & focused on progress)
   if (lines.length === 0) {
-    if (runs > 0) {
+    if (runs >= 10) {
       lines.push(
-        `Fought valiantly for every single run — leaving heart and soul out on the pitch.`,
-        `Committed warrior! Stepped up to make every delivery count for the team.`,
-        `Pure determination and team-first ethos on full display today!`
+        `Promising touch! Showed great temperament and intent, setting the stage for bigger innings ahead.`,
+        `Grit in every stroke! Stepped up under pressure with determined focus and hustle.`,
+        `Rising talent on the move — fine-tuning the craft and contributing valuable momentum!`
       );
-    } else if (wickets > 0) {
+    } else if (wickets >= 1) {
       lines.push(
-        `Bowled with tremendous fire and grit to bag crucial breakthroughs!`,
-        `Gave everything for the badge — maintaining tight lines and probing lengths.`,
-        `Crucial contributor who kept the contest alive with relentless energy.`
+        `Crucial breakthrough artist! Struck with precision to disrupt the opposition's rhythm.`,
+        `Kept the heat on! Bowled with relentless energy and created decisive chances.`,
+        `Heart of a warrior — executing plans with fire and backing up the squad.`
+      );
+    } else if (parseFloat(overs) > 0) {
+      lines.push(
+        `Stepped up for the team attack — testing batters with tight lines and relentless hustle.`,
+        `Gave 100% effort with the cherry — building pressure and backing the team in the field.`,
+        `Workhorse mentality! Taking on tough overs with courage and building match sharpness.`
       );
     } else {
       lines.push(
-        `Heart, hustle, and unwavering commitment — giving 100% for the team on the field!`,
-        `An indispensable presence whose energy and fight lifted the entire squad.`,
-        `A true team player ready to fight for every ball and support the badge.`
+        `Heart, hustle, and unwavering commitment — giving everything for the pride of the jersey!`,
+        `A true team fighter — bringing immense energy, discipline, and support to the squad.`,
+        `Every match is a stepping stone — sharpening instincts and ready to explode in the next contest!`
       );
     }
   }

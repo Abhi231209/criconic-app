@@ -341,8 +341,9 @@ export default function MatchSummary({ matchData }) {
 
   const allMatchPlayers = React.useMemo(() => {
     const map = new Map();
-    if (manOfTheMatch) {
-      map.set(String(manOfTheMatch.playerId || manOfTheMatch.name), {
+    const momKey = manOfTheMatch ? String(manOfTheMatch.playerId || manOfTheMatch.name) : null;
+    if (manOfTheMatch && momKey) {
+      map.set(momKey, {
         ...manOfTheMatch,
         isMom: true,
         runs: manOfTheMatch.performance?.runs,
@@ -353,26 +354,26 @@ export default function MatchSummary({ matchData }) {
     }
     topBatters.forEach((b) => {
       const key = String(b.playerId || b.name);
-      if (!map.has(key)) map.set(key, b);
+      if (key && !map.has(key)) map.set(key, { ...b, isMom: false });
     });
     topBowlers.forEach((b) => {
       const key = String(b.playerId || b.name);
-      if (!map.has(key)) {
-        map.set(key, b);
-      } else {
+      if (key && !map.has(key)) {
+        map.set(key, { ...b, isMom: false });
+      } else if (key && map.has(key) && key !== momKey) {
         const existing = map.get(key);
         map.set(key, { ...existing, wicketsTaken: b.wickets, overs: b.overs, runsGiven: b.runs, eco: b.economy });
       }
     });
     allBatters.forEach((b) => {
       const key = String(b.playerId || b.name);
-      if (!map.has(key)) map.set(key, b);
+      if (key && !map.has(key)) map.set(key, { ...b, isMom: false });
     });
     allBowlers.forEach((b) => {
       const key = String(b.playerId || b.name);
-      if (!map.has(key)) {
-        map.set(key, b);
-      } else {
+      if (key && !map.has(key)) {
+        map.set(key, { ...b, isMom: false });
+      } else if (key && map.has(key) && key !== momKey) {
         const existing = map.get(key);
         map.set(key, { ...existing, wicketsTaken: b.wickets, overs: b.overs, runsGiven: b.runs, eco: b.economy });
       }
