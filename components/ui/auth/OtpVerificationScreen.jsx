@@ -19,6 +19,7 @@ import {
   ArrowRight,
   Pencil,
   RotateCcw,
+  ClipboardPaste,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -42,13 +43,14 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
   const { mobile = "", validationId: initialValidationId = "" } =
     route?.params || {};
 
-  const [digits, setDigits] = useState(["", "", "", "", "", ""]);
-  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [otp, setOtp] = useState("");
+  const [isFocused, setIsFocused] = useState(true);
   const [validationId, setValidationId] = useState(initialValidationId);
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(30);
+  const [clipboardCode, setClipboardCode] = useState("");
 
-  const inputRefs = useRef([]);
+  const textInputRef = useRef(null);
   const validationIdRef = useRef(initialValidationId);
   const timerRef = useRef(null);
 
@@ -57,11 +59,11 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
     setValidationId(initialValidationId);
   }, [initialValidationId]);
 
-  // Focus the first empty digit on mount
+  // Focus input automatically on mount
   useEffect(() => {
     const focusTimeout = setTimeout(() => {
-      inputRefs.current[0]?.focus();
-    }, 350);
+      textInputRef.current?.focus();
+    }, 300);
     return () => clearTimeout(focusTimeout);
   }, []);
 
@@ -82,15 +84,16 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
       Keyboard.dismiss();
       const currentValidationId = validationIdRef.current || validationId;
       const fullCode = (
-        typeof codeToVerify === "string" ? codeToVerify : digits.join("")
-      ).trim();
+        typeof codeToVerify === "string" ? codeToVerify : otp
+      ).replace(/\D/g, "").slice(0, 6);
 
       if (!fullCode || fullCode.length !== 6) {
         showGlobalAlert({
           title: "Incomplete Code",
-          message: "Please enter all 6 digits of your verification code.",
+          message: "Please enter all 6 digits of the verification code.",
           type: "warning",
         });
+        textInputRef.current?.focus();
         return;
       }
 
@@ -103,16 +106,25 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
           validationId: currentValidationId,
         });
 
-        if (res.data?.success !== false) {
-          navigation.navigate(SCREENS.ResetPasswordScreen, {
-            mobile,
-            otp: fullCode,
-            validationId: currentValidationId,
-          });
+        console.log("🔐 [OtpVerification] Validate response:", res.data);
+
+        if (res.data?.success) {
+          console.log("🔐 [OtpVerification] Verified! Navigating to ResetPasswordScreen...");
+          const navTarget = navigation?.navigate
+            ? navigation
+            : navigationRef;
+
+          if (navTarget?.navigate) {
+            navTarget.navigate(SCREENS.ResetPasswordScreen, {
+              mobile,
+              otp: fullCode,
+              validationId: currentValidationId,
+            });
+          }
         } else {
           showGlobalAlert({
             title: "Invalid Code",
-            message: res.data?.message || "The code entered is incorrect. Please check and try again.",
+            message: res.data?.message || "The code entered is incorrect. Please try again.",
             type: "error",
           });
         }
@@ -121,89 +133,52 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         showGlobalAlert({
           title: "Verification Failed",
           message:
-            err.response?.data?.message || "Verification failed. Please try again.",
+            err.response?.data?.message || "Verification failed. Please check the code and try again.",
           type: "error",
         });
       } finally {
         setLoading(false);
       }
     },
-    [mobile, digits, validationId, navigation]
+    [mobile, otp, validationId, navigation]
   );
 
-  // Background silent clipboard detection when returning from SMS app
-  const checkClipboardSilently = useCallback(async () => {
+  const handleOtpChange = (text) => {
+    const cleanDigits = String(text).replace(/\D/g, "").slice(0, 6);
+    setOtp(cleanDigits);
+    if (cleanDigits.length === 6) {
+      verifyOtp(cleanDigits);
+    }
+  };
+
+  // Background clipboard auto-detection
+  const checkClipboard = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
       if (text) {
         const match = text.match(/\b\d{6}\b/);
         if (match && match[0]) {
-          const foundDigits = match[0].split("");
-          setDigits(foundDigits);
-          inputRefs.current[5]?.focus();
-          verifyOtp(match[0]);
+          const code = match[0];
+          setClipboardCode(code);
+        } else {
+          setClipboardCode("");
         }
       }
     } catch (_) {}
-  }, [verifyOtp]);
+  }, []);
 
   useEffect(() => {
+    checkClipboard();
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active") {
-        checkClipboardSilently();
+        checkClipboard();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [checkClipboardSilently]);
-
-  const handleDigitChange = (val, index) => {
-    const cleanNumbers = String(val).replace(/\D/g, "");
-
-    // User pasted multiple digits (e.g. 6-digit SMS autofill or clipboard)
-    if (cleanNumbers.length > 1) {
-      const newDigits = cleanNumbers.slice(0, 6).split("");
-      while (newDigits.length < 6) newDigits.push("");
-      setDigits(newDigits);
-
-      const focusTarget = Math.min(cleanNumbers.length - 1, 5);
-      inputRefs.current[focusTarget]?.focus();
-
-      if (cleanNumbers.length >= 6) {
-        verifyOtp(cleanNumbers.slice(0, 6));
-      }
-      return;
-    }
-
-    const singleDigit = cleanNumbers.slice(-1);
-    const newDigits = [...digits];
-    newDigits[index] = singleDigit;
-    setDigits(newDigits);
-
-    if (singleDigit) {
-      if (index < 5) {
-        inputRefs.current[index + 1]?.focus();
-      } else {
-        const fullCode = newDigits.join("");
-        if (fullCode.length === 6) {
-          verifyOtp(fullCode);
-        }
-      }
-    }
-  };
-
-  const handleKeyPress = (e, index) => {
-    if (e.nativeEvent.key === "Backspace") {
-      if (!digits[index] && index > 0) {
-        const newDigits = [...digits];
-        newDigits[index - 1] = "";
-        setDigits(newDigits);
-        inputRefs.current[index - 1]?.focus();
-      }
-    }
-  };
+  }, [checkClipboard]);
 
   const resendOtp = async () => {
     setLoading(true);
@@ -222,8 +197,8 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         setValidationId(receivedValidationId);
         validationIdRef.current = receivedValidationId;
         setResendTimer(30);
-        setDigits(["", "", "", "", "", ""]);
-        inputRefs.current[0]?.focus();
+        setOtp("");
+        textInputRef.current?.focus();
 
         showGlobalAlert({
           title: "Code Resent",
@@ -247,8 +222,6 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
       setLoading(false);
     }
   };
-
-  const isComplete = digits.every((d) => d !== "");
 
   return (
     <View className={`flex-1 ${isDarkMode ? "bg-slate-950" : "bg-white"}`}>
@@ -375,78 +348,111 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
             </View>
           </View>
 
-          {/* 6 Tactile, Individual PIN Input Cells */}
-          <View className="flex-row items-center justify-between mb-7">
-            {digits.map((digit, index) => {
-              const isFocused = focusedIndex === index;
-              const isFilled = Boolean(digit);
+          {/* 6 Segmented Boxes with Native Autofill Input Overlay */}
+          <View className="mb-5 relative">
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => textInputRef.current?.focus()}
+              className="flex-row items-center justify-between"
+            >
+              {[0, 1, 2, 3, 4, 5].map((index) => {
+                const char = otp[index] || "";
+                const isCurrent = isFocused && (index === otp.length || (index === 5 && otp.length === 6));
+                const isFilled = Boolean(char);
 
-              return (
-                <View
-                  key={index}
-                  className={`flex-1 mx-1 rounded-2xl items-center justify-center border transition-all ${
-                    isFocused
-                      ? isDarkMode
-                        ? "border-blue-500 bg-blue-500/15"
-                        : "border-blue-600 bg-blue-50/50"
-                      : isFilled
-                      ? isDarkMode
-                        ? "border-blue-500/50 bg-slate-800/90"
-                        : "border-blue-600/40 bg-blue-50/20"
-                      : isDarkMode
-                      ? "border-slate-800 bg-slate-800/50"
-                      : "border-slate-200 bg-slate-50"
-                  }`}
-                  style={{
-                    height: 58,
-                    maxWidth: 50,
-                  }}
-                >
-                  <TextInput
-                    ref={(ref) => (inputRefs.current[index] = ref)}
-                    value={digit}
-                    onChangeText={(val) => handleDigitChange(val, index)}
-                    onKeyPress={(e) => handleKeyPress(e, index)}
-                    onFocus={() => setFocusedIndex(index)}
-                    onBlur={() => setFocusedIndex(-1)}
-                    keyboardType="number-pad"
-                    maxLength={index === 0 ? 6 : 1}
-                    selectTextOnFocus
-                    textAlign="center"
-                    textContentType="oneTimeCode"
-                    autoComplete="sms-otp"
-                    importantForAutofill="yes"
-                    className={`w-full h-full text-center text-2xl font-black ${
-                      isDarkMode ? "text-white" : "text-slate-900"
+                return (
+                  <View
+                    key={index}
+                    className={`flex-1 mx-1 rounded-2xl items-center justify-center border-2 transition-all ${
+                      isCurrent
+                        ? isDarkMode
+                          ? "border-blue-500 bg-blue-500/15"
+                          : "border-blue-600 bg-blue-50/50"
+                        : isFilled
+                        ? isDarkMode
+                          ? "border-blue-500/50 bg-slate-800"
+                          : "border-blue-600/40 bg-blue-50/20"
+                        : isDarkMode
+                        ? "border-slate-800 bg-slate-800/40"
+                        : "border-slate-200 bg-slate-50"
                     }`}
                     style={{
-                      includeFontPadding: false,
-                      padding: 0,
+                      height: 58,
+                      maxWidth: 50,
                     }}
-                  />
-                </View>
-              );
-            })}
+                  >
+                    <ThemedText
+                      className={`text-2xl font-black text-center ${
+                        isDarkMode ? "text-white" : "text-slate-900"
+                      }`}
+                      style={{ includeFontPadding: false }}
+                    >
+                      {char}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </TouchableOpacity>
+
+            {/* Single native input receiving keystrokes and system SMS autofill */}
+            <TextInput
+              ref={textInputRef}
+              value={otp}
+              onChangeText={handleOtpChange}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              keyboardType="number-pad"
+              maxLength={6}
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
+              importantForAutofill="yes"
+              caretHidden
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                opacity: 0.01,
+              }}
+            />
           </View>
+
+          {/* Quick Clipboard Paste Chip (if 6-digit code exists in clipboard) */}
+          {clipboardCode && clipboardCode !== otp ? (
+            <TouchableOpacity
+              onPress={() => handleOtpChange(clipboardCode)}
+              activeOpacity={0.7}
+              className="flex-row items-center self-center px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/25 mb-4"
+            >
+              <ClipboardPaste size={13} color="#3B82F6" />
+              <ThemedText className="text-xs font-bold text-blue-500 ml-1.5">
+                Paste "{clipboardCode}" from SMS
+              </ThemedText>
+            </TouchableOpacity>
+          ) : null}
 
           {/* Action Button: Verify & Proceed */}
           <TouchableOpacity
-            onPress={() => verifyOtp(digits.join(""))}
-            disabled={loading || !isComplete}
-            activeOpacity={0.88}
-            className={`rounded-2xl overflow-hidden mb-5 ${
-              isComplete ? "shadow-lg shadow-blue-600/30" : "opacity-60"
-            }`}
-            style={{ elevation: isComplete ? 5 : 0 }}
+            onPress={() => {
+              if (otp.length !== 6) {
+                showGlobalAlert({
+                  title: "Incomplete Code",
+                  message: "Please enter all 6 digits of your verification code.",
+                  type: "warning",
+                });
+                textInputRef.current?.focus();
+                return;
+              }
+              verifyOtp(otp);
+            }}
+            disabled={loading}
+            activeOpacity={0.85}
+            className="rounded-2xl overflow-hidden mb-5 shadow-lg shadow-blue-600/30"
+            style={{ elevation: 5 }}
           >
             <LinearGradient
-              colors={
-                isComplete
-                  ? ["#1D4ED8", "#2563EB", "#3B82F6"]
-                  : isDarkMode
-                  ? ["#334155", "#475569"]
-                  : ["#94A3B8", "#64748B"]
-              }
+              colors={["#1D4ED8", "#2563EB", "#3B82F6"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-4 items-center justify-center flex-row"
