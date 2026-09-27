@@ -446,3 +446,68 @@ export const toShortBowlingStyle = (style) => {
 
   return "RAM";
 };
+
+/**
+ * Formats a monetary amount into readable Indian denominations in words:
+ * e.g., 10000000 -> "₹1 Crore"
+ *       25000000 -> "₹2.5 Crore"
+ *       5000000  -> "₹50 Lakh"
+ *       100000   -> "₹1 Lakh"
+ *       50000    -> "₹50 Thousand"
+ *       10000    -> "₹10 Thousand"
+ *       5000     -> "₹5 Thousand"
+ *       500      -> "₹500"
+ */
+export const formatIndianCurrencyWords = (val, { includeSymbol = true } = {}) => {
+  if (val === undefined || val === null || val === "") return null;
+
+  const rawStr = String(val).trim();
+  if (!rawStr) return null;
+
+  // If already formatted with denomination words (e.g. "1 Crore", "₹1 Cr", "1 cr", "50 Lakh", "10 k")
+  if (/crore|cr|lakh|thousand|\bk\b|million|billion/i.test(rawStr)) {
+    if (includeSymbol && !rawStr.startsWith("₹") && !rawStr.startsWith("Rs") && !rawStr.startsWith("INR")) {
+      return `₹${rawStr}`;
+    }
+    return rawStr;
+  }
+
+  // Extract numeric digits
+  const cleanStr = rawStr.replace(/[^0-9.]/g, "");
+  const num = Number(cleanStr);
+
+  if (isNaN(num) || num <= 0) {
+    if (/[a-zA-Z]/.test(rawStr)) return rawStr;
+    return null;
+  }
+
+  const symbol = includeSymbol ? "₹" : "";
+
+  // >= 1 Crore (10,000,000)
+  if (num >= 10000000) {
+    const cr = num / 10000000;
+    const formatted = cr % 1 === 0 ? cr : Number(cr.toFixed(2));
+    return `${symbol}${formatted} Cr`;
+  }
+
+  // >= 1 Lakh (100,000)
+  if (num >= 100000) {
+    const lk = num / 100000;
+    const formatted = lk % 1 === 0 ? lk : Number(lk.toFixed(2));
+    return `${symbol}${formatted} Lakh`;
+  }
+
+  // >= 1 Thousand (1,000)
+  if (num >= 1000) {
+    const th = num / 1000;
+    if (num % 1000 === 0) {
+      return `${symbol}${th} k`;
+    }
+    if (th < 100 && (num % 100 === 0)) {
+      return `${symbol}${Number(th.toFixed(1))} k`;
+    }
+    return `${symbol}${new Intl.NumberFormat("en-IN").format(num)}`;
+  }
+
+  return `${symbol}${num}`;
+};

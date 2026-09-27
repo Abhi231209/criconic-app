@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -9,7 +9,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  DeviceEventEmitter,
+  Modal,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
+import { useSelector } from 'react-redux';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,9 +23,46 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import LocationSearch from '@/components/ui/custom/LocationSearch';
-import { teamsApi } from '@/utils/api';
+import { teamsApi, upload } from '@/utils/api';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import { showGlobalAlert } from '@/components/ui/custom/AppAlertModal';
+import User from '@/utils/User';
+
+const InputField = React.memo(({ 
+  label, 
+  value, 
+  onChange, 
+  placeholder, 
+  keyboardType = 'default',
+  maxLength,
+  multiline = false,
+  numberOfLines = 1,
+}) => {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View className="mb-4">
+      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+        {label}
+      </ThemedText>
+      <TextInput
+        className={`rounded-lg px-4 py-3 text-base ${
+          isDarkMode 
+            ? 'bg-gray-800 border-gray-700 text-white' 
+            : 'bg-white border-gray-300 text-gray-900'
+        } border`}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        style={{ minHeight: multiline ? 80 : 48 }}
+      />
+    </View>
+  );
+});
 
 export default function EditTeam() {
   const navigation = useNavigation();
@@ -28,6 +70,11 @@ export default function EditTeam() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
   
+  const authUser = useSelector((state) => state.auth?.user);
+  const currentUserId = String(
+    authUser?._id || authUser?.id || authUser?.userId || User.id || User.user?._id || ''
+  );
+
   const routeTeam = route?.params?.team;
   const rawTeamId =
     route?.params?.teamId ||
@@ -56,22 +103,6 @@ export default function EditTeam() {
     jerseyColor: unnestedRouteTeam?.jerseyColor || '',
   };
 
-  // HARDCODED SAMPLE TEAM DATA - COMMENTED OUT (API ONLY)
-  /*
-  const team = route.params?.team || {
-    id: '1',
-    name: 'Mumbai Indians',
-    shortName: 'MI',
-    location: 'Mumbai, Maharashtra',
-    logo: null,
-    founded: '2008',
-    homeGround: 'Wankhede Stadium',
-    captain: 'Rohit Sharma',
-    coach: 'Mark Boucher',
-    jerseyColor: 'Blue & Gold',
-  };
-  */
-
   const [formData, setFormData] = useState({
     name: team.name,
     shortName: team.shortName,
@@ -86,6 +117,40 @@ export default function EditTeam() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [squadPlayers, setSquadPlayers] = useState([]);
+  const [loadingSquad, setLoadingSquad] = useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferringOwnership, setTransferringOwnership] = useState(false);
+  const [deletingTeam, setDeletingTeam] = useState(false);
+
+  const fetchSquadPlayers = async () => {
+    if (!teamId) return [];
+    setLoadingSquad(true);
+    try {
+      const res = await teamsApi.getTeamById(teamId);
+      const raw = Array.isArray(res?.data) ? res.data[0] : (res?.data?.data || res?.data);
+      const playersList = Array.isArray(raw?.players) ? raw.players : (Array.isArray(unnestedRouteTeam?.players) ? unnestedRouteTeam.players : []);
+      const normalized = playersList.map((p, idx) => {
+        const u = p?.id && typeof p.id === 'object' ? p.id : {};
+        const pId = String(u._id || u.id || p?.id || p?._id || p?.playerId || idx);
+        const name = u.username || u.name || p?.username || p?.name || `Player ${idx + 1}`;
+        const image = u.profileImage || u.profileImg || p?.profileImage || p?.profileImg || null;
+        const role = u.role || u.playerRole || p?.role || 'Player';
+        return { id: pId, name, image, role };
+      });
+      setSquadPlayers(normalized);
+      return normalized;
+    } catch (err) {
+      console.warn('[EditTeam] fetchSquadPlayers error:', err?.message || err);
+      return [];
+    } finally {
+      setLoadingSquad(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSquadPlayers();
+  }, [teamId]);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -162,18 +227,66 @@ export default function EditTeam() {
 
     setIsLoading(true);
     try {
-      if (teamId) {
-        await teamsApi.updateTeam(teamId, {
-          title: formData.name,
-          shortName: formData.shortName,
-          location: formData.location,
-          ...(formData.locationId ? { locationId: formData.locationId } : {}),
-          teamLogo: formData.logo,
-          logoImage: formData.logo,
-          homeGround: formData.homeGround,
-          jerseyColor: formData.jerseyColor,
-        });
+      let logoUrl = formData.logo;
+      if (formData.logo && !formData.logo.startsWith('http')) {
+        const uploadRes = await upload(formData.logo, 'team');
+        const uploadedLogo =
+          uploadRes?.url ||
+          uploadRes?.data?.url ||
+          uploadRes?.data ||
+          (typeof uploadRes === 'string' ? uploadRes : null);
+        if (uploadedLogo) {
+          logoUrl = uploadedLogo;
+        }
       }
+
+      const updatePayload = {
+        title: formData.name.trim(),
+        name: formData.name.trim(),
+        shortName: formData.shortName.trim().toUpperCase(),
+        location: formData.location.trim(),
+        city: formData.location.trim(),
+        ...(formData.locationId ? { locationId: formData.locationId } : {}),
+        teamLogo: logoUrl,
+        logo: logoUrl,
+        logoImage: logoUrl,
+        homeGround: formData.homeGround?.trim() || '',
+        founded: formData.founded?.trim() || '',
+        establishedYear: formData.founded?.trim() || '',
+        captain: formData.captain?.trim() || '',
+        coach: formData.coach?.trim() || '',
+        jerseyColor: formData.jerseyColor?.trim() || '',
+      };
+
+      let updatedTeam = null;
+      if (teamId) {
+        const res = await teamsApi.updateTeam(teamId, updatePayload);
+        const isSuccess = res?.status >= 200 && res?.status < 300 && res?.data?.success !== false;
+        if (!isSuccess) {
+          throw new Error(res?.data?.message || res?.data?.error || 'Failed to update team');
+        }
+        updatedTeam = res?.data?.data || res?.data?.team || res?.data?.content || res?.data;
+      }
+
+      const finalTeam = {
+        ...(unnestedRouteTeam || {}),
+        ...updatePayload,
+        ...(typeof updatedTeam === 'object' && updatedTeam !== null ? updatedTeam : {}),
+        _id: teamId,
+        id: teamId,
+      };
+
+      if (typeof route.params?.onUpdate === 'function') {
+        route.params.onUpdate(finalTeam);
+      }
+      if (typeof route.params?.cb === 'function') {
+        route.params.cb(finalTeam);
+      }
+
+      DeviceEventEmitter.emit('TEAM_UPDATED', {
+        teamId: String(teamId),
+        team: finalTeam,
+      });
 
       showGlobalAlert({
         title: 'Success',
@@ -182,7 +295,17 @@ export default function EditTeam() {
         buttons: [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              if (route.params?.returnScreen) {
+                navigation.navigate(route.params.returnScreen, {
+                  teamId,
+                  team: finalTeam,
+                  refresh: Date.now(),
+                });
+              } else {
+                navigation.goBack();
+              }
+            },
           },
         ],
       });
@@ -198,38 +321,133 @@ export default function EditTeam() {
     }
   };
 
-  const InputField = ({ 
-    label, 
-    value, 
-    onChange, 
-    placeholder, 
-    keyboardType = 'default',
-    maxLength,
-    multiline = false,
-    numberOfLines = 1
-  }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </ThemedText>
-      <TextInput
-        className={`rounded-lg px-4 py-3 text-base ${
-          isDarkMode 
-            ? 'bg-gray-800 border-gray-700 text-white' 
-            : 'bg-white border-gray-300 text-gray-900'
-        } border`}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={isDarkMode ? '#9CA3AF' : '#6B7280'}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        multiline={multiline}
-        numberOfLines={numberOfLines}
-        style={{ minHeight: multiline ? 80 : 48 }}
-      />
-    </View>
-  );
+  const handleOpenTransferModal = async () => {
+    let list = squadPlayers;
+    if (!list || list.length === 0) {
+      list = await fetchSquadPlayers();
+    }
+    const currentOrganizerId = String(
+      unnestedRouteTeam?.organizer?.[0]?._id ||
+      unnestedRouteTeam?.organizer?.[0] ||
+      unnestedRouteTeam?.createdBy ||
+      currentUserId
+    );
+    const eligibleMembers = (list || []).filter(
+      (p) => String(p.id) !== currentOrganizerId && String(p.id) !== currentUserId
+    );
+    if (!eligibleMembers || eligibleMembers.length === 0) {
+      showGlobalAlert({
+        title: 'Transfer Ownership',
+        message: 'No eligible squad members available. Ownership can only be transferred to a player in the team squad. Please add players to the squad first.',
+        type: 'warning',
+      });
+      return;
+    }
+    setTransferModalVisible(true);
+  };
+
+  const handleSelectNewOwner = (player) => {
+    setTransferModalVisible(false);
+    showGlobalAlert({
+      title: 'Transfer Ownership',
+      message: `Are you sure you want to transfer ownership of this team to ${player.name}? You will lose organizer privileges for this team.`,
+      type: 'warning',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Transfer',
+          style: 'destructive',
+          onPress: () => performTransfer(player.id, player.name),
+        },
+      ],
+    });
+  };
+
+  const performTransfer = async (newOwnerId, newOwnerName) => {
+    setTransferringOwnership(true);
+    try {
+      await teamsApi.transferOwnership(teamId, newOwnerId);
+      DeviceEventEmitter.emit('TEAM_UPDATED', {
+        teamId: String(teamId),
+      });
+      showGlobalAlert({
+        title: 'Ownership Transferred',
+        message: `Team ownership has been transferred to ${newOwnerName}.`,
+        type: 'success',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      });
+    } catch (err) {
+      console.error('Transfer ownership error:', err);
+      showGlobalAlert({
+        title: 'Error',
+        message: err?.response?.data?.message || err.message || 'Failed to transfer ownership',
+        type: 'error',
+      });
+    } finally {
+      setTransferringOwnership(false);
+    }
+  };
+
+  const handleDeleteTeam = () => {
+    showGlobalAlert({
+      title: 'Delete Team',
+      message: 'Are you sure you want to permanently delete this team? All team details and stats will be removed. This cannot be undone.',
+      type: 'warning',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: performDeleteTeam,
+        },
+      ],
+    });
+  };
+
+  const performDeleteTeam = async () => {
+    setDeletingTeam(true);
+    try {
+      await teamsApi.deleteTeam(teamId);
+      DeviceEventEmitter.emit('TEAM_DELETED', {
+        teamId: String(teamId),
+      });
+      DeviceEventEmitter.emit('TEAM_UPDATED', {
+        teamId: String(teamId),
+        isDeleted: true,
+      });
+      showGlobalAlert({
+        title: 'Deleted',
+        message: 'Team has been deleted successfully.',
+        type: 'success',
+        buttons: [
+          {
+            text: 'OK',
+            onPress: () => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('Home');
+              }
+            },
+          },
+        ],
+      });
+    } catch (err) {
+      console.error('Delete team error:', err);
+      showGlobalAlert({
+        title: 'Error',
+        message: err?.response?.data?.message || err.message || 'Failed to delete team',
+        type: 'error',
+      });
+    } finally {
+      setDeletingTeam(false);
+    }
+  };
 
   const ImageUpload = () => (
     <View className="items-center mb-6">
@@ -438,19 +656,29 @@ export default function EditTeam() {
             </ThemedText>
 
             <View className="space-y-2">
-              <TouchableOpacity className={`p-3 rounded-lg flex-row items-center justify-between ${
-                isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
-              }`}>
-                <ThemedText className={isDarkMode ? 'text-red-200' : 'text-red-700'}>
+              <TouchableOpacity
+                onPress={handleOpenTransferModal}
+                disabled={transferringOwnership || deletingTeam}
+                activeOpacity={0.7}
+                className={`p-3 rounded-lg flex-row items-center justify-between ${
+                  isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
+                }`}
+              >
+                <ThemedText className={`font-semibold ${isDarkMode ? 'text-red-200' : 'text-red-700'}`}>
                   Transfer Ownership
                 </ThemedText>
                 <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#FCA5A5' : '#DC2626'} />
               </TouchableOpacity>
 
-              <TouchableOpacity className={`p-3 rounded-lg flex-row items-center justify-between ${
-                isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
-              }`}>
-                <ThemedText className={isDarkMode ? 'text-red-200' : 'text-red-700'}>
+              <TouchableOpacity
+                onPress={handleDeleteTeam}
+                disabled={transferringOwnership || deletingTeam}
+                activeOpacity={0.7}
+                className={`p-3 rounded-lg flex-row items-center justify-between ${
+                  isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
+                }`}
+              >
+                <ThemedText className={`font-semibold ${isDarkMode ? 'text-red-200' : 'text-red-700'}`}>
                   Delete Team
                 </ThemedText>
                 <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#FCA5A5' : '#DC2626'} />
@@ -458,6 +686,112 @@ export default function EditTeam() {
             </View>
           </View>
         </AppKeyboardAwareScrollView>
+
+      {/* Transfer Ownership Modal */}
+      <Modal
+        visible={transferModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTransferModalVisible(false)}
+      >
+        <View className="flex-1 bg-black/60 justify-center items-center px-4">
+          <View
+            className={`w-full max-h-[80%] rounded-2xl p-5 ${
+              isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'
+            }`}
+          >
+            <View className="flex-row items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-700 mb-3">
+              <View>
+                <ThemedText className="text-lg font-bold text-gray-900 dark:text-white">
+                  Transfer Ownership
+                </ThemedText>
+                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Select a member from the team squad
+                </ThemedText>
+              </View>
+              <TouchableOpacity
+                onPress={() => setTransferModalVisible(false)}
+                className="p-1"
+              >
+                <Ionicons
+                  name="close"
+                  size={24}
+                  color={isDarkMode ? '#9CA3AF' : '#6B7280'}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {loadingSquad ? (
+              <View className="py-8 items-center justify-center">
+                <ActivityIndicator size="large" color="#2563EB" />
+                <ThemedText className="text-sm text-gray-500 mt-2">
+                  Loading squad members...
+                </ThemedText>
+              </View>
+            ) : (
+              <FlatList
+                data={(squadPlayers || []).filter(
+                  (p) =>
+                    String(p.id) !== currentUserId &&
+                    String(p.id) !==
+                      String(
+                        unnestedRouteTeam?.organizer?.[0]?._id ||
+                          unnestedRouteTeam?.organizer?.[0] ||
+                          unnestedRouteTeam?.createdBy ||
+                          ''
+                      )
+                )}
+                keyExtractor={(item) => String(item.id)}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => handleSelectNewOwner(item)}
+                    className={`flex-row items-center p-3 mb-2 rounded-xl border ${
+                      isDarkMode
+                        ? 'bg-gray-700/50 border-gray-600'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    {item.image ? (
+                      <Image
+                        source={{ uri: item.image }}
+                        className="w-10 h-10 rounded-full"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View className="w-10 h-10 rounded-full bg-blue-600 items-center justify-center">
+                        <ThemedText className="text-white font-bold text-base">
+                          {(item.name || 'P').charAt(0).toUpperCase()}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <View className="ml-3 flex-1">
+                      <ThemedText className="font-semibold text-gray-900 dark:text-white">
+                        {item.name}
+                      </ThemedText>
+                      <ThemedText className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                        {item.role || 'Squad Member'}
+                      </ThemedText>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={isDarkMode ? '#9CA3AF' : '#6B7280'}
+                    />
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View className="py-6 items-center">
+                    <ThemedText className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                      No other squad members found in this team.
+                    </ThemedText>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

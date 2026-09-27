@@ -19,7 +19,7 @@ import ScoreCard from "@/components/ui/ScoreCard";
 import SCREENS from "@/screens";
 import AnimatedFooter from "./AnimatedFooter";
 import { matchesApi, tournamentsApi, teamsApi, request } from "@/utils/api";
-import { getImageFullUrl } from "@/utils";
+import { getImageFullUrl, formatIndianCurrencyWords } from "@/utils";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
 
@@ -63,7 +63,7 @@ export default function MyCricket({ route: propRoute }) {
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
+    const subMatch = DeviceEventEmitter.addListener(
       "MATCH_DELETED",
       ({ matchId: delId }) => {
         if (!delId) return;
@@ -76,8 +76,42 @@ export default function MyCricket({ route: propRoute }) {
         );
       }
     );
-    return () => sub.remove();
-  }, []);
+
+    const subTourn = DeviceEventEmitter.addListener("TOURNAMENT_UPDATED", () => {
+      lastFetchRef.current = 0;
+      fetchData(false);
+    });
+
+    const subTeam = DeviceEventEmitter.addListener("TEAM_UPDATED", ({ teamId: updatedId, team: updatedTeam, isDeleted } = {}) => {
+      if (isDeleted && updatedId) {
+        setTeams((prev) => prev.filter((t) => String(t.id) !== String(updatedId)));
+      } else if (updatedId && updatedTeam) {
+        setTeams((prev) =>
+          prev.map((t) => {
+            if (String(t.id) === String(updatedId)) {
+              return {
+                ...t,
+                name: updatedTeam.title || updatedTeam.name || t.name,
+                shortName: updatedTeam.shortName || t.shortName,
+                logo: updatedTeam.teamLogo || updatedTeam.logo || t.logo,
+                location: updatedTeam.location || t.location,
+                raw: { ...(t.raw || {}), ...updatedTeam },
+              };
+            }
+            return t;
+          })
+        );
+      }
+      lastFetchRef.current = 0;
+      fetchData(false);
+    });
+
+    return () => {
+      subMatch.remove();
+      subTourn.remove();
+      subTeam.remove();
+    };
+  }, [userId, isAdmin]);
 
   const deriveTournamentStatus = (t) => {
     const rawStatus = String(t?.status || "").trim();
@@ -206,7 +240,7 @@ export default function MyCricket({ route: propRoute }) {
         uniqueTournaments.map((t) => {
           const rawEntryFee = t?.entryFee;
           const entryFee = (rawEntryFee !== undefined && rawEntryFee !== null && rawEntryFee !== "" && Number(rawEntryFee) !== 0 && rawEntryFee !== "0")
-            ? (String(rawEntryFee).startsWith("₹") ? String(rawEntryFee) : `₹${rawEntryFee}`)
+            ? formatIndianCurrencyWords(rawEntryFee)
             : null;
 
           return {
@@ -215,7 +249,7 @@ export default function MyCricket({ route: propRoute }) {
             teams: Array.isArray(t.teams) ? t.teams.length : t.maxTeams || 0,
             matches: Array.isArray(t.matches) ? t.matches.length : 0,
             status: deriveTournamentStatus(t),
-            prize: t.prizeMoney ? (String(t.prizeMoney).startsWith("₹") ? String(t.prizeMoney) : `₹${t.prizeMoney}`) : null,
+            prize: formatIndianCurrencyWords(t.prizeMoney),
             entryFee,
             raw: t,
           };
@@ -233,8 +267,8 @@ export default function MyCricket({ route: propRoute }) {
           seenTeamIds.add(id);
           const matches = Array.isArray(raw.matches)
             ? raw.matches.length
-            : (raw.matches || raw.stat?.totalMatches || raw.stats?.matches || 0);
-          const wins = raw.wins || raw.stat?.matchesWon || raw.stats?.won || 0;
+            : (raw.totalTeamMatches ?? raw.matches ?? raw.stat?.totalMatches ?? raw.stats?.matches ?? 0);
+          const wins = raw.wins ?? raw.stat?.matchesWon ?? raw.stats?.won ?? 0;
 
           uniqueTeams.push({
             id,
@@ -325,12 +359,13 @@ export default function MyCricket({ route: propRoute }) {
       if (tab) {
         setActiveTab(tab);
       }
-      // Throttle tab focus fetch to 45s to avoid freezing UI or re-fetching repeatedly
-      if (Date.now() - lastFetchRef.current > 45000) {
+      const hasRefreshParam = Boolean(route?.params?.refresh);
+      // Throttle tab focus fetch to 15s unless refresh requested or never fetched
+      if (hasRefreshParam || Date.now() - lastFetchRef.current > 15000) {
         lastFetchRef.current = Date.now();
-        fetchData();
+        fetchData(false);
       }
-    }, [userId, route?.params?.initialTab, route?.params?.tab])
+    }, [userId, route?.params?.initialTab, route?.params?.tab, route?.params?.refresh])
   );
 
   const onRefresh = () => {
@@ -754,12 +789,6 @@ export default function MyCricket({ route: propRoute }) {
                   </View>
                 ) : null}
               </View>
-            </View>
-
-            <View className={`px-3 py-1 rounded-full ${isDarkMode ? "bg-green-900/40" : "bg-green-100"}`}>
-              <ThemedText className={`text-xs font-bold ${isDarkMode ? "text-green-400" : "text-green-800"}`}>
-                {team.wins} {team.wins === 1 ? "Win" : "Wins"}
-              </ThemedText>
             </View>
           </View>
 

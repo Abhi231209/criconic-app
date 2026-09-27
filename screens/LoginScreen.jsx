@@ -35,6 +35,20 @@ import { authApi } from "@/utils/api";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
 
+const sanitizeMobileNumber = (val) => {
+  if (!val) return "";
+  let digits = String(val).replace(/\D/g, "");
+  if (digits.length > 10 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  } else if (digits.length === 11 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  if (digits.length > 10) {
+    digits = digits.slice(-10);
+  }
+  return digits;
+};
+
 const { height } = Dimensions.get("window");
 
 const LoginScreen = () => {
@@ -74,7 +88,7 @@ const LoginScreen = () => {
   }, [authUser, navigation, isFocused]);
 
   const handleLogin = async () => {
-    const cleanedMobile = mobile.replace(/\D/g, "");
+    const cleanedMobile = sanitizeMobileNumber(mobile);
     if (!cleanedMobile) {
       showGlobalAlert({
         title: "Mobile Number Required",
@@ -110,7 +124,7 @@ const LoginScreen = () => {
 
     try {
       const res = await authApi.login({
-        mobile: mobile.trim(),
+        mobile: cleanedMobile,
         password: password.trim(),
       });
 
@@ -366,7 +380,7 @@ const LoginScreen = () => {
                   isDarkMode ? "text-white" : "text-slate-900"
                 }`}
                 value={mobile}
-                onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
+                onChangeText={(val) => setMobile(sanitizeMobileNumber(val))}
                 onFocus={() => setFocusedField("mobile")}
                 onBlur={() => setFocusedField(null)}
                 placeholder="Enter 10-digit mobile number"
@@ -374,7 +388,7 @@ const LoginScreen = () => {
                   isDarkMode ? "#64748B" : "#94A3B8"
                 }
                 keyboardType="phone-pad"
-                maxLength={10}
+                maxLength={18}
               />
             </View>
           </View>

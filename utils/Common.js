@@ -321,3 +321,5 @@ export const SCANNER_TYPE_ACTION = {
     },
   },
 };
+
+export { formatIndianCurrencyWords } from "./index";

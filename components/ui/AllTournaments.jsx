@@ -9,6 +9,7 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -18,7 +19,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import AnimatedFooter from "./AnimatedFooter";
 import { tournamentsApi } from "@/utils/api";
-import { getImageFullUrl } from "@/utils";
+import { getImageFullUrl, formatIndianCurrencyWords } from "@/utils";
 
 function computeInitials(name) {
   if (!name || typeof name !== "string") return "CR";
@@ -336,7 +337,7 @@ function TournamentCard({ item, isDarkMode, onPress }) {
                   style={{ marginRight: 4 }}
                 />
                 <ThemedText className="text-[11px] font-bold text-amber-400">
-                  Prize: {item.prizeMoney}
+                  Prize: {formatIndianCurrencyWords(item.prizeMoney)}
                 </ThemedText>
               </View>
             )}
@@ -349,7 +350,7 @@ function TournamentCard({ item, isDarkMode, onPress }) {
                   style={{ marginRight: 4 }}
                 />
                 <ThemedText className="text-[11px] font-semibold text-emerald-300">
-                  Entry: {item.entryFee}
+                  Entry: {formatIndianCurrencyWords(item.entryFee)}
                 </ThemedText>
               </View>
             )}
@@ -498,9 +499,7 @@ export default function AllTournaments() {
       rawEntryFee !== "" &&
       Number(rawEntryFee) !== 0 &&
       rawEntryFee !== "0"
-        ? String(rawEntryFee).startsWith("₹")
-          ? String(rawEntryFee)
-          : `₹${rawEntryFee}`
+        ? formatIndianCurrencyWords(rawEntryFee)
         : null;
 
     let organizerName = t.organizerName || null;
@@ -544,11 +543,7 @@ export default function AllTournaments() {
         (t.ballType
           ? `${t.ballType.charAt(0).toUpperCase() + t.ballType.slice(1)} Ball`
           : "T20"),
-      prizeMoney: t.prizeMoney
-        ? String(t.prizeMoney).startsWith("₹")
-          ? String(t.prizeMoney)
-          : `₹${t.prizeMoney}`
-        : null,
+      prizeMoney: formatIndianCurrencyWords(t.prizeMoney),
       entryFee,
       matches: Array.isArray(t.matches)
         ? t.matches.length
@@ -602,6 +597,11 @@ export default function AllTournaments() {
 
   useEffect(() => {
     fetchTournaments(1, false);
+
+    const sub = DeviceEventEmitter.addListener("TOURNAMENT_UPDATED", ({ tournamentId: updatedId, tournament: updatedData }) => {
+      fetchTournaments(1, false);
+    });
+    return () => sub.remove();
   }, []);
 
   const filters = [
