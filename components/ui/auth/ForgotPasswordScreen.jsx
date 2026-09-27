@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   AppState,
+  Keyboard,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -77,8 +78,11 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
   const [focusedField, setFocusedField] = useState(null);
   const [resendTimer, setResendTimer] = useState(0);
   const [autoReadHint, setAutoReadHint] = useState("");
+  const [isBypassActive, setIsBypassActive] = useState(false);
 
   const timerRef = useRef(null);
+  const scrollViewRef = useRef(null);
+  const validationIdRef = useRef("");
 
   useEffect(() => {
     if (resendTimer > 0) {
@@ -93,6 +97,8 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
 
   const verifyOtp = useCallback(
     async (inputOtp) => {
+      Keyboard.dismiss();
+      const currentValidationId = validationIdRef.current || validationId;
       const trimmedOtp = (typeof inputOtp === "string" ? inputOtp : otp).trim();
       if (!trimmedOtp) {
         showGlobalAlert({
@@ -113,15 +119,18 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
 
       setLoading(true);
       try {
-        console.log("🔐 [ForgotPassword] Verifying OTP:", trimmedOtp);
+        console.log("🔐 [ForgotPassword] Verifying OTP:", trimmedOtp, "valId:", currentValidationId);
         const res = await axios.post(`${API_URL}api/otpVerification/validateOtp`, {
           mobile: sanitizeMobileNumber(mobile),
           otp: trimmedOtp,
-          validationId,
+          validationId: currentValidationId,
         });
 
         if (res.data?.success !== false) {
           setStep(STEP_PASSWORD);
+          setTimeout(() => {
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+          }, 100);
         } else {
           showGlobalAlert({
             title: "Invalid OTP",
@@ -146,7 +155,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
 
   // Auto-read OTP from clipboard (when SMS is copied or system extracts it)
   const checkClipboardForOtp = useCallback(
-    async (autoSubmit = true) => {
+    async (isManualTrigger = false) => {
       try {
         const text = await Clipboard.getStringAsync();
         if (text) {
@@ -154,36 +163,49 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
           if (match && match[0]) {
             const foundOtp = match[0];
             setOtp(foundOtp);
-            setAutoReadHint(`Auto-detected: ${foundOtp}`);
-            if (autoSubmit) {
-              verifyOtp(foundOtp);
+            setAutoReadHint(`Detected: ${foundOtp}`);
+            if (isManualTrigger) {
+              showGlobalAlert({
+                title: "OTP Pasted",
+                message: `Code ${foundOtp} detected from clipboard and filled.`,
+                type: "success",
+              });
             }
             return foundOtp;
           }
         }
-      } catch (_) {}
+        if (isManualTrigger) {
+          showGlobalAlert({
+            title: "No OTP Found",
+            message: "No 6-digit code was found in your clipboard. Please check your SMS or enter the code manually.",
+            type: "info",
+          });
+        }
+      } catch (_) {
+        if (isManualTrigger) {
+          showGlobalAlert({
+            title: "Clipboard Error",
+            message: "Unable to read clipboard. Please enter the OTP manually.",
+            type: "error",
+          });
+        }
+      }
       return null;
     },
-    [verifyOtp]
+    []
   );
 
   // Listen to AppState when on STEP_OTP so returning from SMS automatically reads OTP
   useEffect(() => {
     if (step !== STEP_OTP) return;
 
-    // Check once upon entering OTP step
-    const initialCheck = setTimeout(() => {
-      checkClipboardForOtp(true);
-    }, 600);
-
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active") {
-        checkClipboardForOtp(true);
+        checkClipboardForOtp(false);
       }
     });
 
     return () => {
-      clearTimeout(initialCheck);
       subscription.remove();
     };
   }, [step, checkClipboardForOtp]);
@@ -207,6 +229,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
   };
 
   const sendOtp = async (isResend = false) => {
+    Keyboard.dismiss();
     const cleanedMobile = sanitizeMobileNumber(mobile);
     if (!cleanedMobile) {
       showGlobalAlert({
@@ -230,18 +253,33 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
       console.log("📱 [ForgotPassword] Dispatching generateOTP for:", cleanedMobile);
       const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, {
         mobile: cleanedMobile,
-        validationId: validationId || "",
+        validationId: validationIdRef.current || validationId || "",
         checkUserExists: true,
       });
 
       console.log("📱 [ForgotPassword] OTP response:", res.data);
 
       if (res.data?.success !== false) {
-        const receivedValidationId = res.data?.validationId || validationId || "";
+        const receivedValidationId =
+          res.data?.validationId || validationIdRef.current || validationId || "";
         setValidationId(receivedValidationId);
+        validationIdRef.current = receivedValidationId;
         setResendTimer(30);
+
+        if (res.data?.isOTPByPass) {
+          setIsBypassActive(true);
+          setOtp("123456");
+          setAutoReadHint("Test mode active (Dummy OTP: 123456)");
+        } else {
+          setIsBypassActive(false);
+          setOtp("");
+        }
+
         // Transition directly to OTP screen
         setStep(STEP_OTP);
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+        }, 100);
 
         if (isResend) {
           showGlobalAlert({
@@ -272,6 +310,8 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
   };
 
   const resetPassword = async () => {
+    Keyboard.dismiss();
+    const currentValidationId = validationIdRef.current || validationId;
     if (!password.trim() || password.length < 6) {
       showGlobalAlert({
         title: "Weak Password",
@@ -295,7 +335,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
         mobile: sanitizeMobileNumber(mobile),
         password,
         otp: otp.trim(),
-        validationId,
+        validationId: currentValidationId,
       });
 
       if (res.data?.success) {
@@ -351,6 +391,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
       className={`flex-1 ${isDarkMode ? "bg-slate-950" : "bg-white"}`}
     >
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         style={{
@@ -669,6 +710,21 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
                   </ThemedText>
                 </TouchableOpacity>
               </View>
+
+              {/* Test Bypass Notice Banner */}
+              {isBypassActive && (
+                <View className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex-row items-center">
+                  <ShieldCheck size={20} color="#F59E0B" />
+                  <View className="ml-2.5 flex-1">
+                    <ThemedText className="text-xs font-bold text-amber-500">
+                      Test Mode Active (Zero SMS Cost)
+                    </ThemedText>
+                    <ThemedText className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5">
+                      Dummy code 123456 has been pre-filled. You can test the verification flow without sending real SMS.
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
 
               {/* OTP Input */}
               <View className="mb-5">
