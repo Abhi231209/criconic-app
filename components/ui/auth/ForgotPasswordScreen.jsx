@@ -9,7 +9,7 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,6 +57,7 @@ const sanitizeMobileNumber = (val) => {
 
 export default function ForgotPasswordScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { isDark } = useAppTheme();
   const colorScheme = useColorScheme();
   const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
@@ -277,18 +278,25 @@ export default function ForgotPasswordScreen() {
   ];
 
   return (
-    <SafeAreaView
-      className={`flex-1 ${isDarkMode ? "bg-slate-950" : "bg-slate-900"}`}
+    <View
+      className={`flex-1 ${isDarkMode ? "bg-slate-950" : "bg-white"}`}
     >
       <AppKeyboardAwareScrollView
         extraHeight={80}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+        style={{
+          flex: 1,
+          backgroundColor: isDarkMode ? "#020617" : "#FFFFFF",
+        }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Upper Hero Section */}
         <View
           style={{
-            minHeight: Math.max(height * 0.32, 230),
+            minHeight: Math.max(height * 0.30, 220) + (insets.top || 0),
             width: "100%",
           }}
           className="relative overflow-hidden justify-center items-center"
@@ -319,7 +327,8 @@ export default function ForgotPasswordScreen() {
             }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            className="absolute inset-0 px-6 pt-4 pb-10 justify-between"
+            className="absolute inset-0 px-6 pb-10 justify-between"
+            style={{ paddingTop: Math.max(insets.top + 8, 20) }}
           >
             {/* Ambient Background Glow Circles */}
             <View className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-blue-400/10 blur-xl" />
@@ -420,12 +429,14 @@ export default function ForgotPasswordScreen() {
 
         {/* Modern Form Card */}
         <View
-          className={`flex-1 -mt-6 px-6 pt-7 pb-10 rounded-t-3xl border-t ${
+          className={`flex-1 -mt-6 px-6 pt-7 rounded-t-3xl border-t ${
             isDarkMode
               ? "bg-slate-900 border-slate-800"
               : "bg-white border-slate-100"
           }`}
           style={{
+            minHeight: Math.max(height * 0.65, 480),
+            paddingBottom: Math.max((insets.bottom || 0) + 28, 44),
             shadowColor: "#000",
             shadowOffset: { width: 0, height: -4 },
             shadowOpacity: isDarkMode ? 0.4 : 0.08,
@@ -987,6 +998,6 @@ export default function ForgotPasswordScreen() {
           </TouchableOpacity>
         </View>
       </AppKeyboardAwareScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
