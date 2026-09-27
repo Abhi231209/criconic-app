@@ -13,6 +13,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
@@ -149,6 +150,14 @@ export default function CreateMatch() {
       currentUserId,
       isAdmin,
     });
+
+    const sub = DeviceEventEmitter.addListener("TOURNAMENT_UPDATED", ({ tournamentId: updatedId, tournament: updatedData }) => {
+      cachedAuthorizedTournaments = null;
+      if (tournamentId && String(tournamentId) === String(updatedId) && updatedData) {
+        setSelectedTournament((prev) => ({ ...(prev || {}), ...updatedData }));
+      }
+    });
+    return () => sub.remove();
   }, [tournamentId, currentUserId, isAdmin]);
 
   // Detect initiator screen before match creation flow
@@ -353,6 +362,8 @@ export default function CreateMatch() {
         teamBSquad,
         returnScreen: initiatorScreen,
         tournamentId,
+        tournament: selectedTournament,
+        tournamentTitle: selectedTournament?.title || selectedTournament?.name || "",
         fromTournament: Boolean(route.params?.fromTournament || route.params?.cameFromTournament),
       });
     } catch (error) {
@@ -599,12 +610,12 @@ export default function CreateMatch() {
                   isDarkMode ? "text-gray-300" : "text-gray-700"
                 }`}
               >
-                Match Type: <ThemedText className="font-bold">Single Match</ThemedText>
+                Playing as a Single Match
               </ThemedText>
             </View>
             <TouchableOpacity
               onPress={() => setShowTypeModal(true)}
-              className="px-3 py-1 rounded-lg bg-blue-600/10 dark:bg-blue-500/20"
+              className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800"
               activeOpacity={0.7}
             >
               <ThemedText className="text-xs font-semibold text-blue-600 dark:text-blue-400">
@@ -613,6 +624,7 @@ export default function CreateMatch() {
             </TouchableOpacity>
           </View>
         ) : null}
+
 
         {/* Matchup Banner */}
         <View className="mb-6">

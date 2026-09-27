@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
@@ -87,7 +88,12 @@ export const normalizeTeam = (t, isMy = false, currentUserId = "") => {
     teamId,
     name: teamName,
     title: teamName,
-    location: raw?.location || "Location not specified",
+    location:
+      raw?.location &&
+      raw.location !== "Location not specified" &&
+      raw.location !== "not specified"
+        ? raw.location.trim()
+        : "",
     image: rawImg
       ? rawImg.startsWith("http")
         ? rawImg
@@ -401,11 +407,18 @@ export default function SelectTeamScreen() {
 
   useEffect(() => {
     fetchTeams();
+
+    const sub = DeviceEventEmitter.addListener("TEAM_UPDATED", () => {
+      cachedTeams = null;
+      cachedTournamentTeams = {};
+      fetchTeams(true);
+    });
+    return () => sub.remove();
   }, [currentUserId, tournamentId]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchTeams();
+      fetchTeams(false);
     }, [currentUserId, tournamentId])
   );
 
@@ -828,7 +841,7 @@ const TeamList = ({
                 {item.name}
               </ThemedText>
               <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                {item.location} • {item.players?.length || 0} players
+                {item.location ? `${item.location} • ` : ""}{item.players?.length || 0} players
               </ThemedText>
             </View>
             <Ionicons
@@ -985,7 +998,7 @@ const SearchTab = ({ teams, isSearching, onTeamSelect, isDarkMode, searchQuery, 
                 {item.name}
               </ThemedText>
               <ThemedText className="text-sm text-gray-500 dark:text-gray-400">
-                {item.location} • {item.players?.length || 0} players
+                {item.location ? `${item.location} • ` : ""}{item.players?.length || 0} players
               </ThemedText>
             </View>
             <Ionicons

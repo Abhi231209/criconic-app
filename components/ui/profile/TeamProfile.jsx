@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   BackHandler,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -304,16 +305,27 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
   useFocusEffect(
     useCallback(() => {
-      if (isInitialMountRef.current) {
-        // Skip on initial mount because useEffect handles it
-        isInitialMountRef.current = false;
-        return;
-      }
       if (teamId) {
         fetchTeamData();
       }
     }, [fetchTeamData, teamId])
   );
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "TEAM_UPDATED",
+      ({ teamId: updatedId, team: updatedTeam }) => {
+        const currentId = String(teamId || teamData?._id || teamData?.id || "");
+        if (!updatedId || String(updatedId) === currentId) {
+          if (updatedTeam) {
+            setTeamData((prev) => unnestTeam({ ...(prev || {}), ...updatedTeam }));
+          }
+          fetchTeamData();
+        }
+      }
+    );
+    return () => sub.remove();
+  }, [teamId, teamData, fetchTeamData]);
 
   useEffect(() => {
     if (!teamId) return;
@@ -1998,6 +2010,13 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                       ? { ...teamData.teamId, ...teamData }
                       : (teamData || team),
                     teamId: String(team.id || teamId),
+                    onUpdate: (updated) => {
+                      if (updated) {
+                        setTeamData(unnestTeam(updated));
+                      }
+                      fetchTeamData();
+                    },
+                    cb: () => fetchTeamData(),
                   })
                 }
                 className="w-9 h-9 rounded-full items-center justify-center bg-blue-50 dark:bg-blue-900/30"
@@ -2057,6 +2076,13 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                           ? { ...teamData.teamId, ...teamData }
                           : (teamData || team),
                         teamId: String(team.id || teamId),
+                        onUpdate: (updated) => {
+                          if (updated) {
+                            setTeamData(unnestTeam(updated));
+                          }
+                          fetchTeamData();
+                        },
+                        cb: () => fetchTeamData(),
                       })
                     }
                     className="ml-2 p-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-full"

@@ -10,7 +10,9 @@ import {
   Modal,
   Share,
   BackHandler,
+  DeviceEventEmitter,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,7 +23,7 @@ import ScoreCard from "@/components/ui/ScoreCard";
 import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
 import { tournamentsApi, matchesApi, request } from "@/utils/api";
-import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
+import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay, formatIndianCurrencyWords } from "@/utils";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 
@@ -477,13 +479,30 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!navigation?.addListener) return;
-    const unsubscribe = navigation.addListener("focus", () => {
+  useFocusEffect(
+    useCallback(() => {
       loadData();
-    });
-    return unsubscribe;
-  }, [navigation, loadData]);
+    }, [loadData])
+  );
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "TOURNAMENT_UPDATED",
+      ({ tournamentId: updatedId, tournament: updatedData }) => {
+        const currentId = String(tournamentId || tournamentData?._id || tournamentData?.id || "");
+        if (!updatedId || String(updatedId) === currentId) {
+          if (updatedData) {
+            setTournamentData((prev) => ({
+              ...(prev || {}),
+              ...updatedData,
+            }));
+          }
+          loadData();
+        }
+      }
+    );
+    return () => sub.remove();
+  }, [tournamentId, tournamentData, loadData]);
 
   const formatDate = (dateVal) => {
     if (!dateVal) return null;
@@ -603,14 +622,17 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
       0,
     status: calculateTournamentStatus(tournamentData || passedTournament?.raw || passedTournament),
     format: tournamentData?.format || tournamentData?.category || "Standard",
-    prizeMoney: tournamentData?.prizeMoney
-      ? (String(tournamentData.prizeMoney).startsWith("₹") ? String(tournamentData.prizeMoney) : `₹${tournamentData.prizeMoney}`)
-      : tournamentData?.prize
-      ? (String(tournamentData.prize).startsWith("₹") ? String(tournamentData.prize) : `₹${tournamentData.prize}`)
-      : "Not Specified",
-    entryFee: tournamentData?.entryFee !== undefined && tournamentData?.entryFee !== null && tournamentData?.entryFee !== "" && Number(tournamentData.entryFee) !== 0 && tournamentData?.entryFee !== "0"
-      ? (String(tournamentData.entryFee).startsWith("₹") ? String(tournamentData.entryFee) : `₹${tournamentData.entryFee}`)
-      : null,
+    prizeMoney:
+      formatIndianCurrencyWords(tournamentData?.prizeMoney || tournamentData?.prize) ||
+      "Not Specified",
+    entryFee:
+      tournamentData?.entryFee !== undefined &&
+      tournamentData?.entryFee !== null &&
+      tournamentData?.entryFee !== "" &&
+      Number(tournamentData.entryFee) !== 0 &&
+      tournamentData?.entryFee !== "0"
+        ? formatIndianCurrencyWords(tournamentData.entryFee)
+        : null,
     ballType: tournamentData?.ballType
       ? String(tournamentData.ballType).toUpperCase()
       : "Standard",
@@ -2117,6 +2139,14 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
                 onPress={() =>
                   navigation.navigate(SCREENS.EditTournament, {
                     tournament: tournamentData || tournament,
+                    tournamentId: String(tournamentId || tournament.id),
+                    onUpdate: (updated) => {
+                      if (updated) {
+                        setTournamentData((prev) => ({ ...(prev || {}), ...updated }));
+                      }
+                      loadData();
+                    },
+                    cb: () => loadData(),
                   })
                 }
                 className="w-9 h-9 rounded-full items-center justify-center bg-black/40 border border-white/20"

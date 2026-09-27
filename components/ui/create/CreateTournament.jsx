@@ -27,6 +27,7 @@ import LocationSearch from '@/components/ui/custom/LocationSearch';
 import { tournamentsApi, upload } from '@/utils/api';
 import analytics from '@/utils/analytics';
 import { showGlobalAlert } from '@/contexts/AlertContext';
+import { formatIndianCurrencyWords } from '@/utils';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -43,6 +44,10 @@ const formatDate = (date) => {
   }
 };
 
+const formatCurrencyDisplay = (val) => {
+  return formatIndianCurrencyWords(val) || '';
+};
+
 const InputField = ({
   label,
   value,
@@ -52,6 +57,8 @@ const InputField = ({
   numberOfLines = 1,
   keyboardType = 'default',
   maxLength,
+  errorText,
+  helperText,
 }) => {
   const isDarkMode = useColorScheme() === 'dark';
   return (
@@ -61,7 +68,9 @@ const InputField = ({
       </ThemedText>
       <TextInput
         className={`rounded-lg px-4 py-3 text-base ${
-          isDarkMode
+          errorText
+            ? 'border-red-500 bg-red-50/10'
+            : isDarkMode
             ? 'bg-gray-800 border-gray-700 text-white'
             : 'bg-white border-gray-300 text-gray-900'
         } border`}
@@ -75,6 +84,15 @@ const InputField = ({
         maxLength={maxLength}
         style={{ minHeight: multiline ? 80 : 48 }}
       />
+      {errorText ? (
+        <ThemedText className="text-xs text-red-500 font-medium mt-1">
+          {errorText}
+        </ThemedText>
+      ) : helperText ? (
+        <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          {helperText}
+        </ThemedText>
+      ) : null}
     </View>
   );
 };
@@ -162,22 +180,43 @@ export default function CreateTournament() {
     User.user?.phone ||
     '';
 
+  const defaultVenue =
+    route.params?.venue ||
+    route.params?.location ||
+    route.params?.city ||
+    route.params?.tournament?.location ||
+    (authUser?.city && authUser.city !== "India" ? authUser.city : null) ||
+    (authUser?.location && authUser.location !== "India" ? authUser.location : null) ||
+    (User.city && User.city !== "India" ? User.city : null) ||
+    (User.location && User.location !== "India" ? User.location : null) ||
+    (User.user?.city && User.user?.city !== "India" ? User.user?.city : null) ||
+    (User.user?.location && User.user?.location !== "India" ? User.user?.location : null) ||
+    '';
+
+  const defaultBallType =
+    route.params?.ballType ||
+    route.params?.tournament?.ballType ||
+    'TENNIS';
+
+  const defaultTournamentType =
+    route.params?.tournamentType ||
+    route.params?.tournament?.tournamentType ||
+    'KNOCK_OUT';
+
   const [formData, setFormData] = useState({
-    tournamentName: '',
-    tournamentType: 'KNOCK_OUT',
-    ballType: 'LEATHER',
-    venue: '',
+    tournamentName: route.params?.tournamentName || route.params?.title || route.params?.tournament?.title || '',
+    tournamentType: defaultTournamentType,
+    ballType: defaultBallType,
+    venue: defaultVenue,
     organizerName: defaultOrgName,
     organizerPhone: defaultOrgPhone,
-    startDate: new Date(),
-    endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days later
+    startDate: route.params?.startDate ? new Date(route.params.startDate) : new Date(),
+    endDate: route.params?.endDate ? new Date(route.params.endDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days later
     coverImage: null,
     logo: null,
-    teams: 8,
-    description: '',
-    rules: '',
-    prizeMoney: '',
-    entryFee: '',
+    teams: route.params?.teams || 8,
+    prizeMoney: route.params?.prizeMoney ? String(route.params.prizeMoney) : '',
+    entryFee: route.params?.entryFee ? String(route.params.entryFee) : '',
   });
 
   useEffect(() => {
@@ -187,7 +226,10 @@ export default function CreateTournament() {
     if (!formData.organizerPhone && defaultOrgPhone) {
       setFormData((prev) => ({ ...prev, organizerPhone: defaultOrgPhone }));
     }
-  }, [defaultOrgName, defaultOrgPhone]);
+    if (!formData.venue && defaultVenue) {
+      setFormData((prev) => ({ ...prev, venue: defaultVenue }));
+    }
+  }, [defaultOrgName, defaultOrgPhone, defaultVenue]);
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
@@ -199,8 +241,8 @@ export default function CreateTournament() {
   ];
 
   const ballTypeOptions = [
-    { label: 'Leather Ball', value: 'LEATHER' },
     { label: 'Tennis Ball', value: 'TENNIS' },
+    { label: 'Leather Ball', value: 'LEATHER' },
     { label: 'Other', value: 'OTHER' },
   ];
 
@@ -295,6 +337,58 @@ export default function CreateTournament() {
       return;
     }
 
+    // Prize Money & Entry Fee validation
+    const MAX_PRIZE_MONEY = 100000000; // ₹10 Crore
+    const MAX_ENTRY_FEE = 10000000;    // ₹1 Crore
+
+    const prizeNum = formData.prizeMoney ? Number(formData.prizeMoney) : 0;
+    const entryNum = formData.entryFee ? Number(formData.entryFee) : 0;
+
+    if (formData.prizeMoney && (isNaN(prizeNum) || prizeNum < 0)) {
+      showGlobalAlert({
+        title: 'Invalid Prize Money',
+        message: 'Please enter a valid prize money amount.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (prizeNum > MAX_PRIZE_MONEY) {
+      showGlobalAlert({
+        title: 'Prize Money Exceeded',
+        message: 'Prize money cannot exceed ₹10 Crore (₹10,00,00,000).',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (formData.entryFee && (isNaN(entryNum) || entryNum < 0)) {
+      showGlobalAlert({
+        title: 'Invalid Entry Fee',
+        message: 'Please enter a valid entry fee amount.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (entryNum > MAX_ENTRY_FEE) {
+      showGlobalAlert({
+        title: 'Entry Fee Exceeded',
+        message: 'Entry fee cannot exceed ₹1 Crore (₹1,00,00,000).',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (prizeNum > 0 && entryNum > prizeNum) {
+      showGlobalAlert({
+        title: 'Entry Fee Warning',
+        message: `Entry fee (${formatCurrencyDisplay(entryNum)}) cannot exceed the total tournament prize money (${formatCurrencyDisplay(prizeNum)}).`,
+        type: 'warning',
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -335,8 +429,8 @@ export default function CreateTournament() {
           start: formData.startDate.toISOString(),
           end: formData.endDate.toISOString(),
         },
-        description: formData.description?.trim() || '',
-        rules: formData.rules?.trim() || '',
+        description: '',
+        rules: '',
         prizeMoney: formData.prizeMoney || '',
         entryFee: formData.entryFee || '',
         logo: logoUrl || '',
@@ -429,6 +523,8 @@ export default function CreateTournament() {
             </View>
           </View>
 
+
+
           {/* Tournament Name */}
           <InputField
             label="Tournament Name *"
@@ -512,7 +608,8 @@ export default function CreateTournament() {
           {/* Venue (Google Location Search) */}
           <View style={{ zIndex: 1000 }} className="mb-2">
             <LocationSearch
-              label="Venue"
+              label="Venue *"
+              required
               value={formData.venue}
               onChangeText={(text) => setFormData({ ...formData, venue: text })}
               onSelectLocation={(loc) => {
@@ -568,44 +665,62 @@ export default function CreateTournament() {
             maxLength={10}
           />
 
-          {/* Description */}
-          <InputField
-            label="Description"
-            value={formData.description}
-            onChange={(text) => setFormData({ ...formData, description: text })}
-            placeholder="Describe your tournament..."
-            multiline
-            numberOfLines={3}
-          />
 
-          {/* Rules */}
-          <InputField
-            label="Rules & Regulations"
-            value={formData.rules}
-            onChange={(text) => setFormData({ ...formData, rules: text })}
-            placeholder="Enter tournament rules..."
-            multiline
-            numberOfLines={3}
-          />
 
           {/* Prize Money and Entry Fee in a row */}
           <View className="flex-row justify-between mb-4">
             <View className="flex-1 mr-2">
               <InputField
-                label="Prize Money"
+                label="Prize Money (₹)"
                 value={formData.prizeMoney}
-                onChange={(text) => setFormData({ ...formData, prizeMoney: text })}
-                placeholder="Prize amount"
+                onChange={(text) => {
+                  const clean = text.replace(/[^0-9]/g, '');
+                  setFormData({ ...formData, prizeMoney: clean });
+                }}
+                placeholder="Max ₹10 Cr"
                 keyboardType="numeric"
+                maxLength={9}
+                errorText={
+                  formData.prizeMoney && Number(formData.prizeMoney) > 100000000
+                    ? "Max allowed is ₹10 Crore"
+                    : null
+                }
+                helperText={
+                  formData.prizeMoney && Number(formData.prizeMoney) <= 100000000
+                    ? formatCurrencyDisplay(formData.prizeMoney)
+                    : null
+                }
               />
             </View>
             <View className="flex-1 ml-2">
               <InputField
-                label="Entry Fee"
+                label="Entry Fee (₹)"
                 value={formData.entryFee}
-                onChange={(text) => setFormData({ ...formData, entryFee: text })}
+                onChange={(text) => {
+                  const clean = text.replace(/[^0-9]/g, '');
+                  setFormData({ ...formData, entryFee: clean });
+                }}
                 placeholder="Entry fee"
                 keyboardType="numeric"
+                maxLength={8}
+                errorText={
+                  formData.entryFee && Number(formData.entryFee) > 10000000
+                    ? "Max allowed is ₹1 Crore"
+                    : formData.prizeMoney &&
+                      Number(formData.prizeMoney) > 0 &&
+                      Number(formData.entryFee) > Number(formData.prizeMoney)
+                    ? "Exceeds prize money"
+                    : null
+                }
+                helperText={
+                  formData.entryFee &&
+                  Number(formData.entryFee) <= 10000000 &&
+                  (!formData.prizeMoney ||
+                    Number(formData.prizeMoney) <= 0 ||
+                    Number(formData.entryFee) <= Number(formData.prizeMoney))
+                    ? formatCurrencyDisplay(formData.entryFee)
+                    : null
+                }
               />
             </View>
           </View>

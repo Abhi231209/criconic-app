@@ -440,6 +440,14 @@ export const teamsApi = {
     request(`api/teams/${teamId}/players`, { method: "POST", data, ...options }),
   getTeamPlayers: (teamId, options = {}) =>
     request(`api/teams/${teamId}/players`, { method: "GET", errorAlert: false, ...options }),
+  transferOwnership: (teamId, newOwnerId, options = {}) =>
+    request(`api/teams/${teamId}/transfer-ownership`, {
+      method: "POST",
+      data: { newOwnerId },
+      ...options,
+    }),
+  deleteTeam: (teamId, options = {}) =>
+    request(`api/teams/${teamId}`, { method: "DELETE", ...options }),
 };
 
 export const tournamentsApi = {
@@ -469,6 +477,10 @@ export const tournamentsApi = {
     request("api/tournaments/create", { method: "POST", data, ...options }),
   updateTournament: (id, data, options = {}) =>
     request(`api/tournaments/${id}`, { method: "PUT", data, ...options }),
+  cancelTournament: (id, options = {}) =>
+    request(`api/tournaments/${id}/cancel`, { method: "PUT", ...options }),
+  deleteTournament: (id, options = {}) =>
+    request(`api/tournaments/${id}`, { method: "DELETE", ...options }),
   addTeamToTournament: (tournamentId, data, options = {}) =>
     request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>

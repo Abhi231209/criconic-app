@@ -25,6 +25,33 @@ import { searchFallbackLocations } from "@/utils/locationHelper";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import debounce from "lodash/debounce";
+import { useSelector } from "react-redux";
+import User from "@/utils/User";
+
+const isValidLocation = (loc) => {
+  if (!loc || typeof loc !== "string") return false;
+  const clean = loc.trim().toLowerCase();
+  return (
+    clean.length > 0 &&
+    clean !== "location not specified" &&
+    clean !== "not specified" &&
+    clean !== "local" &&
+    clean !== "undefined" &&
+    clean !== "null" &&
+    clean !== "india"
+  );
+};
+
+export const TOURNAMENT_ROUNDS = [
+  { label: "League Match", value: "League Match", icon: "calendar-outline" },
+  { label: "Knockout", value: "Knockout", icon: "flash-outline" },
+  { label: "Quarter Final", value: "Quarter Final", icon: "flag-outline" },
+  { label: "Semi Final", value: "Semi Final", icon: "git-commit-outline" },
+  { label: "Final", value: "Final", icon: "trophy" },
+  { label: "Qualifier 1", value: "Qualifier 1", icon: "ribbon-outline" },
+  { label: "Eliminator", value: "Eliminator", icon: "flame-outline" },
+  { label: "Qualifier 2", value: "Qualifier 2", icon: "ribbon-outline" },
+];
 
 export default function MatchDetailsScreen() {
   const navigation = useNavigation();
@@ -37,24 +64,80 @@ export default function MatchDetailsScreen() {
     route.params?.matchDetails?.id ||
     route.params?.match?._id;
 
+  const authUser = useSelector((state) => state.auth?.user);
+
+  const resolveInitialLocation = () => {
+    const candidates = [
+      route.params?.location,
+      route.params?.venue,
+      route.params?.address,
+      authUser?.city,
+      authUser?.location,
+      User.city,
+      User.location,
+      User.user?.city,
+      User.user?.location,
+    ];
+    for (const c of candidates) {
+      if (isValidLocation(c)) {
+        return c.trim();
+      }
+    }
+    return "";
+  };
+
+  const initialLocation = resolveInitialLocation();
+
   const [teamA, setTeamA] = useState(initialTeamA);
   const [teamB, setTeamB] = useState(initialTeamB);
   const [teamASquad, setTeamASquad] = useState(initialTeamASquad || []);
   const [teamBSquad, setTeamBSquad] = useState(initialTeamBSquad || []);
   const [fetchedMatch, setFetchedMatch] = useState(null);
+  const [tournament, setTournament] = useState(route.params?.tournament || null);
+  const [customRound, setCustomRound] = useState("");
+  const [showCustomRound, setShowCustomRound] = useState(false);
+
+  const tournamentId =
+    route.params?.tournamentId ||
+    route.params?.tournamentID ||
+    route.params?.tournament?._id ||
+    route.params?.tournament?.id ||
+    fetchedMatch?.tournamentID ||
+    (typeof fetchedMatch?.tournament === "string"
+      ? fetchedMatch.tournament
+      : fetchedMatch?.tournament?._id || fetchedMatch?.tournament?.id);
+
+  const isTournamentMatch = Boolean(
+    tournamentId ||
+    route.params?.fromTournament ||
+    route.params?.cameFromTournament ||
+    fetchedMatch?.tournamentID ||
+    fetchedMatch?.tournament
+  );
 
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
   const [matchDetails, setMatchDetails] = useState({
-    matchType: "limited",
-    ballType: "tennis",
-    pitchType: "",
-    date: new Date(),
-    overs: 20,
-    powerplay: 6,
-    location: "",
-    locationId: "",
+    matchType: route.params?.matchType || "limited",
+    ballType: route.params?.ballType || "tennis",
+    pitchType: route.params?.pitchType || "turf",
+    date: route.params?.date ? new Date(route.params.date) : new Date(),
+    overs: route.params?.overs ? Number(route.params.overs) : 20,
+    powerplay: route.params?.powerplay ? Number(route.params.powerplay) : 6,
+    location: isValidLocation(initialLocation) ? initialLocation : "",
+    locationId: route.params?.locationId || "",
+    roundType:
+      route.params?.roundType ||
+      route.params?.round ||
+      route.params?.stage ||
+      (String(
+        route.params?.tournament?.tournamentType ||
+        route.params?.tournament?.format ||
+        ""
+      ).toUpperCase().includes("KNOCK")
+        ? "Knockout"
+        : "League Match"),
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -100,10 +183,15 @@ export default function MatchDetailsScreen() {
             if (m.totalOvers) handleInputChange("overs", m.totalOvers);
             if (m.type) handleInputChange("matchType", m.type);
             if (m.ballType) handleInputChange("ballType", m.ballType);
-            if (m.pitchType) handleInputChange("pitchType", m.pitchType);
-            if (m.location || m.address) handleInputChange("location", m.location || m.address);
-            if (m.locationId) handleInputChange("locationId", m.locationId);
+            const fetchedLoc = isValidLocation(m.location)
+              ? m.location
+              : isValidLocation(m.address)
+              ? m.address
+              : null;
             if (m.powerplayOvers) handleInputChange("powerplay", m.powerplayOvers);
+            if (m.roundType || m.round || m.stage) {
+              handleInputChange("roundType", m.roundType || m.round || m.stage);
+            }
           }
         })
         .catch((err) => console.warn("[MatchDetailsScreen] Error loading match:", err));
@@ -269,18 +357,38 @@ export default function MatchDetailsScreen() {
       tournamentsApi
         .getTournamentById(tId)
         .then((res) => {
-          const t = res?.data?.data || res?.data;
-          if (t && (t.location || t.city || t.address)) {
-            setMatchDetails((prev) => ({
-              ...prev,
-              location: prev.location || t.location || t.city || t.address || "",
-              locationId: prev.locationId || t.locationId || "",
-            }));
+          const t = res?.data?.data || res?.data?.tournament || res?.data;
+          if (t) {
+            setTournament(t);
+            const tLoc = [t?.location, t?.city, t?.address].find(isValidLocation);
+            if (tLoc) {
+              setMatchDetails((prev) => ({
+                ...prev,
+                location: isValidLocation(prev.location) ? prev.location : tLoc,
+                locationId: prev.locationId || t.locationId || "",
+              }));
+            }
+            const tourType = String(t?.tournamentType || t?.format || "").toUpperCase();
+            if (tourType.includes("KNOCK") && !route.params?.roundType) {
+              setMatchDetails((prev) => ({
+                ...prev,
+                roundType: prev.roundType === "League Match" ? "Knockout" : prev.roundType,
+              }));
+            }
           }
         })
         .catch((e) => console.log("[MatchDetailsScreen] fetch tournament location error:", e));
     }
   }, [route.params]);
+
+  useEffect(() => {
+    if (!isValidLocation(matchDetails.location) && isValidLocation(initialLocation)) {
+      setMatchDetails((prev) => ({
+        ...prev,
+        location: initialLocation,
+      }));
+    }
+  }, [initialLocation]);
 
   const handleInputChange = (field, value) => {
     setMatchDetails((prev) => {
@@ -355,7 +463,7 @@ export default function MatchDetailsScreen() {
   };
 
   const saveMatchDetails = async (targetStatus) => {
-    if (!matchDetails.location || !matchDetails.location.trim()) {
+    if (!isValidLocation(matchDetails.location)) {
       showGlobalAlert({
         title: "Location Required",
         message: "Please enter and select a ground or location from Google Places before proceeding.",
@@ -383,6 +491,11 @@ export default function MatchDetailsScreen() {
         powerplayOvers: Number(matchDetails.powerplay || 0),
         status: targetStatus,
       };
+      if (isTournamentMatch && matchDetails.roundType) {
+        updatePayload.roundType = matchDetails.roundType;
+        updatePayload.round = matchDetails.roundType;
+        updatePayload.stage = matchDetails.roundType;
+      }
       if (matchDetails.location?.trim()) {
         updatePayload.location = matchDetails.location.trim();
       }
@@ -454,6 +567,11 @@ export default function MatchDetailsScreen() {
         if (route.params?.tournamentId || route.params?.tournamentID) {
           dataToSend.tournamentID =
             route.params?.tournamentId || route.params?.tournamentID;
+          if (matchDetails.roundType) {
+            dataToSend.roundType = matchDetails.roundType;
+            dataToSend.round = matchDetails.roundType;
+            dataToSend.stage = matchDetails.roundType;
+          }
         }
 
         const res = await matchesApi.createMatch(dataToSend);
@@ -782,6 +900,155 @@ export default function MatchDetailsScreen() {
       >
         {currentStep === 1 ? (
           <>
+            {/* Tournament Match Stage / Round Selection */}
+            {isTournamentMatch && (
+              <View className="mb-6">
+                <View className="flex-row items-center justify-between mb-3">
+                  <View className="flex-row items-center">
+                    <Ionicons name="trophy" size={20} color="#2563EB" style={{ marginRight: 8 }} />
+                    <ThemedText className="text-base font-bold text-gray-900 dark:text-white">
+                      Tournament Match Stage
+                    </ThemedText>
+                  </View>
+                  {(tournament?.title || tournament?.name || route.params?.tournamentTitle) ? (
+                    <View className="flex-row items-center px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800">
+                      <ThemedText numberOfLines={1} className="text-xs font-bold text-blue-600 dark:text-blue-400 max-w-[130px]">
+                        {tournament?.title || tournament?.name || route.params?.tournamentTitle}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View className="flex-row flex-wrap">
+                  {TOURNAMENT_ROUNDS.map((r) => {
+                    const isSelected = matchDetails.roundType === r.value;
+                    return (
+                      <TouchableOpacity
+                        key={r.value}
+                        onPress={() => {
+                          handleInputChange("roundType", r.value);
+                          setShowCustomRound(false);
+                        }}
+                        className={`px-3.5 py-2.5 rounded-xl mr-2 mb-2.5 border-2 flex-row items-center ${
+                          isSelected
+                            ? "bg-blue-600 border-blue-600"
+                            : isDarkMode
+                            ? "bg-gray-800 border-gray-700"
+                            : "bg-white border-gray-200"
+                        }`}
+                      >
+                        <Ionicons
+                          name={r.icon}
+                          size={15}
+                          color={isSelected ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+                          style={{ marginRight: 6 }}
+                        />
+                        <ThemedText
+                          className={`text-xs font-bold ${
+                            isSelected
+                              ? "text-white"
+                              : isDarkMode
+                              ? "text-gray-300"
+                              : "text-gray-700"
+                          }`}
+                        >
+                          {r.label}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* Custom / Other Stage Button */}
+                  <TouchableOpacity
+                    onPress={() => setShowCustomRound(true)}
+                    className={`px-3.5 py-2.5 rounded-xl mr-2 mb-2.5 border-2 border-dashed flex-row items-center ${
+                      !TOURNAMENT_ROUNDS.some((r) => r.value === matchDetails.roundType)
+                        ? "bg-blue-600 border-blue-600"
+                        : isDarkMode
+                        ? "bg-gray-800 border-gray-700"
+                        : "bg-white border-gray-200"
+                    }`}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={15}
+                      color={
+                        !TOURNAMENT_ROUNDS.some((r) => r.value === matchDetails.roundType)
+                          ? "#FFFFFF"
+                          : isDarkMode
+                          ? "#9CA3AF"
+                          : "#6B7280"
+                      }
+                      style={{ marginRight: 6 }}
+                    />
+                    <ThemedText
+                      className={`text-xs font-bold ${
+                        !TOURNAMENT_ROUNDS.some((r) => r.value === matchDetails.roundType)
+                          ? "text-white"
+                          : isDarkMode
+                          ? "text-gray-300"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {!TOURNAMENT_ROUNDS.some((r) => r.value === matchDetails.roundType)
+                        ? matchDetails.roundType
+                        : "Other"}
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+
+                {showCustomRound && (
+                  <View className={`p-3 rounded-xl mt-1 border ${
+                    isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                  }`}>
+                    <ThemedText className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                      Enter Custom Stage / Round Name:
+                    </ThemedText>
+                    <View className="flex-row items-center">
+                      <TextInput
+                        placeholder="e.g. Super 8, Pre-Quarter, Round of 16"
+                        placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                        value={customRound}
+                        onChangeText={setCustomRound}
+                        className={`flex-1 p-2.5 rounded-xl border text-sm ${
+                          isDarkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300 text-gray-900"
+                        }`}
+                        onSubmitEditing={() => {
+                          if (customRound.trim()) {
+                            handleInputChange("roundType", customRound.trim());
+                            setShowCustomRound(false);
+                            setCustomRound("");
+                          }
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (customRound.trim()) {
+                            handleInputChange("roundType", customRound.trim());
+                            setShowCustomRound(false);
+                            setCustomRound("");
+                          }
+                        }}
+                        disabled={!customRound.trim()}
+                        className="ml-2 px-3.5 py-2.5 bg-blue-600 rounded-xl"
+                      >
+                        <ThemedText className="text-white text-xs font-bold">Done</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowCustomRound(false);
+                          setCustomRound("");
+                        }}
+                        className="ml-1 p-2"
+                      >
+                        <Ionicons name="close" size={20} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Match Date Selection - Prominent & Clearly Visible at Top */}
             <View className="mb-6">
               <ThemedText className="text-base font-bold mb-2 text-gray-900 dark:text-white">
@@ -995,42 +1262,6 @@ export default function MatchDetailsScreen() {
           </>
         ) : (
           <>
-            {/* Step 1 Quick Summary Card */}
-            <View
-              className={`p-3.5 rounded-xl mb-5 flex-row items-center justify-between border ${
-                isDarkMode
-                  ? "bg-gray-800/90 border-gray-700"
-                  : "bg-blue-50/70 border-blue-100"
-              }`}
-            >
-              <View className="flex-1 mr-2">
-                <ThemedText className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1">
-                  Overs & Date Selected
-                </ThemedText>
-                <ThemedText className="text-sm font-bold text-gray-900 dark:text-white">
-                  {matchDetails.overs} Overs
-                  {matchDetails.powerplay ? ` • ${matchDetails.powerplay} PP Overs` : " • No PP"}
-                </ThemedText>
-                <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {formatDate(matchDetails.date)}
-                </ThemedText>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setCurrentStep(1);
-                  setTimeout(() => {
-                    scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
-                  }, 50);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 active:bg-blue-700 flex-row items-center"
-              >
-                <Ionicons name="pencil" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                <ThemedText className="text-white text-xs font-semibold">
-                  Change
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-
             {/* Match Type Selection - Moved to Step 2 */}
             <View className="mb-6">
               <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">

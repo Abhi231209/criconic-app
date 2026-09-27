@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -20,9 +21,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
 import Dropdown from '@/components/ui/custom/Dropdown';
+import LocationSearch from '@/components/ui/custom/LocationSearch';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import { tournamentsApi, upload } from '@/utils/api';
 import { showGlobalAlert } from '@/components/ui/custom/AppAlertModal';
+import { formatIndianCurrencyWords } from '@/utils';
 
 const formatDate = (date) => {
   if (!date) return '';
@@ -47,7 +50,9 @@ const InputField = ({
   keyboardType = 'default',
   maxLength,
   multiline = false,
-  numberOfLines = 1
+  numberOfLines = 1,
+  errorText,
+  helperText,
 }) => {
   const isDarkMode = useColorScheme() === 'dark';
   return (
@@ -57,7 +62,9 @@ const InputField = ({
       </ThemedText>
       <TextInput
         className={`rounded-lg px-4 py-3 text-base ${
-          isDarkMode 
+          errorText
+            ? 'border-red-500 bg-red-50/10'
+            : isDarkMode 
             ? 'bg-gray-800 border-gray-700 text-white' 
             : 'bg-white border-gray-300 text-gray-900'
         } border`}
@@ -71,6 +78,15 @@ const InputField = ({
         numberOfLines={numberOfLines}
         style={{ minHeight: multiline ? 80 : 48 }}
       />
+      {errorText ? (
+        <ThemedText className="text-xs text-red-500 font-medium mt-1">
+          {errorText}
+        </ThemedText>
+      ) : helperText ? (
+        <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+          {helperText}
+        </ThemedText>
+      ) : null}
     </View>
   );
 };
@@ -172,6 +188,7 @@ export default function EditTournament() {
     startDate: paramTournament.date?.start ? new Date(paramTournament.date.start) : (paramTournament.startDate ? new Date(paramTournament.startDate) : new Date()),
     endDate: paramTournament.date?.end ? new Date(paramTournament.date.end) : (paramTournament.endDate ? new Date(paramTournament.endDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
     location: paramTournament.location || paramTournament.city || '',
+    locationId: paramTournament.locationId || '',
     organizerName: typeof paramTournament.organizer === 'string' ? paramTournament.organizer : (paramTournament.organizer?.[0]?.username || paramTournament.organizerName || ''),
     organizerPhone: paramTournament.organizerPhone || paramTournament.organizer?.[0]?.mobile || '',
     status: paramTournament.status || 'upcoming',
@@ -179,9 +196,6 @@ export default function EditTournament() {
     prizeMoney: paramTournament.prizeMoney ? String(paramTournament.prizeMoney) : '',
     entryFee: paramTournament.entryFee ? String(paramTournament.entryFee) : '',
     ballType: paramTournament.ballType || 'leather',
-    isPublic: paramTournament.config?.visibility !== 'PRIVATE',
-    description: paramTournament.highlights || paramTournament.description || '',
-    rules: paramTournament.rules || '',
     logo: paramTournament.logoImage || paramTournament.logo || null,
     coverImage: paramTournament.bannerImage || paramTournament.banner || paramTournament.coverImage || null,
   });
@@ -253,14 +267,10 @@ export default function EditTournament() {
     }
   };
 
-  const formatCurrency = (amount) => {
-    if (!amount) return '';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount);
+  const formatCurrencyDisplay = (val) => {
+    return formatIndianCurrencyWords(val) || '';
   };
+  const formatCurrency = formatCurrencyDisplay;
 
   const handleSubmit = async () => {
     if (!formData.name.trim()) {
@@ -320,6 +330,58 @@ export default function EditTournament() {
       return;
     }
 
+    // Prize Money & Entry Fee validation
+    const MAX_PRIZE_MONEY = 100000000; // ₹10 Crore
+    const MAX_ENTRY_FEE = 10000000;    // ₹1 Crore
+
+    const prizeNum = formData.prizeMoney ? Number(formData.prizeMoney) : 0;
+    const entryNum = formData.entryFee ? Number(formData.entryFee) : 0;
+
+    if (formData.prizeMoney && (isNaN(prizeNum) || prizeNum < 0)) {
+      showGlobalAlert({
+        title: 'Invalid Prize Money',
+        message: 'Please enter a valid prize money amount.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (prizeNum > MAX_PRIZE_MONEY) {
+      showGlobalAlert({
+        title: 'Prize Money Exceeded',
+        message: 'Prize money cannot exceed ₹10 Crore (₹10,00,00,000).',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (formData.entryFee && (isNaN(entryNum) || entryNum < 0)) {
+      showGlobalAlert({
+        title: 'Invalid Entry Fee',
+        message: 'Please enter a valid entry fee amount.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (entryNum > MAX_ENTRY_FEE) {
+      showGlobalAlert({
+        title: 'Entry Fee Exceeded',
+        message: 'Entry fee cannot exceed ₹1 Crore (₹1,00,00,000).',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (prizeNum > 0 && entryNum > prizeNum) {
+      showGlobalAlert({
+        title: 'Entry Fee Warning',
+        message: `Entry fee (${formatCurrencyDisplay(entryNum)}) cannot exceed the total tournament prize money (${formatCurrencyDisplay(prizeNum)}).`,
+        type: 'warning',
+      });
+      return;
+    }
+
     setIsLoading(true);
     
     // HARDCODED SIMULATED API CALL - COMMENTED OUT (API ONLY)
@@ -366,26 +428,60 @@ export default function EditTournament() {
         }
       }
 
+      const updatePayload = {
+        title: formData.name.trim(),
+        name: formData.name.trim(),
+        shortName: formData.shortName?.trim() || '',
+        slug: formData.shortName?.trim() || '',
+        location: formData.location.trim(),
+        city: formData.location.trim(),
+        ...(formData.locationId ? { locationId: formData.locationId } : {}),
+        date: {
+          start: formData.startDate,
+          end: formData.endDate,
+        },
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        status: formData.status,
+        format: formData.format,
+        tournamentType: formData.format,
+        category: formData.format,
+        prizeMoney: formData.prizeMoney || '',
+        prize: formData.prizeMoney || '',
+        entryFee: formData.entryFee || '',
+        ballType: formData.ballType,
+        logoImage: logoUrl,
+        bannerImage: bannerUrl,
+        logo: logoUrl,
+        banner: bannerUrl,
+      };
+
+      let updatedTournament = null;
       if (tournamentId) {
-        await tournamentsApi.updateTournament(tournamentId, {
-          title: formData.name,
-          location: formData.location,
-          date: {
-            start: formData.startDate,
-            end: formData.endDate,
-          },
-          status: formData.status,
-          ballType: formData.ballType,
-          highlights: formData.description,
-          logoImage: logoUrl,
-          bannerImage: bannerUrl,
-          logo: logoUrl,
-          banner: bannerUrl,
-          config: {
-            visibility: formData.isPublic ? 'PUBLIC' : 'PRIVATE',
-          },
-        });
+        const res = await tournamentsApi.updateTournament(tournamentId, updatePayload);
+        updatedTournament = res?.data?.content || res?.data?.tournament || res?.data?.data || res?.data;
       }
+
+      const finalTournament = {
+        ...(paramTournament || {}),
+        ...updatePayload,
+        ...(typeof updatedTournament === 'object' && updatedTournament !== null ? updatedTournament : {}),
+        _id: tournamentId,
+        id: tournamentId,
+      };
+
+      if (typeof route.params?.onUpdate === 'function') {
+        route.params.onUpdate(finalTournament);
+      }
+      if (typeof route.params?.cb === 'function') {
+        route.params.cb(finalTournament);
+      }
+
+      DeviceEventEmitter.emit('TOURNAMENT_UPDATED', {
+        tournamentId: String(tournamentId),
+        tournament: finalTournament,
+      });
+
       setIsLoading(false);
       showGlobalAlert({
         title: 'Success',
@@ -394,7 +490,17 @@ export default function EditTournament() {
         buttons: [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              if (route.params?.returnScreen) {
+                navigation.navigate(route.params.returnScreen, {
+                  tournamentId,
+                  tournament: finalTournament,
+                  refresh: Date.now(),
+                });
+              } else {
+                navigation.goBack();
+              }
+            },
           },
         ],
       });
@@ -407,6 +513,120 @@ export default function EditTournament() {
         type: 'error',
       });
     }
+  };
+
+  const handleCancelTournament = () => {
+    if (!tournamentId) return;
+    showGlobalAlert({
+      title: 'Cancel Tournament',
+      message: 'Are you sure you want to cancel this tournament? This will mark the tournament as cancelled.',
+      type: 'warning',
+      buttons: [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              await tournamentsApi.cancelTournament(tournamentId);
+              setFormData((prev) => ({ ...prev, status: 'cancelled' }));
+              const updated = {
+                ...(paramTournament || {}),
+                status: 'cancelled',
+                _id: tournamentId,
+                id: tournamentId,
+              };
+              if (typeof route.params?.onUpdate === 'function') {
+                route.params.onUpdate(updated);
+              }
+              if (typeof route.params?.cb === 'function') {
+                route.params.cb(updated);
+              }
+              DeviceEventEmitter.emit('TOURNAMENT_UPDATED', {
+                tournamentId: String(tournamentId),
+                tournament: updated,
+              });
+              showGlobalAlert({
+                title: 'Success',
+                message: 'Tournament has been cancelled.',
+                type: 'success',
+                buttons: [
+                  {
+                    text: 'OK',
+                    onPress: () => navigation.goBack(),
+                  },
+                ],
+              });
+            } catch (err) {
+              console.error('Cancel tournament error:', err);
+              showGlobalAlert({
+                title: 'Error',
+                message: err?.response?.data?.message || err?.message || 'Failed to cancel tournament',
+                type: 'error',
+              });
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+    });
+  };
+
+  const handleDeleteTournament = () => {
+    if (!tournamentId) return;
+    showGlobalAlert({
+      title: 'Delete Tournament',
+      message: 'Are you sure you want to permanently delete this tournament? This action cannot be undone.',
+      type: 'warning',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              await tournamentsApi.deleteTournament(tournamentId);
+              DeviceEventEmitter.emit('TOURNAMENT_DELETED', {
+                tournamentId: String(tournamentId),
+              });
+              DeviceEventEmitter.emit('TOURNAMENT_UPDATED', {
+                tournamentId: String(tournamentId),
+                isDeleted: true,
+              });
+              showGlobalAlert({
+                title: 'Deleted',
+                message: 'Tournament has been deleted successfully.',
+                type: 'success',
+                buttons: [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      if (navigation.canGoBack()) {
+                        navigation.goBack();
+                      } else {
+                        navigation.navigate('Home');
+                      }
+                    },
+                  },
+                ],
+              });
+            } catch (err) {
+              console.error('Delete tournament error:', err);
+              showGlobalAlert({
+                title: 'Error',
+                message: err?.response?.data?.message || err?.message || 'Failed to delete tournament',
+                type: 'error',
+              });
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+    });
   };
 
   return (
@@ -526,12 +746,30 @@ export default function EditTournament() {
           )}
 
           {/* Location */}
-          <InputField
-            label="Location *"
-            value={formData.location}
-            onChange={(text) => setFormData({ ...formData, location: text })}
-            placeholder="City, Country"
-          />
+          <View style={{ zIndex: 1005 }} className="mb-2">
+            <LocationSearch
+              label="Location *"
+              required
+              locationType="city"
+              value={formData.location}
+              onChangeText={(text) =>
+                setFormData({ ...formData, location: text, locationId: '' })
+              }
+              onSelectLocation={(loc) => {
+                const locText =
+                  loc?.description ||
+                  loc?.structured_formatting?.main_text ||
+                  '';
+                setFormData({
+                  ...formData,
+                  location: locText,
+                  locationId: loc?.place_id || '',
+                });
+              }}
+              placeholder="Search or enter city / location"
+              isDarkMode={isDarkMode}
+            />
+          </View>
 
           {/* Organizer Details */}
           <ThemedText className={`text-lg font-bold mb-3 mt-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -615,65 +853,57 @@ export default function EditTournament() {
               <InputField
                 label="Prize Money (₹)"
                 value={formData.prizeMoney}
-                onChange={(text) => setFormData({ ...formData, prizeMoney: text })}
-                placeholder="Enter prize amount"
+                onChange={(text) => {
+                  const clean = text.replace(/[^0-9]/g, '');
+                  setFormData({ ...formData, prizeMoney: clean });
+                }}
+                placeholder="Max ₹10 Cr"
                 keyboardType="numeric"
+                maxLength={9}
+                errorText={
+                  formData.prizeMoney && Number(formData.prizeMoney) > 100000000
+                    ? "Max allowed is ₹10 Crore"
+                    : null
+                }
+                helperText={
+                  formData.prizeMoney && Number(formData.prizeMoney) <= 100000000
+                    ? formatCurrencyDisplay(formData.prizeMoney)
+                    : null
+                }
               />
-              {formData.prizeMoney && (
-                <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {formatCurrency(parseInt(formData.prizeMoney) || 0)}
-                </ThemedText>
-              )}
             </View>
             <View className="flex-1 ml-2">
               <InputField
                 label="Entry Fee (₹)"
                 value={formData.entryFee}
-                onChange={(text) => setFormData({ ...formData, entryFee: text })}
-                placeholder="Enter entry fee"
+                onChange={(text) => {
+                  const clean = text.replace(/[^0-9]/g, '');
+                  setFormData({ ...formData, entryFee: clean });
+                }}
+                placeholder="Entry fee"
                 keyboardType="numeric"
+                maxLength={8}
+                errorText={
+                  formData.entryFee && Number(formData.entryFee) > 10000000
+                    ? "Max allowed is ₹1 Crore"
+                    : formData.prizeMoney &&
+                      Number(formData.prizeMoney) > 0 &&
+                      Number(formData.entryFee) > Number(formData.prizeMoney)
+                    ? "Exceeds prize money"
+                    : null
+                }
+                helperText={
+                  formData.entryFee &&
+                  Number(formData.entryFee) <= 10000000 &&
+                  (!formData.prizeMoney ||
+                    Number(formData.prizeMoney) <= 0 ||
+                    Number(formData.entryFee) <= Number(formData.prizeMoney))
+                    ? formatCurrencyDisplay(formData.entryFee)
+                    : null
+                }
               />
-              {formData.entryFee && (
-                <ThemedText className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {formatCurrency(parseInt(formData.entryFee) || 0)}
-                </ThemedText>
-              )}
             </View>
           </View>
-
-          {/* Additional Settings */}
-          <View className={`flex-row justify-between items-center mb-6 p-4 rounded-lg border ${
-            isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'
-          }`}>
-            <ThemedText className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Public Tournament
-            </ThemedText>
-            <Switch
-              value={formData.isPublic}
-              onValueChange={(value) => setFormData({ ...formData, isPublic: value })}
-              thumbColor={formData.isPublic ? '#2563EB' : '#f4f3f4'}
-              trackColor={{ false: '#767577', true: '#93C5FD' }}
-            />
-          </View>
-
-          {/* Description and Rules */}
-          <InputField
-            label="Tournament Description"
-            value={formData.description}
-            onChange={(text) => setFormData({ ...formData, description: text })}
-            placeholder="Describe the tournament..."
-            multiline
-            numberOfLines={4}
-          />
-
-          <InputField
-            label="Rules & Regulations"
-            value={formData.rules}
-            onChange={(text) => setFormData({ ...formData, rules: text })}
-            placeholder="Enter tournament rules..."
-            multiline
-            numberOfLines={4}
-          />
 
           {/* Submit Button */}
           <TouchableOpacity
@@ -706,19 +936,29 @@ export default function EditTournament() {
             </ThemedText>
 
             <View className="space-y-2">
-              <TouchableOpacity className={`p-3 rounded-lg flex-row items-center justify-between ${
-                isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
-              }`}>
-                <ThemedText className={isDarkMode ? 'text-red-200' : 'text-red-700'}>
+              <TouchableOpacity
+                onPress={handleCancelTournament}
+                disabled={isLoading}
+                activeOpacity={0.7}
+                className={`p-3 rounded-lg flex-row items-center justify-between ${
+                  isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
+                }`}
+              >
+                <ThemedText className={`font-semibold ${isDarkMode ? 'text-red-200' : 'text-red-700'}`}>
                   Cancel Tournament
                 </ThemedText>
                 <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#FCA5A5' : '#DC2626'} />
               </TouchableOpacity>
 
-              <TouchableOpacity className={`p-3 rounded-lg flex-row items-center justify-between ${
-                isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
-              }`}>
-                <ThemedText className={isDarkMode ? 'text-red-200' : 'text-red-700'}>
+              <TouchableOpacity
+                onPress={handleDeleteTournament}
+                disabled={isLoading}
+                activeOpacity={0.7}
+                className={`p-3 rounded-lg flex-row items-center justify-between ${
+                  isDarkMode ? 'bg-red-800/50' : 'bg-red-100'
+                }`}
+              >
+                <ThemedText className={`font-semibold ${isDarkMode ? 'text-red-200' : 'text-red-700'}`}>
                   Delete Tournament
                 </ThemedText>
                 <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#FCA5A5' : '#DC2626'} />

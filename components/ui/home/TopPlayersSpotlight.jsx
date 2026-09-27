@@ -10,6 +10,43 @@ import useAppTheme from "@/hooks/useAppTheme";
 
 const MEDAL_COLORS = ["#F59E0B", "#94A3B8", "#D97706"];
 
+const getPlayerRuns = (player) => {
+  if (!player) return 0;
+
+  const candidates = [
+    player.stats?.batting?.runs,
+    player.stats?.runs,
+    player.battingStats?.runs,
+    player.batting?.runs,
+    player.careerStats?.batting?.runs,
+    player.careerStats?.runs,
+    player.totalRuns,
+    player.runs,
+    player.run,
+    player.score,
+  ];
+
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && c !== "") {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) {
+        return num;
+      }
+    }
+  }
+
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && c !== "") {
+      const num = Number(c);
+      if (!isNaN(num)) {
+        return num;
+      }
+    }
+  }
+
+  return 0;
+};
+
 export default function TopPlayersSpotlight() {
   const navigation = useNavigation();
   const { isDarkMode } = useAppTheme();
@@ -18,18 +55,33 @@ export default function TopPlayersSpotlight() {
 
   useEffect(() => {
     let isMounted = true;
-    rankingsApi
-      .getRankings({ type: "overall", limit: 8 }, "overall", { limit: 8 })
-      .then((res) => {
-        if (!isMounted) return;
-        setPlayers(res?.data?.players || []);
-      })
-      .catch(() => {
+    const fetchTopPlayers = async () => {
+      try {
+        // Query batting rankings to display top run scorers with populated batting stats
+        let res = await rankingsApi.getRankings(
+          { type: "batting", limit: 8 },
+          "batting",
+          { limit: 8 }
+        );
+        let list = res?.data?.players || [];
+
+        // Fallback if batting rankings returned empty
+        if (!list.length) {
+          res = await rankingsApi.getRankings({ limit: 8 });
+          list = res?.data?.players || [];
+        }
+
+        if (isMounted) {
+          setPlayers(list);
+        }
+      } catch (err) {
         if (isMounted) setPlayers([]);
-      })
-      .finally(() => {
+      } finally {
         if (isMounted) setLoading(false);
-      });
+      }
+    };
+
+    fetchTopPlayers();
     return () => {
       isMounted = false;
     };
@@ -53,7 +105,7 @@ export default function TopPlayersSpotlight() {
           </ThemedText>
         </View>
         <TouchableOpacity
-          onPress={() => navigation.navigate(SCREENS.PlayerRankings)}
+          onPress={() => navigation.navigate(SCREENS.PlayerRankings, { discipline: "batting" })}
           activeOpacity={0.7}
           className={`flex-row items-center px-2.5 py-1 rounded-full ${
             isDarkMode ? "bg-gray-800" : "bg-blue-50"
@@ -84,69 +136,74 @@ export default function TopPlayersSpotlight() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingVertical: 4, gap: 10 }}
         >
-          {players.map((player, index) => (
-            <TouchableOpacity
-              key={player.playerId || player._id || index}
-              activeOpacity={0.8}
-              onPress={() =>
-                player.playerId &&
-                navigation.navigate(SCREENS.PlayerProfile, {
-                  playerId: player.playerId,
-                })
-              }
-              className={`rounded-2xl border p-3.5 items-center ${
-                isDarkMode
-                  ? "bg-gray-800/80 border-gray-700"
-                  : "bg-white border-gray-200"
-              }`}
-              style={{
-                width: 108,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isDarkMode ? 0.25 : 0.06,
-                shadowRadius: 6,
-                elevation: 2,
-              }}
-            >
-              <View
-                className="rounded-full items-center justify-center mb-2"
+          {players.map((player, index) => {
+            const pId = player.playerId || player.id || player._id;
+            const runs = getPlayerRuns(player);
+            return (
+              <TouchableOpacity
+                key={pId || index}
+                activeOpacity={0.8}
+                onPress={() => {
+                  if (pId) {
+                    navigation.navigate(SCREENS.PlayerProfile, {
+                      playerId: pId,
+                    });
+                  }
+                }}
+                className={`rounded-2xl border p-3.5 items-center ${
+                  isDarkMode
+                    ? "bg-gray-800/80 border-gray-700"
+                    : "bg-white border-gray-200"
+                }`}
                 style={{
-                  width: 22,
-                  height: 22,
-                  backgroundColor: MEDAL_COLORS[index] || (isDarkMode ? "#334155" : "#E2E8F0"),
-                  position: "absolute",
-                  top: 8,
-                  left: 8,
-                  zIndex: 2,
+                  width: 108,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isDarkMode ? 0.25 : 0.06,
+                  shadowRadius: 6,
+                  elevation: 2,
                 }}
               >
-                <ThemedText style={{ fontSize: 10, fontWeight: "800", color: "#FFFFFF" }}>
-                  {player.rank || index + 1}
+                <View
+                  className="rounded-full items-center justify-center mb-2"
+                  style={{
+                    width: 22,
+                    height: 22,
+                    backgroundColor: MEDAL_COLORS[index] || (isDarkMode ? "#334155" : "#E2E8F0"),
+                    position: "absolute",
+                    top: 8,
+                    left: 8,
+                    zIndex: 2,
+                  }}
+                >
+                  <ThemedText style={{ fontSize: 10, fontWeight: "800", color: "#FFFFFF" }}>
+                    {player.rank || index + 1}
+                  </ThemedText>
+                </View>
+
+                <View className="mt-2 mb-2">
+                  <PlayerAvatar player={player} size={52} />
+                </View>
+
+                <ThemedText
+                  numberOfLines={1}
+                  className={`text-xs font-bold text-center ${
+                    isDarkMode ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {player.name}
                 </ThemedText>
-              </View>
-
-              <View className="mt-2 mb-2">
-                <PlayerAvatar player={player} size={52} />
-              </View>
-
-              <ThemedText
-                numberOfLines={1}
-                className={`text-xs font-bold text-center ${
-                  isDarkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {player.name}
-              </ThemedText>
-              <ThemedText
-                numberOfLines={1}
-                className={`text-[10px] text-center mt-0.5 ${
-                  isDarkMode ? "text-gray-400" : "text-gray-500"
-                }`}
-              >
-                {player.stats?.runs ?? 0} runs
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
+                <ThemedText
+                  numberOfLines={1}
+                  className={`text-[10px] text-center mt-0.5 ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  {runs} runs
+                </ThemedText>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
     </View>

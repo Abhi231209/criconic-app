@@ -19,13 +19,23 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import ThemedText from '@/components/ui/custom/ThemedText';
-import Dropdown from '@/components/ui/custom/Dropdown';
 import AppKeyboardAwareScrollView from '@/components/ui/custom/AppKeyboardAwareScrollView';
 import LocationSearch from '@/components/ui/custom/LocationSearch';
 import SCREENS from '@/screens';
 import { teamsApi, upload } from '@/utils/api';
 import analytics from '@/utils/analytics';
 import { showGlobalAlert } from '@/contexts/AlertContext';
+
+const generateShortName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  const clean = name.trim();
+  if (!clean) return '';
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    return words[0].slice(0, 3).toUpperCase();
+  }
+  return words.map((w) => w[0]).join('').toUpperCase().slice(0, 5);
+};
 
 const InputField = ({ 
   label, 
@@ -126,13 +136,11 @@ export default function CreateTeam() {
     homeGround: '',
     city: '',
     cityLocationId: '',
-    establishedYear: '',
-    jerseyColor: '',
     logo: null,
-    description: '',
     players: [],
   });
 
+  const [isShortNameTouched, setIsShortNameTouched] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const scrollRef = useRef(null);
@@ -146,19 +154,29 @@ export default function CreateTeam() {
     }
   };
 
-  const teamTypes = [
-    { label: 'Club Team', value: 'club' },
-    { label: 'School Team', value: 'school' },
-    { label: 'Company Team', value: 'company' },
-    { label: 'Community Team', value: 'community' },
-    { label: 'National Team', value: 'national' },
-  ];
+  const handleTeamNameChange = (text) => {
+    const prevAuto = generateShortName(formData.teamName);
+    const newAuto = generateShortName(text);
+    const shouldAutoUpdate = !isShortNameTouched || !formData.shortName || formData.shortName === prevAuto;
 
-  const currentYear = new Date().getFullYear();
-  const yearOptions = [{ label: 'Select Year', value: '' }, ...Array.from({ length: 50 }, (_, i) => ({
-    label: (currentYear - i).toString(),
-    value: (currentYear - i).toString()
-  }))];
+    setFormData((prev) => ({
+      ...prev,
+      teamName: text,
+      shortName: shouldAutoUpdate ? newAuto : prev.shortName,
+    }));
+  };
+
+  const handleShortNameChange = (text) => {
+    if (!text.trim()) {
+      setIsShortNameTouched(false);
+    } else {
+      setIsShortNameTouched(true);
+    }
+    setFormData((prev) => ({
+      ...prev,
+      shortName: text.toUpperCase(),
+    }));
+  };
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -234,11 +252,8 @@ export default function CreateTeam() {
         shortName: formData.shortName.trim().toUpperCase(),
         location: formData.city.trim() || "Local",
         ...(formData.cityLocationId ? { locationId: formData.cityLocationId } : {}),
-        teamType: formData.teamType,
-        homeGround: formData.homeGround.trim(),
-        establishedYear: formData.establishedYear,
-        jerseyColor: formData.jerseyColor,
-        description: formData.description,
+        teamType: formData.teamType || 'club',
+        homeGround: formData.homeGround?.trim() || '',
         teamLogo: logoUrl,
       };
 
@@ -349,7 +364,7 @@ export default function CreateTeam() {
               <InputField
                 label="Team Name *"
                 value={formData.teamName}
-                onChange={(text) => setFormData({ ...formData, teamName: text })}
+                onChange={handleTeamNameChange}
                 onFocus={handleInputFocus}
                 placeholder="Enter team name"
               />
@@ -358,7 +373,7 @@ export default function CreateTeam() {
               <InputField
                 label="Short Name *"
                 value={formData.shortName}
-                onChange={(text) => setFormData({ ...formData, shortName: text })}
+                onChange={handleShortNameChange}
                 onFocus={handleInputFocus}
                 placeholder="e.g., MI, CSK"
                 maxLength={10}
@@ -366,45 +381,10 @@ export default function CreateTeam() {
             </View>
           </View>
 
-          {/* Team Type and Established Year in a row */}
-          <View className="flex-row justify-between mb-4">
-            <View className="flex-1 mr-2" style={{ zIndex: 1002 }}>
-              <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Team Type
-              </ThemedText>
-              <Dropdown
-                options={teamTypes}
-                selectedValue={formData.teamType}
-                onValueChange={(value) => {
-                  Keyboard.dismiss();
-                  setFormData({ ...formData, teamType: value });
-                }}
-                placeholder="Select team type"
-                iconColor="#2563EB"
-              />
-            </View>
-
-            <View className="flex-1 ml-2" style={{ zIndex: 1001 }}>
-              <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Established Year
-              </ThemedText>
-              <Dropdown
-                options={yearOptions}
-                selectedValue={formData.establishedYear}
-                onValueChange={(value) => {
-                  Keyboard.dismiss();
-                  setFormData({ ...formData, establishedYear: value });
-                }}
-                placeholder="Select year"
-                iconColor="#2563EB"
-              />
-            </View>
-          </View>
-
           {/* City (Google Location Search) */}
           <View ref={cityContainerRef} collapsable={false} style={{ zIndex: 1000 }} className="mb-2">
             <LocationSearch
-              label="City"
+              label="City *"
               locationType="city"
               required
               value={formData.city}
@@ -424,32 +404,11 @@ export default function CreateTeam() {
 
           {/* Home Ground */}
           <InputField
-            label="Home Ground"
+            label="Home Ground (Optional)"
             value={formData.homeGround}
             onChange={(text) => setFormData({ ...formData, homeGround: text })}
             onFocus={handleInputFocus}
             placeholder="Home ground name"
-          />
-
-          {/* Jersey Color */}
-          <InputField
-            label="Jersey Color"
-            value={formData.jerseyColor}
-            onChange={(text) => setFormData({ ...formData, jerseyColor: text })}
-            onFocus={handleInputFocus}
-            placeholder="e.g., Blue, Red, etc."
-          />
-
-
-          {/* Description */}
-          <InputField
-            label="Team Description"
-            value={formData.description}
-            onChange={(text) => setFormData({ ...formData, description: text })}
-            onFocus={handleInputFocus}
-            placeholder="Describe your team, achievements, etc."
-            multiline
-            numberOfLines={4}
           />
 
           {/* Players Section */}

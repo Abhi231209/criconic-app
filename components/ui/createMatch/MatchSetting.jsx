@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -33,6 +33,7 @@ import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import ThemedText from "../custom/ThemedText";
+import AppKeyboardAwareScrollView from "../custom/AppKeyboardAwareScrollView";
 import SCREENS from "@/screens";
 import { request, matchesApi, searchApi } from "@/utils/api";
 import { useSocket } from "@/contexts/SocketContext";
@@ -150,6 +151,9 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const [streamingLink, setStreamingLink] = useState("");
   const [isStartingLive, setIsStartingLive] = useState(false);
   const [dlsModalVisible, setDlsModalVisible] = useState(false);
+  const scrollAwareRef = useRef(null);
+  const streamingInputRef = useRef(null);
+  const organizerInputRef = useRef(null);
 
   // ---- ORGANIZERS (co-scorers) ----
   const [organizerQuery, setOrganizerQuery] = useState("");
@@ -567,6 +571,12 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
           Paste YouTube / Facebook video live stream link
         </ThemedText>
         <TextInput
+          ref={streamingInputRef}
+          onFocus={() => {
+            setTimeout(() => {
+              scrollAwareRef.current?.scrollToFocusedInput(streamingInputRef, 140);
+            }, 150);
+          }}
           style={[
             styles.textInput,
             {
@@ -617,6 +627,12 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         Add another person who can score this match — search by name.
       </ThemedText>
       <TextInput
+        ref={organizerInputRef}
+        onFocus={() => {
+          setTimeout(() => {
+            scrollAwareRef.current?.scrollToFocusedInput(organizerInputRef, 140);
+          }, 150);
+        }}
         value={organizerQuery}
         onChangeText={(text) => {
           setOrganizerQuery(text);
@@ -924,11 +940,13 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <AppKeyboardAwareScrollView
+        ref={scrollAwareRef}
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 150 }}
+        contentContainerStyle={{ paddingBottom: 260 }}
+        extraHeight={160}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
         keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         showsVerticalScrollIndicator={false}
       >
         {/* Live & Broadcast Section First for easy access */}
@@ -976,7 +994,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </AccordionSection>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+      </AppKeyboardAwareScrollView>
 
       {/* ── DLS CALCULATOR MODAL ── */}
       <DlsCalculatorModal

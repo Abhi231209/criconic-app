@@ -118,7 +118,13 @@ export default function SignUpScreen() {
   };
 
   const sanitizeMobileNumber = (rawInput) => {
-    const digitsOnly = rawInput.replace(/\D/g, "");
+    if (!rawInput) return "";
+    let digitsOnly = String(rawInput).replace(/\D/g, "");
+    if (digitsOnly.length > 10 && digitsOnly.startsWith("91")) {
+      digitsOnly = digitsOnly.slice(2);
+    } else if (digitsOnly.length === 11 && digitsOnly.startsWith("0")) {
+      digitsOnly = digitsOnly.slice(1);
+    }
     if (digitsOnly.length > 10) {
       return digitsOnly.slice(-10);
     }
@@ -510,7 +516,7 @@ export default function SignUpScreen() {
                 placeholder="10-digit mobile number"
                 placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
                 keyboardType="phone-pad"
-                maxLength={10}
+                maxLength={18}
                 editable={!isPhoneValidated}
               />
               {isPhoneValidated ? (

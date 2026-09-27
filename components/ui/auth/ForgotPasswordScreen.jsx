@@ -22,6 +22,20 @@ const STEP_MOBILE = "mobile";
 const STEP_OTP = "otp";
 const STEP_PASSWORD = "password";
 
+const sanitizeMobileNumber = (val) => {
+  if (!val) return "";
+  let digits = String(val).replace(/\D/g, "");
+  if (digits.length > 10 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  } else if (digits.length === 11 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  if (digits.length > 10) {
+    digits = digits.slice(-10);
+  }
+  return digits;
+};
+
 export default function ForgotPasswordScreen() {
   const navigation = useNavigation();
   const [step, setStep] = useState(STEP_MOBILE);
@@ -34,7 +48,7 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   const sendOtp = async () => {
-    const cleanedMobile = mobile.replace(/\D/g, "");
+    const cleanedMobile = sanitizeMobileNumber(mobile);
     if (!cleanedMobile) {
       showGlobalAlert({
         title: "Required",
@@ -201,10 +215,10 @@ export default function ForgotPasswordScreen() {
                 </ThemedText>
                 <TextInput
                   value={mobile}
-                  onChangeText={(val) => setMobile(val.replace(/\D/g, "").slice(0, 10))}
+                  onChangeText={(val) => setMobile(sanitizeMobileNumber(val))}
                   placeholder="Enter 10-digit mobile number"
                   keyboardType="phone-pad"
-                  maxLength={10}
+                  maxLength={18}
                   style={{ fontSize: 16, color: "#111" }}
                 />
               </View>
