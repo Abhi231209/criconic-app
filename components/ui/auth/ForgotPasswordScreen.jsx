@@ -275,19 +275,16 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
           setOtp("");
         }
 
-        // Transition directly to OTP screen
-        console.log("📱 [ForgotPassword] Transitioning to STEP_OTP now...");
-        setStep(STEP_OTP);
-        setTimeout(() => {
-          scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-        }, 100);
-
-        if (isResend) {
-          showGlobalAlert({
-            title: "OTP Resent",
-            message: `A fresh 6-digit OTP has been sent to +91 ${cleanedMobile}.`,
-            type: "success",
+        // Redirect directly to the dedicated OTP screen
+        console.log("📱 [ForgotPassword] Redirecting to OtpVerificationScreen now...");
+        if (typeof navigation?.navigate === "function") {
+          navigation.navigate(SCREENS.OtpVerificationScreen, {
+            mobile: cleanedMobile,
+            validationId: receivedValidationId,
+            isOTPByPass: Boolean(res.data?.isOTPByPass),
           });
+        } else {
+          setStep(STEP_OTP);
         }
       } else {
         showGlobalAlert({

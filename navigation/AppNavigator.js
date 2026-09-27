@@ -49,6 +49,8 @@ import GoLiveSetupScreen from "@/components/ui/createMatch/GoLiveSetupScreen";
 import AllMatches from "@/components/ui/AllMatches";
 import useAppTheme from "@/hooks/useAppTheme";
 import ForgotPasswordScreen from "@/components/ui/auth/ForgotPasswordScreen";
+import OtpVerificationScreen from "@/components/ui/auth/OtpVerificationScreen";
+import ResetPasswordScreen from "@/components/ui/auth/ResetPasswordScreen";
 import RegisterScreen from "@/components/ui/auth/RegisterScreen";
 import ChangePasswordScreen from "@/components/ui/auth/ChangePasswordScreen";
 import ChangePassword from "@/screens/ChangePassword";
@@ -153,6 +155,8 @@ function MainStack() {
       <Stack.Screen name={SCREENS.ThemeConfig} component={ThemeConfig} />
       <Stack.Screen name={SCREENS.GoLiveSetup} component={GoLiveSetupScreen} />
       <Stack.Screen name={SCREENS.ForgotPasswordScreen} component={ForgotPasswordScreen} />
+      <Stack.Screen name={SCREENS.OtpVerificationScreen} component={OtpVerificationScreen} />
+      <Stack.Screen name={SCREENS.ResetPasswordScreen} component={ResetPasswordScreen} />
       <Stack.Screen name={SCREENS.RegisterScreen} component={RegisterScreen} />
       <Stack.Screen name={SCREENS.ChangePasswordScreen} component={ChangePasswordScreen} />
       <Stack.Screen name={SCREENS.AllMatches} component={AllMatches} />

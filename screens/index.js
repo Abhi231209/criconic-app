@@ -4,6 +4,8 @@ const SCREENS = {
   LoginScreen: "LoginScreen",
   RegisterScreen: "RegisterScreen",
   ForgotPasswordScreen: "ForgotPasswordScreen",
+  OtpVerificationScreen: "OtpVerificationScreen",
+  ResetPasswordScreen: "ResetPasswordScreen",
   ChangePasswordScreen: "ChangePasswordScreen",
   SignUpScreen: "SignUpScreen",
   Home: "Home",
