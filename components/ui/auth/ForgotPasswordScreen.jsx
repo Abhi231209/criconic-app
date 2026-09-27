@@ -271,6 +271,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
           navigation.navigate(SCREENS.OtpVerificationScreen, {
             mobile: cleanedMobile,
             validationId: receivedValidationId,
+            resendTimeout: res.data?.resendTimeout || 60,
           });
         } else {
           setStep(STEP_OTP);
@@ -285,11 +286,11 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
     } catch (err) {
       console.error("📱 [ForgotPassword] Error sending OTP:", err?.response?.data || err.message);
       showGlobalAlert({
-        title: "Error Sending OTP",
+        title: err.response?.status === 429 ? "Please Wait" : "Error Sending OTP",
         message:
           err.response?.data?.message ||
           "Could not send OTP. Please check your internet connection and try again.",
-        type: "error",
+        type: err.response?.status === 429 ? "warning" : "error",
       });
     } finally {
       setLoading(false);

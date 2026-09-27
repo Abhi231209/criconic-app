@@ -40,14 +40,14 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
   const colorScheme = useColorScheme();
   const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
-  const { mobile = "", validationId: initialValidationId = "" } =
+  const { mobile = "", validationId: initialValidationId = "", resendTimeout = 60 } =
     route?.params || {};
 
   const [otp, setOtp] = useState("");
   const [isFocused, setIsFocused] = useState(true);
   const [validationId, setValidationId] = useState(initialValidationId);
   const [loading, setLoading] = useState(false);
-  const [resendTimer, setResendTimer] = useState(30);
+  const [resendTimer, setResendTimer] = useState(resendTimeout || 60);
   const [clipboardCode, setClipboardCode] = useState("");
 
   const textInputRef = useRef(null);
@@ -196,7 +196,8 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
           res.data?.validationId || validationIdRef.current || validationId || "";
         setValidationId(receivedValidationId);
         validationIdRef.current = receivedValidationId;
-        setResendTimer(30);
+        const newTimeout = res.data?.resendTimeout || 60;
+        setResendTimer(newTimeout);
         setOtp("");
         textInputRef.current?.focus();
 
@@ -213,10 +214,16 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
         });
       }
     } catch (err) {
+      const retryAfter = err.response?.data?.retryAfter;
+      if (retryAfter && typeof retryAfter === "number") {
+        setResendTimer(retryAfter);
+      }
       showGlobalAlert({
-        title: "Error",
-        message: err.response?.data?.message || "Could not resend code. Please try again.",
-        type: "error",
+        title: err.response?.status === 429 ? "Please Wait" : "Error",
+        message:
+          err.response?.data?.message ||
+          "Could not resend code. Please wait before trying again.",
+        type: err.response?.status === 429 ? "warning" : "error",
       });
     } finally {
       setLoading(false);
@@ -480,18 +487,22 @@ export default function OtpVerificationScreen({ route, navigation: propNavigatio
               Didn't receive the code?{" "}
             </ThemedText>
             {resendTimer > 0 ? (
-              <ThemedText className="text-xs font-semibold text-slate-400">
-                Resend in {resendTimer}s
-              </ThemedText>
+              <View className="flex-row items-center">
+                <RotateCcw size={12} color="#94A3B8" style={{ marginRight: 4 }} />
+                <ThemedText className="text-xs font-bold text-slate-400">
+                  Resend in {resendTimer}s
+                </ThemedText>
+              </View>
             ) : (
               <TouchableOpacity
                 onPress={resendOtp}
+                disabled={loading}
                 activeOpacity={0.7}
-                className="flex-row items-center"
+                className="flex-row items-center py-1 px-1.5"
               >
-                <RotateCcw size={12} color="#3B82F6" style={{ marginRight: 4 }} />
+                <RotateCcw size={13} color="#3B82F6" style={{ marginRight: 4 }} />
                 <ThemedText className="text-xs font-bold text-blue-500 dark:text-blue-400">
-                  Resend Code
+                  Resend OTP
                 </ThemedText>
               </TouchableOpacity>
             )}
