@@ -174,16 +174,54 @@ function ScoreCard({
 
   const combinedMatch = matchDetails || match || {};
   const currentStatus =
-    liveScore?.matchCurrentStatus || combinedMatch.status || "MATCH_SCHEDULED";
+    liveScore?.matchCurrentStatus ||
+    liveScore?.status ||
+    combinedMatch?.matchCurrentStatus ||
+    combinedMatch?.status ||
+    "MATCH_SCHEDULED";
 
-  // Match status formatted according to web project ("Live", "End", "Upcoming")
+  const rawUpper = String(currentStatus || "").toUpperCase().trim();
+  const hasEndedResult = Boolean(
+    rawUpper === "MATCH_COMPLETED" ||
+    rawUpper === "COMPLETED" ||
+    rawUpper === "MATCH_ENDED" ||
+    rawUpper === "ENDED" ||
+    rawUpper === "END" ||
+    rawUpper === "MATCH_TIE" ||
+    rawUpper === "TIE" ||
+    rawUpper === "MATCH_CANCELLED" ||
+    rawUpper === "CANCELLED" ||
+    rawUpper === "ABANDONED" ||
+    liveScore?.isMatchEnded ||
+    liveScore?.isMatchCompleted ||
+    combinedMatch?.isMatchEnded ||
+    combinedMatch?.isMatchCompleted ||
+    Boolean(liveScore?.matchResult?.prompt || combinedMatch?.matchResult?.prompt)
+  );
+
+  // Match status formatted ("Live", "Completed", "Upcoming")
   const matchStatus = useMemo(() => {
+    if (hasEndedResult) return "Completed";
     return getMatchStatusDisplay(currentStatus) || "Upcoming";
-  }, [currentStatus]);
+  }, [hasEndedResult, currentStatus]);
 
-  const isLive = matchStatus === "Live";
-  const isCompleted = matchStatus === "End";
-  const isUpcoming = matchStatus === "Upcoming";
+  const isLive = Boolean(
+    !hasEndedResult && (
+      matchStatus === "Live" ||
+      matchStatus === "Innings Break" ||
+      rawUpper === "MATCH_IN_PROGRESS" ||
+      rawUpper === "IN_PROGRESS" ||
+      rawUpper === "INNINGS_I" ||
+      rawUpper === "INNINGS_II" ||
+      rawUpper === "INNINGS_BREAK" ||
+      rawUpper === "SUPER_OVER" ||
+      rawUpper === "LIVE" ||
+      rawUpper === "STARTED" ||
+      rawUpper === "MATCH_STARTED"
+    )
+  );
+  const isCompleted = hasEndedResult;
+  const isUpcoming = !isLive && !isCompleted;
 
   // Check scoring access
   const currentUserId = User.id || User.user?._id || User.user?.id;
@@ -538,39 +576,39 @@ function ScoreCard({
 
             {/* Requirement 2: Status badge matching web project */}
             <View
-              className={`px-2.5 py-1 rounded-full flex-row items-center ${
+              className={`px-2.5 py-1 rounded-full flex-row items-center border ${
                 isLive
                   ? isDarkMode
-                    ? "bg-green-950/80 border border-green-800"
-                    : "bg-green-50 border border-green-200"
+                    ? "bg-emerald-950/80 border-emerald-500/50"
+                    : "bg-emerald-50 border-emerald-300"
                   : isCompleted
                   ? isDarkMode
-                    ? "bg-red-950/80 border border-red-800"
-                    : "bg-red-50 border border-red-200"
+                    ? "bg-slate-700/60 border-slate-600"
+                    : "bg-slate-100 border-slate-300"
                   : isDarkMode
-                  ? "bg-blue-950/80 border border-blue-800"
-                  : "bg-blue-50 border border-blue-200"
+                  ? "bg-blue-950/80 border-blue-500/50"
+                  : "bg-blue-50 border-blue-300"
               }`}
             >
               {isLive && (
-                <View className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5" />
+                <View className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5" />
               )}
               <ThemedText
-                className={`text-[11px] font-bold ${
+                className={`text-[11px] font-bold uppercase tracking-wider ${
                   isLive
                     ? isDarkMode
-                      ? "text-green-400"
-                      : "text-green-600"
+                      ? "text-emerald-400"
+                      : "text-emerald-700"
                     : isCompleted
                     ? isDarkMode
-                      ? "text-red-400"
-                      : "text-red-600"
+                      ? "text-slate-200"
+                      : "text-slate-700"
                     : isDarkMode
                     ? "text-blue-400"
-                    : "text-blue-600"
+                    : "text-blue-700"
                 }`}
               >
-                {matchStatus}
+                {isLive ? "LIVE" : isCompleted ? "COMPLETED" : "UPCOMING"}
               </ThemedText>
             </View>
 

@@ -443,9 +443,13 @@ export default function MatchSummary({ matchData }) {
         </View>
         
         <View 
-          className={`px-4 py-2 rounded-full ${isDark ? "bg-green-800" : "bg-green-100"}`}
+          className={`px-4 py-2 rounded-full border ${
+            isDark 
+              ? "bg-emerald-950/80 border-emerald-500/50" 
+              : "bg-emerald-50 border-emerald-300"
+          }`}
         >
-          <ThemedText className={`font-bold ${isDark ? "text-green-200" : "text-green-800"}`} style={{ lineHeight: 20 }}>
+          <ThemedText className={`font-bold ${isDark ? "text-emerald-300" : "text-emerald-800"}`} style={{ lineHeight: 20 }}>
             {matchInfo.team1.result || `${matchInfo.team1.name} vs ${matchInfo.team2.name}`}
           </ThemedText>
         </View>

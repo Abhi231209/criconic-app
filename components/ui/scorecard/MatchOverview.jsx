@@ -95,17 +95,44 @@ export default function MatchOverview({
     ? Object.entries(motm.performance).map(([k, v]) => `${k}: ${v}`).join(", ")
     : "";
 
-  const statusColor = 
-    matchStatus === "Live" 
-      ? "text-red-500" 
-      : matchStatus === "Upcoming" 
-      ? "text-blue-500" 
-      : "text-emerald-500";
+  const isDark = colorScheme === 'dark';
+
+  // Normalize match status
+  const normalizedStatus = String(matchStatus || "").trim();
+  const lowerStatus = normalizedStatus.toLowerCase();
+  const isStatusLive = lowerStatus === "live" || lowerStatus === "super over";
+  const isStatusEnded = 
+    lowerStatus === "completed" || 
+    lowerStatus === "ended" || 
+    lowerStatus === "match ended" || 
+    lowerStatus === "end";
+  const isStatusBreak = lowerStatus.includes("break") || lowerStatus.includes("delay");
+  const isStatusUpcoming = lowerStatus === "upcoming" || (!isStatusLive && !isStatusEnded && !isStatusBreak && normalizedStatus !== "");
+
+  let statusBadgeBg = isDark ? "bg-slate-700/60 border-slate-600" : "bg-slate-100 border-slate-300";
+  let statusBadgeText = isDark ? "text-slate-200" : "text-slate-700";
+  let statusDotColor = null;
+
+  if (isStatusLive) {
+    statusBadgeBg = isDark ? "bg-emerald-950/80 border-emerald-500/50" : "bg-emerald-50 border-emerald-300";
+    statusBadgeText = isDark ? "text-emerald-400" : "text-emerald-700";
+    statusDotColor = "bg-emerald-400";
+  } else if (isStatusBreak) {
+    statusBadgeBg = isDark ? "bg-amber-950/80 border-amber-500/50" : "bg-amber-50 border-amber-300";
+    statusBadgeText = isDark ? "text-amber-400" : "text-amber-700";
+    statusDotColor = "bg-amber-400";
+  } else if (isStatusUpcoming) {
+    statusBadgeBg = isDark ? "bg-blue-950/80 border-blue-500/50" : "bg-blue-50 border-blue-300";
+    statusBadgeText = isDark ? "text-blue-400" : "text-blue-700";
+  } else if (isStatusEnded) {
+    statusBadgeBg = isDark ? "bg-slate-700/60 border-slate-600" : "bg-slate-100 border-slate-300";
+    statusBadgeText = isDark ? "text-slate-200" : "text-slate-700";
+  }
 
   const hasSuperOver = Boolean(isSuperOverEnded || superOverList?.length > 0 || superOverSummary);
 
   const isPowerplayActive =
-    matchStatus === "Live" &&
+    isStatusLive &&
     Number(powerplayOvers) > 0 &&
     parseFloat(oversClean || "0") < Number(powerplayOvers);
 
@@ -113,21 +140,32 @@ export default function MatchOverview({
     <View className={`p-4 ${bgColor}`}>
       {/* Team name and match status */}
       <View className="flex-row justify-between items-center mb-2">
-        <ThemedText className={`text-lg font-semibold ${textColor}`} numberOfLines={1}>
+        <ThemedText className={`text-lg font-semibold flex-1 mr-2 ${textColor}`} numberOfLines={1}>
           {hasSuperOver && inning1?.teamName && inning2?.teamName
             ? `${inning1.teamName} vs ${inning2.teamName}`
             : teamName}
         </ThemedText>
         <View className="flex-row items-center">
           {isPowerplayActive ? (
-            <View className="mr-2 px-2 py-0.5 rounded-full bg-green-100">
-              <ThemedText className="text-[10px] font-bold text-green-800">
+            <View className={`mr-2 px-2 py-0.5 rounded-full border ${
+              isDark ? "bg-emerald-950/70 border-emerald-500/40" : "bg-emerald-100 border-emerald-200"
+            }`}>
+              <ThemedText className={`text-[10px] font-bold ${
+                isDark ? "text-emerald-300" : "text-emerald-800"
+              }`}>
                 🏏 Powerplay
               </ThemedText>
             </View>
           ) : null}
-          {matchStatus ? (
-            <ThemedText className={`${statusColor} font-bold`}>{matchStatus}</ThemedText>
+          {normalizedStatus ? (
+            <View className={`px-2.5 py-0.5 rounded-full flex-row items-center border ${statusBadgeBg}`}>
+              {statusDotColor && (
+                <View className={`w-1.5 h-1.5 rounded-full mr-1.5 ${statusDotColor}`} />
+              )}
+              <ThemedText className={`text-[11px] font-bold uppercase tracking-wider ${statusBadgeText}`}>
+                {normalizedStatus}
+              </ThemedText>
+            </View>
           ) : null}
         </View>
       </View>
@@ -220,9 +258,13 @@ export default function MatchOverview({
 
       {/* Match Result */}
       {resultText ? (
-        <View className={isSuperOverEnded ? "mt-2.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 self-start" : "mt-2"}>
-          <ThemedText className={isSuperOverEnded ? "text-sm font-bold text-emerald-600 dark:text-emerald-400" : `font-medium ${textColor}`}>
-            {isSuperOverEnded ? `🏆 ${resultText}` : resultText}
+        <View className={`mt-2.5 px-3 py-1.5 rounded-lg border self-start ${
+          isDark 
+            ? "bg-emerald-950/70 border-emerald-500/40" 
+            : "bg-emerald-50 border-emerald-300"
+        }`}>
+          <ThemedText className={`text-sm font-semibold ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>
+            🏆 {resultText}
           </ThemedText>
         </View>
       ) : null}

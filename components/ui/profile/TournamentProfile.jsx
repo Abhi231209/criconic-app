@@ -1273,21 +1273,24 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
               </ThemedText>
             </View>
             <View
-              className={`px-3 py-1 rounded-full ${
+              className={`px-3 py-1 rounded-full border flex-row items-center ${
                 tournament.status === "ongoing"
-                  ? "bg-green-100 dark:bg-green-900/30"
+                  ? isDarkMode ? "bg-emerald-950/80 border-emerald-500/50" : "bg-emerald-50 border-emerald-300"
                   : tournament.status === "completed"
-                  ? "bg-gray-100 dark:bg-gray-700"
-                  : "bg-blue-100 dark:bg-blue-900/30"
+                  ? isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-slate-100 border-slate-300"
+                  : isDarkMode ? "bg-blue-950/80 border-blue-500/50" : "bg-blue-50 border-blue-300"
               }`}
             >
+              {tournament.status === "ongoing" && (
+                <View className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5" />
+              )}
               <ThemedText
-                className={`text-xs font-medium ${
+                className={`text-xs font-semibold ${
                   tournament.status === "ongoing"
-                    ? "text-green-800 dark:text-green-400"
+                    ? isDarkMode ? "text-emerald-400" : "text-emerald-800"
                     : tournament.status === "completed"
-                    ? "text-gray-800 dark:text-gray-400"
-                    : "text-blue-800 dark:text-blue-400"
+                    ? isDarkMode ? "text-slate-200" : "text-slate-700"
+                    : isDarkMode ? "text-blue-400" : "text-blue-800"
                 }`}
               >
                 {tournament.status.charAt(0).toUpperCase() +

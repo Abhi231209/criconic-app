@@ -387,9 +387,11 @@ export default function FullScoreCard({
                 {currentInning.batting.battingTeam}
               </ThemedText>
               {currentInning.batting.isSuperOver && (
-                <View className={`ml-2 px-2 py-1 rounded-full ${isDark ? "bg-red-800" : "bg-red-100"}`}>
-                  <ThemedText className={`text-xs ${isDark ? "text-red-100" : "text-red-800"}`}>
-                    Super Over
+                <View className={`ml-2 px-2 py-0.5 rounded-full border ${
+                  isDark ? "bg-amber-950/80 border-amber-500/50" : "bg-amber-100 border-amber-300"
+                }`}>
+                  <ThemedText className={`text-xs font-semibold ${isDark ? "text-amber-300" : "text-amber-800"}`}>
+                    ⚡ Super Over
                   </ThemedText>
                 </View>
               )}
@@ -422,13 +424,15 @@ export default function FullScoreCard({
       </Animated.View>
 
       {/* Match Result Banner */}
-      {score?.matchCurrentStatus === MATCH_STATUS.MATCH_ENDED && description ? (
+      {Boolean(description) ? (
         <Animated.View
           entering={FadeInDown.duration(500)}
-          className={`mx-4 p-3 rounded-lg ${isDark ? "bg-green-800" : "bg-green-100"} mb-4`}
+          className={`mx-4 p-3.5 rounded-xl border ${
+            isDark ? "bg-emerald-950/80 border-emerald-500/50" : "bg-emerald-50 border-emerald-300"
+          } mb-4`}
         >
-          <ThemedText className={`text-center font-bold ${isDark ? "text-green-100" : "text-green-800"}`}>
-            {description}
+          <ThemedText className={`text-center font-bold text-sm ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>
+            🏆 {description}
           </ThemedText>
         </Animated.View>
       ) : null}

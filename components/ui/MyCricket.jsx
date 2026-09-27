@@ -521,27 +521,31 @@ export default function MyCricket({ route: propRoute }) {
             >
               {tournament.name}
             </ThemedText>
-            <View
-              className={`px-3 py-1 rounded-full ${
-                tournament.status === "Ongoing"
-                  ? isDarkMode ? "bg-green-900/40" : "bg-green-100"
-                  : tournament.status === "Completed"
-                    ? isDarkMode ? "bg-gray-700" : "bg-gray-100"
-                    : isDarkMode ? "bg-blue-900/40" : "bg-blue-100"
-              }`}
-            >
-              <ThemedText
-                className={`text-xs font-semibold ${
-                  tournament.status === "Ongoing"
-                    ? isDarkMode ? "text-green-400" : "text-green-800"
-                    : tournament.status === "Completed"
-                      ? isDarkMode ? "text-gray-300" : "text-gray-800"
-                      : isDarkMode ? "text-blue-400" : "text-blue-800"
-                }`}
-              >
-                {tournament.status}
-              </ThemedText>
-            </View>
+            {(() => {
+              const tStatus = String(tournament.status || "Upcoming").trim();
+              const lower = tStatus.toLowerCase();
+              const isOngoing = lower === "ongoing" || lower === "live";
+              const isDone = lower === "completed" || lower === "ended";
+              const badgeBg = isOngoing
+                ? (isDarkMode ? "bg-emerald-950/80 border-emerald-500/50" : "bg-emerald-50 border-emerald-300")
+                : isDone
+                ? (isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-slate-100 border-slate-300")
+                : (isDarkMode ? "bg-blue-950/80 border-blue-500/50" : "bg-blue-50 border-blue-300");
+              const badgeText = isOngoing
+                ? (isDarkMode ? "text-emerald-400" : "text-emerald-800")
+                : isDone
+                ? (isDarkMode ? "text-slate-200" : "text-slate-700")
+                : (isDarkMode ? "text-blue-400" : "text-blue-800");
+
+              return (
+                <View className={`px-2.5 py-1 rounded-full border flex-row items-center ${badgeBg}`}>
+                  {isOngoing && <View className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5" />}
+                  <ThemedText className={`text-xs font-semibold ${badgeText}`}>
+                    {tStatus}
+                  </ThemedText>
+                </View>
+              );
+            })()}
           </View>
 
           <View className="flex-row justify-between mb-3">
