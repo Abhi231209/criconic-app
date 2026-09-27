@@ -28,6 +28,7 @@ import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import GreetingHeader from "@/components/ui/home/GreetingHeader";
+import CricketPulse from "@/components/ui/home/CricketPulse";
 import FeatureHighlights from "@/components/ui/home/FeatureHighlights";
 import TopPlayersSpotlight from "@/components/ui/home/TopPlayersSpotlight";
 import CtaBanner from "@/components/ui/home/CtaBanner";
@@ -512,6 +513,9 @@ export default function Home({}) {
               />
             </View>
           )}
+
+          {/* Personalized "Your Cricket Pulse" */}
+          <CricketPulse />
 
           {/* Recent Matches Section */}
           <SectionHeader
