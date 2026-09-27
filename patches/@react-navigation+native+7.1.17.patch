@@ -1,0 +1,21 @@
+diff --git a/node_modules/@react-navigation/native/lib/module/UnhandledLinkingContext.js b/node_modules/@react-navigation/native/lib/module/UnhandledLinkingContext.js
+index f10ef4f..b7b253b 100644
+--- a/node_modules/@react-navigation/native/lib/module/UnhandledLinkingContext.js
++++ b/node_modules/@react-navigation/native/lib/module/UnhandledLinkingContext.js
+@@ -1,14 +1,9 @@
+ "use strict";
+ 
+ import * as React from 'react';
+-const MISSING_CONTEXT_ERROR = "Couldn't find an UnhandledLinkingContext context.";
+ export const UnhandledLinkingContext = /*#__PURE__*/React.createContext({
+-  get lastUnhandledLink() {
+-    throw new Error(MISSING_CONTEXT_ERROR);
+-  },
+-  get setLastUnhandledLink() {
+-    throw new Error(MISSING_CONTEXT_ERROR);
+-  }
++  lastUnhandledLink: undefined,
++  setLastUnhandledLink: () => {}
+ });
+ UnhandledLinkingContext.displayName = 'UnhandledLinkingContext';
+ //# sourceMappingURL=UnhandledLinkingContext.js.map
