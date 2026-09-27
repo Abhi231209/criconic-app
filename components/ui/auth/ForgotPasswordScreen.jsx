@@ -276,6 +276,7 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
         }
 
         // Transition directly to OTP screen
+        console.log("📱 [ForgotPassword] Transitioning to STEP_OTP now...");
         setStep(STEP_OTP);
         setTimeout(() => {
           scrollViewRef.current?.scrollTo({ y: 0, animated: true });
@@ -385,6 +386,8 @@ export default function ForgotPasswordScreen({ navigation: propNavigation }) {
     { key: STEP_OTP, label: "Verify" },
     { key: STEP_PASSWORD, label: "Password" },
   ];
+
+  console.log("📱 [ForgotPassword] Component render - step:", step, "loading:", loading);
 
   return (
     <View
