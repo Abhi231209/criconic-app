@@ -337,15 +337,22 @@ export default function MatchPlayerCardModal({
                       }}
                       className={`px-3 py-1.5 rounded-full flex-row items-center border ${
                         isCurrent
-                          ? "bg-amber-500/20 border-amber-400"
+                          ? "bg-amber-500/25 border-amber-400"
                           : "bg-slate-800/80 border-slate-700"
                       }`}
+                      style={{
+                        backgroundColor: isCurrent ? "rgba(245, 158, 11, 0.25)" : "rgba(30, 41, 59, 0.85)",
+                        borderColor: isCurrent ? "#F59E0B" : "#475569",
+                      }}
                     >
                       <PlayerAvatar player={p} size={18} className="mr-1.5" />
                       <ThemedText
                         className={`text-xs font-semibold ${
                           isCurrent ? "text-amber-300" : "text-slate-300"
                         }`}
+                        style={{
+                          color: isCurrent ? "#FEF08A" : "#E2E8F0",
+                        }}
                       >
                         {p?.name || "Player"}
                       </ThemedText>
@@ -438,20 +445,27 @@ export default function MatchPlayerCardModal({
 
                   {/* Player Badge */}
                   <View
-                    className={`mt-2.5 px-3 py-0.5 rounded-full border flex-row items-center ${
+                    className={`mt-2.5 px-3.5 py-1 rounded-full border flex-row items-center ${
                       playerBadge?.badgeClass || "bg-[#4DD6C7]/20 border-[#4DD6C7]/50"
                     }`}
+                    style={{
+                      backgroundColor: playerBadge?.backgroundColor || (isMom ? "rgba(120, 53, 15, 0.45)" : "rgba(77, 214, 199, 0.25)"),
+                      borderColor: playerBadge?.borderColor || (isMom ? "rgba(245, 158, 11, 0.85)" : "rgba(77, 214, 199, 0.75)"),
+                    }}
                   >
                     <Ionicons
                       name={playerBadge?.icon || (isMom ? "trophy" : "star")}
-                      size={11}
+                      size={12}
                       color={playerBadge?.iconColor || (isMom ? "#F59E0B" : "#4DD6C7")}
-                      style={{ marginRight: 4 }}
+                      style={{ marginRight: 5 }}
                     />
                     <ThemedText
                       className={`text-[10px] font-black uppercase tracking-wider ${
                         playerBadge?.textClass || "text-[#8CE9DD]"
                       }`}
+                      style={{
+                        color: playerBadge?.textColor || (isMom ? "#FEF08A" : "#CCFBF1"),
+                      }}
                     >
                       {playerBadge?.label || (isMom ? "PLAYER OF THE MATCH" : "MATCH PERFORMER")}
                     </ThemedText>
@@ -484,8 +498,17 @@ export default function MatchPlayerCardModal({
                           </ThemedText>
                         </View>
                         {isNotOut && (
-                          <View className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40">
-                            <ThemedText className="text-emerald-400 text-[9px] font-bold">
+                          <View
+                            className="px-2 py-0.5 rounded border"
+                            style={{
+                              backgroundColor: "rgba(16, 185, 129, 0.25)",
+                              borderColor: "rgba(52, 211, 153, 0.65)",
+                            }}
+                          >
+                            <ThemedText
+                              className="text-[9px] font-bold tracking-wider"
+                              style={{ color: "#6EE7B7" }}
+                            >
                               NOT OUT
                             </ThemedText>
                           </View>

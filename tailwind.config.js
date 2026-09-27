@@ -15,6 +15,7 @@ module.exports = {
     "./components/**/*.{html,js,jsx,ts,tsx,mdx}",
     "./navigation/**/*.{html,js,jsx,ts,tsx,mdx}",
     "./hooks/**/*.{html,js,jsx,ts,tsx,mdx}",
+    "./utils/**/*.{html,js,jsx,ts,tsx,mdx}",
   ],
   presets: [require("nativewind/preset")],
   safelist: [

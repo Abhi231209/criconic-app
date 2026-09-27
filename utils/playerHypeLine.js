@@ -11,8 +11,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "PLAYER OF THE MATCH",
       icon: "trophy",
-      badgeClass: "bg-amber-500/20 border-amber-400/60",
-      textClass: "text-amber-300",
+      badgeClass: "bg-amber-950/80 border-amber-500/60",
+      textClass: "text-amber-200",
+      backgroundColor: "rgba(120, 53, 15, 0.4)",
+      borderColor: "rgba(245, 158, 11, 0.8)",
+      textColor: "#FEF08A",
       iconColor: "#F59E0B",
     };
   }
@@ -32,8 +35,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "ALL-ROUND IMPACT",
       icon: "flash",
-      badgeClass: "bg-purple-500/20 border-purple-400/50",
-      textClass: "text-purple-300",
+      badgeClass: "bg-purple-950/80 border-purple-500/60",
+      textClass: "text-purple-200",
+      backgroundColor: "rgba(88, 28, 135, 0.4)",
+      borderColor: "rgba(192, 132, 252, 0.8)",
+      textColor: "#F3E8FF",
       iconColor: "#C084FC",
     };
   }
@@ -43,8 +49,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: sr >= 150 ? "BLITZKRIEG BATTER" : "TOP RUN SCORER",
       icon: "flame",
-      badgeClass: "bg-rose-500/20 border-rose-400/50",
-      textClass: "text-rose-300",
+      badgeClass: "bg-rose-950/80 border-rose-500/60",
+      textClass: "text-rose-200",
+      backgroundColor: "rgba(136, 19, 55, 0.4)",
+      borderColor: "rgba(251, 113, 133, 0.8)",
+      textColor: "#FFE4E6",
       iconColor: "#FB7185",
     };
   }
@@ -53,16 +62,22 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
       return {
         label: "CLUTCH FINISHER",
         icon: "shield-checkmark",
-        badgeClass: "bg-emerald-500/20 border-emerald-400/50",
-        textClass: "text-emerald-300",
+        badgeClass: "bg-emerald-950/80 border-emerald-500/60",
+        textClass: "text-emerald-200",
+        backgroundColor: "rgba(6, 78, 59, 0.4)",
+        borderColor: "rgba(52, 211, 153, 0.8)",
+        textColor: "#D1FAE5",
         iconColor: "#34D399",
       };
     }
     return {
       label: "IMPACT BATTER",
       icon: "baseball-outline",
-      badgeClass: "bg-teal-500/20 border-teal-400/50",
-      textClass: "text-teal-300",
+      badgeClass: "bg-teal-950/80 border-teal-500/60",
+      textClass: "text-teal-200",
+      backgroundColor: "rgba(19, 78, 74, 0.4)",
+      borderColor: "rgba(45, 212, 191, 0.8)",
+      textColor: "#CCFBF1",
       iconColor: "#2DD4BF",
     };
   }
@@ -72,8 +87,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "STRIKE WICKET HUNTER",
       icon: "flash-outline",
-      badgeClass: "bg-red-500/20 border-red-400/50",
-      textClass: "text-red-300",
+      badgeClass: "bg-red-950/80 border-red-500/60",
+      textClass: "text-red-200",
+      backgroundColor: "rgba(127, 29, 29, 0.4)",
+      borderColor: "rgba(248, 113, 113, 0.8)",
+      textColor: "#FEE2E2",
       iconColor: "#F87171",
     };
   }
@@ -81,8 +99,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: parsedOvers >= 2 && eco <= 6.0 ? "LOCKDOWN SPECIALIST" : "BREAKTHROUGH BOWLER",
       icon: "speedometer-outline",
-      badgeClass: "bg-cyan-500/20 border-cyan-400/50",
-      textClass: "text-cyan-300",
+      badgeClass: "bg-cyan-950/80 border-cyan-500/60",
+      textClass: "text-cyan-200",
+      backgroundColor: "rgba(22, 78, 99, 0.4)",
+      borderColor: "rgba(34, 211, 238, 0.8)",
+      textColor: "#CFFAFE",
       iconColor: "#22D3EE",
     };
   }
@@ -90,8 +111,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "ECONOMY DISCIPLINE",
       icon: "lock-closed-outline",
-      badgeClass: "bg-blue-500/20 border-blue-400/50",
-      textClass: "text-blue-300",
+      badgeClass: "bg-blue-950/80 border-blue-500/60",
+      textClass: "text-blue-200",
+      backgroundColor: "rgba(30, 58, 138, 0.4)",
+      borderColor: "rgba(96, 165, 250, 0.8)",
+      textColor: "#DBEAFE",
       iconColor: "#60A5FA",
     };
   }
@@ -101,8 +125,11 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "RISING BATTER",
       icon: "trending-up-outline",
-      badgeClass: "bg-amber-500/15 border-amber-400/40",
-      textClass: "text-amber-300",
+      badgeClass: "bg-amber-950/80 border-amber-500/60",
+      textClass: "text-amber-200",
+      backgroundColor: "rgba(120, 53, 15, 0.35)",
+      borderColor: "rgba(251, 191, 36, 0.75)",
+      textColor: "#FEF3C7",
       iconColor: "#FBBF24",
     };
   }
@@ -111,18 +138,24 @@ export function getPlayerPerformanceBadge({ player, isMom }) {
     return {
       label: "BOWL SPELL WORKHORSE",
       icon: "hardware-chip-outline",
-      badgeClass: "bg-indigo-500/15 border-indigo-400/40",
-      textClass: "text-indigo-300",
-      iconColor: "#818CF8",
+      badgeClass: "bg-indigo-950/80 border-indigo-500/60",
+      textClass: "text-indigo-200",
+      backgroundColor: "rgba(49, 46, 129, 0.45)",
+      borderColor: "rgba(129, 140, 248, 0.75)",
+      textColor: "#E0E7FF",
+      iconColor: "#A5B4FC",
     };
   }
 
   return {
     label: "TEAM WARRIOR",
     icon: "shield-outline",
-    badgeClass: "bg-slate-700/40 border-slate-600/50",
-    textClass: "text-slate-300",
-    iconColor: "#94A3B8",
+    badgeClass: "bg-slate-800/80 border-slate-500/60",
+    textClass: "text-slate-200",
+    backgroundColor: "rgba(51, 65, 85, 0.45)",
+    borderColor: "rgba(148, 163, 184, 0.75)",
+    textColor: "#F1F5F9",
+    iconColor: "#CBD5E1",
   };
 }
 
