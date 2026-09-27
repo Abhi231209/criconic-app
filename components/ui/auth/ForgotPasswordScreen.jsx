@@ -120,10 +120,12 @@ export default function ForgotPasswordScreen() {
     try {
       const res = await axios.post(`${API_URL}api/otpVerification/generateOTP`, {
         mobile: cleanedMobile,
+        validationId: validationId || "",
+        checkUserExists: true,
       });
 
       if (res.data?.success !== false) {
-        setValidationId(res.data?.validationId || res.data?._id || "");
+        setValidationId(res.data?.validationId || validationId || "");
         setResendTimer(30);
         if (isResend) {
           showGlobalAlert({
