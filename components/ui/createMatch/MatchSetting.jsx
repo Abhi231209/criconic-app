@@ -561,42 +561,6 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         onToggle={(v) => updateMatchSetting(MatchSettingEnum.RECORD_PITCH_MAP, v)}
         isDarkMode={isDarkMode}
       />
-      
-
-      <View style={[styles.inputRow, { borderBottomColor: C.divider }]}>
-        <ThemedText className="font-semibold text-sm" style={{ color: C.text, marginBottom: 4 }}>
-          External Streaming Link
-        </ThemedText>
-        <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
-          Paste YouTube / Facebook video live stream link
-        </ThemedText>
-        <TextInput
-          ref={streamingInputRef}
-          onFocus={() => {
-            setTimeout(() => {
-              scrollAwareRef.current?.scrollToFocusedInput(streamingInputRef, 140);
-            }, 150);
-          }}
-          style={[
-            styles.textInput,
-            {
-              borderColor: C.border,
-              backgroundColor: isDarkMode ? "#0F172A" : "#F8FAFC",
-              color: C.text,
-            },
-          ]}
-          value={streamingLink}
-          onChangeText={setStreamingLink}
-          placeholder="https://youtube.com/..."
-          placeholderTextColor={C.textSecondary}
-          keyboardType="url"
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={() => Keyboard.dismiss()}
-          onBlur={() => updateMatchSetting(MatchSettingEnum.LIVE_STREAMING_LINK, streamingLink)}
-        />
-      </View>
       {!isPreScorer && (
         <View style={{ marginTop: 8 }}>
           <ActionButton
@@ -692,6 +656,17 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   // ---- LIVE SETTINGS SECTION ----
   const renderLiveSettings = () => (
     <View style={styles.sectionGroup}>
+      {/* Go Live Studio Primary CTA */}
+      <View style={{ marginBottom: 12 }}>
+        <ActionButton
+          title={isLive ? "Go Live Studio (Live Now)" : "🔴 Launch Go Live Studio"}
+          icon={Zap}
+          variant={isLive ? "outline" : "danger"}
+          isDarkMode={isDarkMode}
+          onPress={handleOpenGoLiveStudio}
+        />
+      </View>
+
       {/* Live Status Banner */}
       {isLive ? (
         <View style={styles.liveBanner}>
@@ -744,55 +719,39 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         </View>
       )}
 
-      {/* Tournament Live Match Toggle */}
-      {/* {Boolean(score?.tournament || matchDetails?.tournament || matchDetails?.tournamentID) && (
-        <View
+      {/* Fan Video Streaming Link (YouTube / Facebook) */}
+      <View style={[styles.inputRow, { borderBottomColor: C.divider, marginBottom: 12 }]}>
+        <ThemedText className="font-semibold text-sm" style={{ color: C.text, marginBottom: 4 }}>
+          External Fan Stream Link
+        </ThemedText>
+        <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
+          Paste YouTube / Facebook live stream link for fans on scorecard
+        </ThemedText>
+        <TextInput
+          ref={streamingInputRef}
+          onFocus={() => {
+            setTimeout(() => {
+              scrollAwareRef.current?.scrollToFocusedInput(streamingInputRef, 140);
+            }, 150);
+          }}
           style={[
-            styles.settingRow,
+            styles.textInput,
             {
-              backgroundColor: isDarkMode ? "#1E293B" : "#F8FAFC",
-              borderColor: isDarkMode ? "#334155" : "#E2E8F0",
-              borderWidth: 1,
-              borderRadius: 12,
-              padding: 12,
-              marginBottom: 12,
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
+              borderColor: C.border,
+              backgroundColor: isDarkMode ? "#0F172A" : "#F8FAFC",
+              color: C.text,
             },
           ]}
-        >
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <ThemedText className="font-bold text-xs" style={{ color: C.text }}>
-                Go Live with this Match
-              </ThemedText>
-              {isTournamentLive && isLive && (
-                <View style={[styles.liveDot, { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#10B981" }]} />
-              )}
-            </View>
-            <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
-              <Text style={{ color: "#EF4444", fontWeight: "bold" }}>* </Text>
-              Turn on live score streaming for this match on the tournament's live link.
-            </ThemedText>
-          </View>
-          <Switch
-            value={isTournamentLive && isLive}
-            onValueChange={handleToggleTournamentMatch}
-            thumbColor={isTournamentLive && isLive ? COLORS.primary : "#CBD5E1"}
-            trackColor={{ false: isDarkMode ? "#334155" : "#E2E8F0", true: "#93C5FD" }}
-          />
-        </View>
-      )} */}
-
-      {/* Go Live Studio CTA */}
-      <View style={{ marginBottom: 12 }}>
-        <ActionButton
-          title={isLive ? "Go Live Studio (Live Now)" : "🔴 Go Live"}
-          icon={Zap}
-          variant={isLive ? "outline" : "danger"}
-          isDarkMode={isDarkMode}
-          onPress={handleOpenGoLiveStudio}
+          value={streamingLink}
+          onChangeText={setStreamingLink}
+          placeholder="https://youtube.com/..."
+          placeholderTextColor={C.textSecondary}
+          keyboardType="url"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
+          onBlur={() => updateMatchSetting(MatchSettingEnum.LIVE_STREAMING_LINK, streamingLink)}
         />
       </View>
 

@@ -1042,7 +1042,10 @@ export default function PlayerSelectionScreen() {
             >
               <Ionicons name="arrow-back" size={24} color="#2563EB" />
             </TouchableOpacity>
-            <ThemedText className="text-xl font-bold text-gray-900 dark:text-white">
+            <ThemedText
+              numberOfLines={1}
+              className="text-lg font-bold text-gray-900 dark:text-white flex-1 mr-2"
+            >
               {isSuperOver
                 ? "Select Players - Super Over"
                 : isInningsTwo
@@ -1050,14 +1053,39 @@ export default function PlayerSelectionScreen() {
                 : "Select Players"}
             </ThemedText>
           </View>
-          <TouchableOpacity
-            onPress={() => setIsDrawerOpen(true)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.7}
-            className="p-2 rounded-full"
-          >
-            <Ionicons name="settings-outline" size={22} color={isDarkMode ? "#FFFFFF" : "#1F2937"} />
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            {/* Pre-match Live Setup button */}
+            <TouchableOpacity
+              onPress={() => {
+                const tournamentId =
+                  route.params?.tournamentId ||
+                  route.params?.tournamentID ||
+                  matchDetails?.tournamentID ||
+                  matchDetails?.tournament?._id;
+                navigation.navigate(SCREENS.GoLiveSetup, {
+                  matchId,
+                  tournamentId: typeof tournamentId === "object" ? tournamentId?._id || tournamentId?.id : tournamentId,
+                });
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.8}
+              className="flex-row items-center px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-950/70 border border-red-300 dark:border-red-800"
+            >
+              <View className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5" />
+              <ThemedText className="text-xs font-bold text-red-600 dark:text-red-400">
+                Live Setup
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setIsDrawerOpen(true)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+              className="p-2 rounded-full"
+            >
+              <Ionicons name="settings-outline" size={22} color={isDarkMode ? "#FFFFFF" : "#1F2937"} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView

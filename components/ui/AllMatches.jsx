@@ -19,6 +19,7 @@ import { MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
 
 const FILTERS = [
   { id: "all", label: "All" },
+  { id: "stream", label: "Live Stream 📹" },
   { id: "live", label: "Live" },
   { id: "upcoming", label: "Upcoming" },
   { id: "completed", label: "Completed" },
@@ -55,93 +56,120 @@ export default function AllMatches() {
     return () => sub.remove();
   }, []);
 
-  const fetchMatches = useCallback(async (pageNum = 1, shouldAppend = false) => {
-    try {
-      if (pageNum === 1 && !shouldAppend) {
-        setLoading(true);
-      } else {
-        setLoadingMore(true);
-      }
-
-      const [idsRes, listRes] = await Promise.all([
-        request(`api/matches/ids?page=${pageNum}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
-        matchesApi.getMatches({ page: pageNum, limit: 12 }, { errorAlert: false }).catch(() => null),
-      ]);
-
-      const extractArray = (res) => {
-        if (!res) return [];
-        if (Array.isArray(res)) return res;
-        if (Array.isArray(res?.content)) return res.content;
-        if (Array.isArray(res?.data?.content)) return res.data.content;
-        if (Array.isArray(res?.data?.matches)) return res.data.matches;
-        if (Array.isArray(res?.data)) return res.data;
-        return [];
-      };
-
-      const rawCombined = [
-        ...extractArray(listRes),
-        ...extractArray(idsRes),
-      ];
-
-      // Deduplicate by match ID, prioritizing rich objects with teams
-      const matchMap = new Map();
-      for (const m of rawCombined) {
-        if (!m) continue;
-        const id = String(m._id || m.id || m.matchId || (typeof m === "string" ? m : ""));
-        if (!id) continue;
-        if (!matchMap.has(id)) {
-          matchMap.set(id, m);
+  const fetchMatches = useCallback(
+    async (pageNum = 1, shouldAppend = false, filter = activeFilter) => {
+      try {
+        if (pageNum === 1 && !shouldAppend) {
+          setLoading(true);
         } else {
-          const existing = matchMap.get(id);
-          const hasTeams = (obj) => Array.isArray(obj?.teams) && obj.teams.length > 0;
-          if (!hasTeams(existing) && hasTeams(m)) {
-            matchMap.set(id, m);
-          }
+          setLoadingMore(true);
         }
-      }
 
-      const fetchedList = Array.from(matchMap.values());
-      if (shouldAppend) {
-        setMatches((prev) => {
-          const prevMap = new Map(prev.map((item) => [String(item._id || item.id || item.matchId || item), item]));
-          fetchedList.forEach((m) => {
-            const id = String(m._id || m.id || m.matchId || m);
-            if (!prevMap.has(id)) {
-              prevMap.set(id, m);
+        let fetchedList = [];
+
+        if (filter === "stream") {
+          // Direct backend API call for streamed matches (no frontend filtering needed)
+          const streamRes = await matchesApi
+            .getStreamedMatches({ page: pageNum, limit: 12 }, { errorAlert: false })
+            .catch(() => null);
+
+          const rawList =
+            streamRes?.data?.matches ||
+            streamRes?.matches ||
+            streamRes?.data?.content ||
+            streamRes?.content ||
+            [];
+          fetchedList = Array.isArray(rawList) ? rawList : [];
+        } else {
+          const [idsRes, listRes] = await Promise.all([
+            request(`api/matches/ids?page=${pageNum}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
+            matchesApi.getMatches({ page: pageNum, limit: 12 }, { errorAlert: false }).catch(() => null),
+          ]);
+
+          const extractArray = (res) => {
+            if (!res) return [];
+            if (Array.isArray(res)) return res;
+            if (Array.isArray(res?.content)) return res.content;
+            if (Array.isArray(res?.data?.content)) return res.data.content;
+            if (Array.isArray(res?.data?.matches)) return res.data.matches;
+            if (Array.isArray(res?.data)) return res.data;
+            return [];
+          };
+
+          const rawCombined = [
+            ...extractArray(listRes),
+            ...extractArray(idsRes),
+          ];
+
+          // Deduplicate by match ID, prioritizing rich objects with teams
+          const matchMap = new Map();
+          for (const m of rawCombined) {
+            if (!m) continue;
+            const id = String(m._id || m.id || m.matchId || (typeof m === "string" ? m : ""));
+            if (!id) continue;
+            if (!matchMap.has(id)) {
+              matchMap.set(id, m);
+            } else {
+              const existing = matchMap.get(id);
+              const hasTeams = (obj) => Array.isArray(obj?.teams) && obj.teams.length > 0;
+              if (!hasTeams(existing) && hasTeams(m)) {
+                matchMap.set(id, m);
+              }
             }
-          });
-          return Array.from(prevMap.values());
-        });
-      } else {
-        setMatches(fetchedList);
-      }
+          }
+          fetchedList = Array.from(matchMap.values());
+        }
 
-      setPage(pageNum);
-      setHasMore(fetchedList.length >= 6);
-    } catch (err) {
-      console.warn("[AllMatches] Fetch error:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      setLoadingMore(false);
-    }
-  }, []);
+        if (shouldAppend) {
+          setMatches((prev) => {
+            const prevMap = new Map(prev.map((item) => [String(item._id || item.id || item.matchId || item), item]));
+            fetchedList.forEach((m) => {
+              const id = String(m._id || m.id || m.matchId || m);
+              if (!prevMap.has(id)) {
+                prevMap.set(id, m);
+              }
+            });
+            return Array.from(prevMap.values());
+          });
+        } else {
+          setMatches(fetchedList);
+        }
+
+        setPage(pageNum);
+        setHasMore(fetchedList.length >= 6);
+      } catch (err) {
+        console.warn("[AllMatches] Fetch error:", err);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+      }
+    },
+    [activeFilter]
+  );
 
   useEffect(() => {
-    fetchMatches(1, false);
-  }, [fetchMatches]);
+    fetchMatches(1, false, activeFilter);
+  }, []);
+
+  const handleFilterChange = (filterId) => {
+    setActiveFilter(filterId);
+    setPage(1);
+    setHasMore(true);
+    fetchMatches(1, false, filterId);
+  };
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setHasMore(true);
-    fetchMatches(1, false);
-  }, [fetchMatches]);
+    fetchMatches(1, false, activeFilter);
+  }, [fetchMatches, activeFilter]);
 
   const loadMore = useCallback(() => {
     if (!loading && !loadingMore && hasMore) {
-      fetchMatches(page + 1, true);
+      fetchMatches(page + 1, true, activeFilter);
     }
-  }, [fetchMatches, loading, loadingMore, hasMore, page]);
+  }, [fetchMatches, loading, loadingMore, hasMore, page, activeFilter]);
 
   // Filter & Search
   const filteredMatches = useMemo(() => {
@@ -170,10 +198,21 @@ export default function AllMatches() {
         rawStatus === MATCH_STATUS.MATCH_COMPLETED;
       const isUpcoming = !isLive && !isCompleted;
 
-      // Status filter
-      if (activeFilter === "live" && !isLive) return false;
-      if (activeFilter === "completed" && !isCompleted) return false;
-      if (activeFilter === "upcoming" && !isUpcoming) return false;
+      const hasStream = Boolean(
+        (typeof fullItem?.streamUrl === "string" && fullItem.streamUrl.trim()) ||
+        (typeof cached?.liveScore?.streamUrl === "string" && cached.liveScore.streamUrl.trim()) ||
+        (typeof item?.streamUrl === "string" && item.streamUrl.trim()) ||
+        (typeof item?.score?.streamUrl === "string" && item.score.streamUrl.trim()) ||
+        (typeof fullItem?.config?.streamUrl === "string" && fullItem.config.streamUrl.trim()) ||
+        (typeof item?.config?.streamUrl === "string" && item.config.streamUrl.trim())
+      );
+
+      // Status filter: do not filter out matches on frontend when on stream tab (backend API handles it)
+      if (activeFilter !== "all" && activeFilter !== "stream") {
+        if (activeFilter === "live" && !isLive) return false;
+        if (activeFilter === "completed" && !isCompleted) return false;
+        if (activeFilter === "upcoming" && !isUpcoming) return false;
+      }
 
       // Search query
       if (!q) return true;
@@ -315,7 +354,7 @@ export default function AllMatches() {
             const isActive = activeFilter === item.id;
             return (
               <TouchableOpacity
-                onPress={() => setActiveFilter(item.id)}
+                onPress={() => handleFilterChange(item.id)}
                 activeOpacity={0.8}
                 className={`px-4 py-1.5 rounded-full mr-2 border ${
                   isActive
@@ -402,14 +441,18 @@ export default function AllMatches() {
                   isDarkMode ? "text-gray-200" : "text-gray-800"
                 }`}
               >
-                No matches found
+                {activeFilter === "stream"
+                  ? "No streamed matches right now"
+                  : "No matches found"}
               </ThemedText>
               <ThemedText
                 className={`text-xs text-center max-w-[260px] ${
                   isDarkMode ? "text-gray-400" : "text-gray-500"
                 }`}
               >
-                {searchQuery
+                {activeFilter === "stream"
+                  ? "There are currently no matches broadcasting an active live stream."
+                  : searchQuery
                   ? `No matches found matching "${searchQuery}". Try a different keyword.`
                   : "No matches available in this category."}
               </ThemedText>

@@ -446,6 +446,14 @@ export default function CustomDrawer(props) {
       <View className="px-2">
         <SectionHeading title="Quick Actions" />
         <MenuItem
+          icon="videocam-outline"
+          title="Go Live Studio"
+          badge="LIVE"
+          onPress={() =>
+            requireAuth(() => navigateTo(SCREENS.MyCricket, { initialTab: "matches" }))
+          }
+        />
+        <MenuItem
           icon="add-circle-outline"
           title="Create Match"
           onPress={() =>
