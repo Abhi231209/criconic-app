@@ -11,6 +11,8 @@ import React, {
 import { AppState } from "react-native";
 import { io } from "socket.io-client";
 import { SOCKET_URL } from "@/config";
+import { store } from "@/redux/store";
+import { getAuthToken } from "@/utils/api";
 
 const SocketContext = createContext(null);
 
@@ -23,6 +25,9 @@ const SOCKET_OPTIONS = {
   reconnectionDelayMax: 5000,
   timeout: 20000,
   autoConnect: true,
+  // Sent on every (re)connect, so the server always sees the current login.
+  // Scoring and overlay events are rejected on sockets without a valid token.
+  auth: (cb) => cb({ token: getAuthToken() || null }),
 };
 
 export const SocketProvider = ({ children }) => {
@@ -148,6 +153,25 @@ export const SocketProvider = ({ children }) => {
       socketConn.io?.engine?.off("upgrade", onUpgrade);
     };
   }, [SOCKET_URL]);
+
+  // The token is only read when the socket connects, so reconnect whenever
+  // it changes (rehydration after launch, login, logout) — otherwise a socket
+  // opened before login stays anonymous and its scoring events are rejected.
+  useEffect(() => {
+    let lastToken = getAuthToken() || null;
+    const unsubscribe = store.subscribe(() => {
+      const token = getAuthToken() || null;
+      if (token === lastToken) return;
+      lastToken = token;
+      const socketConn = socketRef.current;
+      if (socketConn) {
+        console.log("🔑 [Socket] Auth token changed, reconnecting");
+        socketConn.disconnect();
+        socketConn.connect();
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   const emit = useCallback((event, data, callback) => {
     if (socketRef.current) {

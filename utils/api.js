@@ -82,6 +82,22 @@ export const clearSessionCookie = async () => {
 export const getSessionCookie = () => sessionCookie;
 
 /**
+ * Current JWT for the logged-in user, or undefined when logged out.
+ */
+export const getAuthToken = () => {
+  const state = store?.getState?.();
+  const user = state?.auth?.user || User.user;
+  return (
+    state?.auth?.token ||
+    user?.access_token ||
+    user?.token ||
+    User.user?.access_token ||
+    User.user?.token ||
+    undefined
+  );
+};
+
+/**
  * Universal request function matching sports-arena website Api.js
  */
 export const request = async (
@@ -104,13 +120,7 @@ export const request = async (
     const deviceId = await getDeviceId();
     const state = store?.getState?.();
     const user = state?.auth?.user || User.user;
-    const authToken =
-      state?.auth?.token ||
-      user?.access_token ||
-      user?.token ||
-      User.user?.access_token ||
-      User.user?.token ||
-      undefined;
+    const authToken = getAuthToken();
 
     const normalizedEndpoint = endpoint.startsWith("/")
       ? endpoint.slice(1)
