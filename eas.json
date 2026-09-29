@@ -8,19 +8,22 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://devapi.criconic.com/"
+        "EXPO_PUBLIC_API_URL": "https://devapi.criconic.com/",
+        "EXPO_PUBLIC_WEB_URL": "https://dev.criconic.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://devapi.criconic.com/"
+        "EXPO_PUBLIC_API_URL": "https://devapi.criconic.com/",
+        "EXPO_PUBLIC_WEB_URL": "https://dev.criconic.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.criconic.com/"
+        "EXPO_PUBLIC_API_URL": "https://api.criconic.com/",
+        "EXPO_PUBLIC_WEB_URL": "https://criconic.com"
       }
     }
   },
