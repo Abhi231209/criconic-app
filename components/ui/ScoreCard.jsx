@@ -223,6 +223,16 @@ function ScoreCard({
   const isCompleted = hasEndedResult;
   const isUpcoming = !isLive && !isCompleted;
 
+  const streamUrl =
+    liveScore?.streamUrl ||
+    combinedMatch?.streamUrl ||
+    match?.streamUrl ||
+    liveScore?.config?.streamUrl ||
+    combinedMatch?.config?.streamUrl;
+  const hasStream = Boolean(
+    typeof streamUrl === "string" && streamUrl.trim().length > 0
+  );
+
   // Check scoring access
   const currentUserId = User.id || User.user?._id || User.user?.id;
   const isUserLoggedIn = Boolean(User.isLogin() || currentUserId);
@@ -606,6 +616,18 @@ function ScoreCard({
               />
             )}
 
+            {/* Live Stream Active Badge */}
+            {hasStream && (
+              <View
+                className="px-2 py-0.5 rounded-full flex-row items-center mr-1.5 border border-red-500/50 bg-red-600 shadow-sm"
+              >
+                <View className="w-1.5 h-1.5 rounded-full bg-white mr-1" />
+                <ThemedText className="text-[10px] font-extrabold uppercase tracking-wider text-white">
+                  STREAM
+                </ThemedText>
+              </View>
+            )}
+
             {/* Requirement 2: Status badge matching web project */}
             <View
               className={`px-2.5 py-1 rounded-full flex-row items-center border ${
@@ -837,6 +859,15 @@ function ScoreCard({
             <View className="bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded mr-1.5">
               <ThemedText className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
                 DLS
+              </ThemedText>
+            </View>
+          )}
+
+          {hasStream && (
+            <View className="flex-row items-center mr-1.5 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-800">
+              <Ionicons name="videocam" size={11} color="#EF4444" style={{ marginRight: 3 }} />
+              <ThemedText className="text-[10px] font-bold text-red-600 dark:text-red-400">
+                Watch Live
               </ThemedText>
             </View>
           )}

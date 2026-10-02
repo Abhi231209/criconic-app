@@ -15,6 +15,7 @@ import {
   Layers,
   ChevronRight,
   Video,
+  Radio,
 } from "lucide-react-native";
 import SCREENS from "@/screens";
 import useAppTheme from "@/hooks/useAppTheme";
@@ -130,16 +131,16 @@ const MatchActionSheet = ({
     },
   });
 
-  // 3. Overlay Setup Action (Requirement 5: options for overlay setup in match actions)
+  // 3. Go Live Studio Action (Broadcast overlays & theme setup)
   menuItems.push({
     id: "overlay",
-    title: "Overlay Setup",
+    title: "Go Live Studio",
     subtitle: hasThemeConfigured
       ? "Edit theme & broadcast overlays"
       : isLive
-      ? "Configure live stream graphics"
-      : "Configure overlay before match starts",
-    icon: Layers,
+      ? "Configure live broadcast graphics"
+      : "Configure live overlays & OBS link before match starts",
+    icon: Radio,
     gradient: ["#F59E0B", "#D97706"],
     onPress: () => {
       closeSheet();
@@ -164,28 +165,28 @@ const MatchActionSheet = ({
     },
   });
 
-  // 4. Live Stream Broadcast Action
-  // menuItems.push({
-  //   id: "livestream",
-  //   title:
-  //     score?.streamUrl || matchDetails?.streamUrl
-  //       ? "Watch Live Stream"
-  //       : "Live Stream Broadcast",
-  //   subtitle:
-  //     score?.streamUrl || matchDetails?.streamUrl
-  //       ? "Watch live YouTube or Facebook stream"
-  //       : "Add YouTube or Facebook stream link to match",
-  //   icon: Video,
-  //   gradient: ["#EF4444", "#DC2626"],
-  //   onPress: () => {
-  //     closeSheet();
-  //     navigation.navigate(SCREENS.MatchScoreCard, {
-  //       matchId,
-  //       initialScore: score,
-  //       initialMatch: matchDetails,
-  //     });
-  //   },
-  // });
+  // 4. Live Stream Broadcast Action (View or Link Stream)
+  menuItems.push({
+    id: "livestream",
+    title:
+      score?.streamUrl || matchDetails?.streamUrl
+        ? "Watch Live Stream"
+        : "Live Stream Broadcast",
+    subtitle:
+      score?.streamUrl || matchDetails?.streamUrl
+        ? "Watch live YouTube or Facebook stream"
+        : "Add YouTube or Facebook stream link to match",
+    icon: Video,
+    gradient: ["#EF4444", "#DC2626"],
+    onPress: () => {
+      closeSheet();
+      navigation.navigate(SCREENS.MatchScoreCard, {
+        matchId,
+        initialScore: score,
+        initialMatch: matchDetails,
+      });
+    },
+  });
 
   const handleDelete = () => {
     closeSheet();

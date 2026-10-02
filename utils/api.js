@@ -550,6 +550,15 @@ export const matchesApi = {
       ...options,
     });
   },
+  getStreamedMatches: (params = {}, options = {}) => {
+    const finalParams = { limit: 12, ...params };
+    const query = new URLSearchParams(finalParams).toString();
+    return request(`api/matches/streamed${query ? `?${query}` : ""}`, {
+      method: "GET",
+      errorAlert: false,
+      ...options,
+    });
+  },
   getMatchById: (id, options = {}) => {
     const params = { private: 1, ...(options?.params || {}) };
     return request(`api/matches/${id}`, {
