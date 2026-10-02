@@ -426,6 +426,9 @@ export default function MatchInfo({
     ? `${tossWinnerTeam.title} won the toss and elected to ${score.score.toss.decision === 'BOWL' ? 'bowl' : 'bat'}`
     : null;
 
+  // Test match length in days (server default is 5)
+  const testDays = Number(score?.test?.days || score?.matchConfig?.testDays || score?.config?.testDays) || 5;
+
   // Enhanced info items with more cricket-specific data
   const infoItems = [
     score?.tournament?.title && {
@@ -445,7 +448,11 @@ export default function MatchInfo({
       label: 'Round',
       value: score?.roundType,
     },
-    score?.matchTotalOver && {
+    score?.matchType === "test" ? {
+      icon: <MaterialCommunityIcons name="cricket" size={20} color="#10b981" />,
+      label: 'Format',
+      value: `Test match · ${testDays} day${testDays === 1 ? '' : 's'}`,
+    } : score?.matchTotalOver && {
       icon: <MaterialCommunityIcons name="cricket" size={20} color="#10b981" />,
       label: 'Overs',
       value: `${score?.matchTotalOver} overs match`,
@@ -479,7 +486,7 @@ export default function MatchInfo({
     score?.matchType && {
       icon: <MaterialIcons name="format-list-bulleted" size={20} color="#ec4899" />,
       label: 'Match Format',
-      value: capitalizeFirstWord(score.matchType),
+      value: score.matchType === 'single_wicket' ? 'Single Wicket' : capitalizeFirstWord(score.matchType),
     },
     tossSummary && {
       icon: <MaterialIcons name="casino" size={20} color="#14b8a6" />,

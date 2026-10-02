@@ -123,8 +123,12 @@ export default function MatchDetailsScreen() {
     ballType: route.params?.ballType || "tennis",
     pitchType: route.params?.pitchType || "turf",
     date: route.params?.date ? new Date(route.params.date) : new Date(),
-    overs: route.params?.overs ? Number(route.params.overs) : 20,
+    overs: route.params?.overs
+      ? Number(route.params.overs)
+      : route.params?.matchType === "single_wicket" ? 2 : 20,
     powerplay: route.params?.powerplay ? Number(route.params.powerplay) : 6,
+    // Test matches: scheduled length in days (no overs limit).
+    testDays: route.params?.testDays ? Number(route.params.testDays) : 5,
     location: isValidLocation(initialLocation) ? initialLocation : "",
     locationId: route.params?.locationId || "",
     roundType:
@@ -182,6 +186,7 @@ export default function MatchDetailsScreen() {
             }
             if (m.totalOvers) handleInputChange("overs", m.totalOvers);
             if (m.type) handleInputChange("matchType", m.type);
+            if (m.config?.testDays) handleInputChange("testDays", m.config.testDays);
             if (m.ballType) handleInputChange("ballType", m.ballType);
             const fetchedLoc = isValidLocation(m.location)
               ? m.location
@@ -259,9 +264,15 @@ export default function MatchDetailsScreen() {
     };
   }, [debouncedLocationSearch]);
 
+  const isTestMatch = matchDetails.matchType === "test";
+  // Single wicket (player vs player) is fixed when the match is created.
+  const isSingleWicket = matchDetails.matchType === "single_wicket";
+  const oversPresets = isSingleWicket ? [1, 2, 3, 4, 5, 6, 8, 10] : [6, 8, 10, 12, 15, 20, 25, 30];
+  const maxCustomOvers = isSingleWicket ? 10 : 50;
+
   const handleProceedToStep2 = () => {
     const oversNum = Number(matchDetails.overs);
-    if (!oversNum || oversNum <= 0) {
+    if (!isTestMatch && (!oversNum || oversNum <= 0)) {
       showGlobalAlert({
         title: "Overs Required",
         message: "Please select or enter the number of overs.",
@@ -412,12 +423,12 @@ export default function MatchDetailsScreen() {
 
   const handleCustomOversSubmit = () => {
     const oversValue = parseInt(customOvers);
-    if (oversValue > 0 && oversValue <= 50) {
+    if (oversValue > 0 && oversValue <= maxCustomOvers) {
       handleInputChange("overs", oversValue);
       setShowCustomOvers(false);
       setCustomOvers("");
     } else {
-      Alert.alert("Notice", "Please enter a valid number of overs (1-50)");
+      Alert.alert("Notice", `Please enter a valid number of overs (1-${maxCustomOvers})`);
     }
   };
 
@@ -486,10 +497,15 @@ export default function MatchDetailsScreen() {
         type: matchDetails.matchType,
         ballType: matchDetails.ballType,
         pitchType: matchDetails.pitchType,
-        totalOvers: Number(matchDetails.overs),
         startDate,
-        powerplayOvers: Number(matchDetails.powerplay || 0),
         status: targetStatus,
+        // A Test has no overs limit; the server stores 0 for both.
+        ...(isTestMatch
+          ? { testDays: Number(matchDetails.testDays) || 5 }
+          : {
+              totalOvers: Number(matchDetails.overs),
+              powerplayOvers: isSingleWicket ? 0 : Number(matchDetails.powerplay || 0),
+            }),
       };
       if (isTournamentMatch && matchDetails.roundType) {
         updatePayload.roundType = matchDetails.roundType;
@@ -1094,6 +1110,106 @@ export default function MatchDetailsScreen() {
               )}
             </View>
 
+            {isSingleWicket && (
+              <View
+                className={`mb-6 p-4 rounded-xl border-2 border-blue-500 ${
+                  isDarkMode ? "bg-gray-800" : "bg-white"
+                }`}
+              >
+                <ThemedText className="text-base font-semibold text-gray-900 dark:text-white">
+                  Single Wicket · Player vs Player
+                </ThemedText>
+                <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Each player bats alone until out or their overs run out; the other player bowls.
+                </ThemedText>
+              </View>
+            )}
+
+            {/* Format: limited overs or a Test (each side bats twice) */}
+            {!isSingleWicket && (
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
+                Format
+              </ThemedText>
+              <View className="flex-row">
+                {[
+                  { value: "limited", label: "Limited Overs", icon: "timer-outline" },
+                  { value: "test", label: "Test Match", icon: "calendar-outline" },
+                ].map((format) => {
+                  const isSelected = format.value === "test" ? isTestMatch : !isTestMatch;
+                  return (
+                    <TouchableOpacity
+                      key={format.value}
+                      onPress={() => {
+                        if (format.value === "test") handleInputChange("matchType", "test");
+                        else if (isTestMatch) handleInputChange("matchType", "limited");
+                      }}
+                      className={`flex-1 flex-row p-3 rounded-xl mx-1 items-center justify-center ${
+                        isSelected
+                          ? "bg-blue-500 border-blue-600"
+                          : isDarkMode
+                          ? "bg-gray-800 border-gray-700"
+                          : "bg-white border-gray-200"
+                      } border-2`}
+                    >
+                      <Ionicons
+                        name={format.icon}
+                        size={18}
+                        color={isSelected ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"}
+                      />
+                      <ThemedText
+                        className={`text-sm font-medium ml-2 ${
+                          isSelected ? "text-white" : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {format.label}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            )}
+
+            {isTestMatch ? (
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-1 text-gray-900 dark:text-white">
+                Match Length
+              </ThemedText>
+              <ThemedText className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                Each team bats twice, with no overs limit. An innings ends when the side is all
+                out or declares. A match not finished by the end of the last day is drawn.
+              </ThemedText>
+              <View className="flex-row flex-wrap">
+                {[1, 2, 3, 4, 5].map((days) => {
+                  const isSelected = Number(matchDetails.testDays) === days;
+                  return (
+                    <TouchableOpacity
+                      key={days}
+                      onPress={() => handleInputChange("testDays", days)}
+                      className={`p-3 rounded-lg mx-1 mb-2 ${
+                        isSelected
+                          ? "bg-blue-500 border-blue-600"
+                          : isDarkMode
+                          ? "bg-gray-800 border-gray-700"
+                          : "bg-white border-gray-200"
+                      } border-2`}
+                    >
+                      <ThemedText
+                        className={`font-medium ${
+                          isSelected ? "text-white" : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {days} {days === 1 ? "day" : "days"}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            ) : (
+            <>
             {/* Overs Selection */}
             <View className="mb-6">
               <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
@@ -1170,7 +1286,7 @@ export default function MatchDetailsScreen() {
               )}
               
               <View className="flex-row flex-wrap">
-                {[6, 8, 10, 12, 15, 20, 25, 30].map(overs => (
+                {oversPresets.map(overs => (
                   <TouchableOpacity
                     key={overs}
                     onPress={() => handleInputChange("overs", overs)}
@@ -1195,7 +1311,7 @@ export default function MatchDetailsScreen() {
                 ))}
                 
                 {/* Show custom overs as an option if it's not in the preset list */}
-                {matchDetails.overs > 0 && ![6, 8, 10, 12, 15, 20, 25, 30].includes(matchDetails.overs) && (
+                {matchDetails.overs > 0 && !oversPresets.includes(matchDetails.overs) && (
                   <TouchableOpacity
                     className={`p-3 rounded-lg mx-1 mb-2 bg-blue-500 border-blue-600 border-2`}
                   >
@@ -1213,7 +1329,8 @@ export default function MatchDetailsScreen() {
               )}
             </View>
 
-            {/* Powerplay Selection */}
+            {/* Powerplay Selection (none in single wicket) */}
+            {!isSingleWicket && (
             <View className="mb-6">
               <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
                 Powerplay Overs
@@ -1259,10 +1376,14 @@ export default function MatchDetailsScreen() {
                   })}
               </View>
             </View>
+            )}
+            </>
+            )}
           </>
         ) : (
           <>
-            {/* Match Type Selection - Moved to Step 2 */}
+            {/* Match Type Selection - Moved to Step 2 (a Test is chosen in step 1) */}
+            {!isTestMatch && !isSingleWicket && (
             <View className="mb-6">
               <ThemedText className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">
                 Match Type
@@ -1272,6 +1393,7 @@ export default function MatchDetailsScreen() {
                 {renderOptionButton("limited", "Limited Overs", "trophy", matchDetails.matchType === "limited")}
               </View>
             </View>
+            )}
 
             {/* Location Input with Google Places Autocomplete */}
             <View

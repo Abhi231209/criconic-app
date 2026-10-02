@@ -43,7 +43,8 @@ import {
   loadQueue as loadPendingActionQueue,
   enqueueAction as enqueuePendingAction,
   removeAction as removePendingAction,
-  purgeStaleActions,
+  purgeExpiredActions,
+  isRetryableAck,
   clearQueue,
 } from "@/utils/offlineActionQueue";
 
@@ -54,6 +55,16 @@ import {
 // Save a pending action and return the updated queue length for UI display.
 
 export const ScorerScreenContext = createContext(null);
+
+// Test (multi-day) matches: four innings, no overs limit. The server decides
+// when an innings or the match ends; see server/utils/testMatch.js.
+const isTestMatchData = (scoreObj, matchObj) =>
+  String(scoreObj?.matchType || matchObj?.type || "").toLowerCase() === "test";
+
+// Single wicket (player vs player): one batter, and the other player bowls
+// every over — the server starts each new over with the same bowler.
+const isSingleWicketData = (scoreObj, matchObj) =>
+  String(scoreObj?.matchType || matchObj?.type || "").toLowerCase() === "single_wicket";
 
 export default function ScorerScreen() {
   const { openSheet, closeSheet } = useBottomSheet();
@@ -159,6 +170,7 @@ export default function ScorerScreen() {
       }
 
       console.log(`[OFFLINE-QUEUE] Flushing ${queue.length} pending actions for match ${matchID}...`);
+      let rejectedCount = 0;
       for (const item of queue) {
         if (!socketRef.current?.connected) break;
         try {
@@ -174,12 +186,18 @@ export default function ScorerScreen() {
             5000
           );
 
-          // Remove the action if it succeeded, or if the server responded (avoiding permanent stuck queues).
-          // Only preserve the item if the socket timed out without reaching the server.
-          if (response?.success || response?.timedOut === false) {
+          if (response?.success) {
             await removePendingAction(matchID, item.actionId);
-          } else {
+          } else if (isRetryableAck(response)) {
+            // Didn't get through (or can't yet) — keep it and everything
+            // after it, in order, for the next flush.
             break;
+          } else {
+            // The server refused it for good; drop it so it doesn't block
+            // the rest of the queue.
+            console.warn("[OFFLINE-QUEUE] Server rejected queued action:", item.action, response?.message);
+            await removePendingAction(matchID, item.actionId);
+            rejectedCount++;
           }
         } catch (e) {
           console.warn("[OFFLINE-QUEUE] Error flushing item:", e);
@@ -190,6 +208,17 @@ export default function ScorerScreen() {
       const remaining = await loadPendingActionQueue(matchID);
       setPendingActionCount(remaining.length);
 
+      if (rejectedCount > 0) {
+        showAlert({
+          title: "Some offline actions were skipped",
+          message: `${rejectedCount} action${rejectedCount > 1 ? "s" : ""} recorded while offline ${
+            rejectedCount > 1 ? "were" : "was"
+          } rejected by the server. Please check the scorecard and re-enter anything missing.`,
+          type: "warning",
+          confirmText: "OK",
+        });
+      }
+
       // Once the backlog is flushed, fetch the authoritative score once
       if (socketRef.current?.connected) {
         socketRef.current.emit("score", { matchId: matchID, matchID });
@@ -197,7 +226,7 @@ export default function ScorerScreen() {
     } finally {
       isFlushingQueueRef.current = false;
     }
-  }, [matchID, emitWithAck]);
+  }, [matchID, emitWithAck, showAlert]);
 
   // Seed the pending count from disk immediately on mount, independent of
   // connection state — so a leftover queue from a previous session (e.g. the
@@ -232,6 +261,7 @@ export default function ScorerScreen() {
   const [nextBowlerModalVisible, setNextBowlerModalVisible] = useState(false);
   const [availableBowlers, setAvailableBowlers] = useState([]);
   const [inningsCompleteModalVisible, setInningsCompleteModalVisible] = useState(false);
+  const [testBreakModalVisible, setTestBreakModalVisible] = useState(false);
   const [matchCompleteModalVisible, setMatchCompleteModalVisible] = useState(false);
   const [matchTiedModalVisible, setMatchTiedModalVisible] = useState(false);
   const [committeeEndModalVisible, setCommitteeEndModalVisible] = useState(false);
@@ -803,6 +833,11 @@ export default function ScorerScreen() {
         latestScore?.currentInningWicket >= maxWickets
       ) {
         console.log("[WICKET] All out reached — skipping incoming batter");
+        if (isTestMatchData(latestScore, latestMatchDetails)) {
+          // The server ends a Test innings (or the match) and tells us via
+          // "innings-complete" / the next score update.
+          return;
+        }
         if (isOddInning) {
           console.log("[WICKET] Inning all out — setting isInningCompleted");
           matchStatusHandler("isInningCompleted", true);
@@ -1086,7 +1121,9 @@ export default function ScorerScreen() {
     if (isSuperOverInn && currentWickets >= 2) return;
 
     // Requirement: Inning resume only applies if overs are still remaining
-    const innOversMax = isSuperOverInn ? 1 : Number(curScore?.totalOvers || freshMatch?.totalOvers || 20);
+    const innOversMax = isTestMatchData(curScore, freshMatch)
+      ? Infinity
+      : isSuperOverInn ? 1 : Number(curScore?.totalOvers || freshMatch?.totalOvers || 20);
     const currentOverStr = String(curScore?.batting?.score?.over || "0");
     const [completedOvers] = currentOverStr.split(".").map(Number);
     const isOverFinished = completedOvers >= innOversMax;
@@ -1206,6 +1243,10 @@ export default function ScorerScreen() {
       return;
     }
 
+    if (isSingleWicketData(latestScore, latestMatchDetails)) {
+      return; // no new bowler to pick: the same player bowls the next over
+    }
+
     const allTeams = latestMatchDetails?.teams || latestScore?.teams || [];
     const battingId = String(
       latestScore?.batting?.battingId ||
@@ -1317,17 +1358,86 @@ export default function ScorerScreen() {
   };
 
   // Innings Complete Flow
-  const handleInningsComplete = useCallback(({ isMatchEndedByCommittee = false } = {}) => {
+  const handleInningsComplete = useCallback(({ isMatchEndedByCommittee = false, fromServer = false } = {}) => {
     const currentInn = score?.currentInnings || matchDetails?.currentInnings || 1;
     const isOddInning = (currentInn % 2 === 1);
+
+    if (isTestMatchData(score, matchDetails)) {
+      // The server says the innings is over (all out / declared), or it
+      // already was: offer the next innings. Otherwise this is the settings
+      // "End Inning" button, which in a Test means declaring.
+      if (fromServer || score?.isInningsCompleted) {
+        setTestBreakModalVisible(true);
+      } else {
+        handleDeclareInningsRef.current?.();
+      }
+      return;
+    }
 
     if (isOddInning) {
       setInningsCompleteModalVisible(true);
     } else {
       setCommitteeEndModalVisible(true);
     }
-  }, [score?.currentInnings, matchDetails?.currentInnings]);
+  }, [score, matchDetails]);
   handleInningsCompleteRef.current = handleInningsComplete;
+
+  // ── Test match actions ──────────────────────────────────────────────────
+  const handleDeclareInningsRef = useRef(null);
+  const handleDeclareInnings = () => {
+    const team = score?.batting?.battingTeam || "The batting side";
+    Alert.alert(
+      "Declare Innings",
+      `${team} will declare at ${score?.batting?.score?.runs ?? 0}/${score?.batting?.score?.wicket ?? 0}. This ends the innings.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Declare", onPress: () => updateScore(MATCH_ACTION.DECLARE_INNINGS, {}) },
+      ]
+    );
+  };
+  handleDeclareInningsRef.current = handleDeclareInnings;
+
+  const handleStumps = () => {
+    const day = score?.test?.day || 1;
+    const isLastDay = day >= (score?.test?.days || 5);
+    Alert.alert(
+      isLastDay ? "Stumps — Final Day" : `Stumps — Day ${day}`,
+      isLastDay
+        ? "This is the last day. Calling stumps now ends the match as a draw."
+        : `End play for Day ${day}? Scoring the next ball starts Day ${day + 1}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: isLastDay ? "End as Draw" : "Call Stumps",
+          style: isLastDay ? "destructive" : "default",
+          onPress: () => updateScore(MATCH_ACTION.STUMPS, {}),
+        },
+      ]
+    );
+  };
+
+  const handleDrawMatch = () => {
+    Alert.alert(
+      "End Match as a Draw",
+      "End the match now with no result? This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "End as Draw", style: "destructive", onPress: () => updateScore(MATCH_ACTION.MATCH_DRAWN, {}) },
+      ]
+    );
+  };
+
+  const handleStartNextTestInnings = (enforceFollowOn = false) => {
+    setTestBreakModalVisible(false);
+    setIsEndingInnings(true);
+    updateScore(MATCH_ACTION.END_OF_INNINGS, { enforceFollowOn });
+    // Fallback in case the INNINGS_START socket event is delayed or dropped
+    setTimeout(() => {
+      if (!isLeavingRef.current) {
+        handleInningsStartSocketRef.current?.();
+      }
+    }, 4000);
+  };
 
   const handleStartInningsTwo = () => {
     Alert.alert(
@@ -1421,7 +1531,8 @@ export default function ScorerScreen() {
     if (!score || Object.keys(score).length === 0) return;
 
     const currentStatus = String(score?.matchCurrentStatus || score?.status || "").toUpperCase();
-    const isSuperOverInn = Boolean(
+    const isTest = isTestMatchData(score, matchDetails);
+    const isSuperOverInn = !isTest && Boolean(
       score?.isSuperOver ||
       score?.score?.isSuperOver ||
       score?.["innings_" + (score?.currentInnings || 1)]?.isSuperOver ||
@@ -1453,7 +1564,30 @@ export default function ScorerScreen() {
     const isAllOut = currentWickets >= maxWicketsAllowed;
     const canContinueInning = !isOverFinished && currentWickets < 10 && !isAllOut;
 
-    if (
+    if (isTest) {
+      // A Test innings break: either an innings has just ended (offer the
+      // next one) or the next one is set up and needs its openers.
+      if (currentStatus === MATCH_STATUS.INNINGS_I_ENDED) {
+        if (score?.isInningsCompleted) {
+          matchStatusHandler("isInningCompleted", true);
+          setTestBreakModalVisible(true);
+        } else {
+          setTestBreakModalVisible(false);
+          handleInningsStartSocketRef.current?.();
+        }
+      } else if (currentStatus === MATCH_STATUS.MATCH_COMPLETED) {
+        setTestBreakModalVisible(false);
+        matchStatusHandler("isMatchCompleted", true);
+        setMatchCompleteModalVisible(true);
+      } else if (currentStatus === MATCH_STATUS.MATCH_ENDED) {
+        setTestBreakModalVisible(false);
+        matchStatusHandler("isMatchEnded", true);
+        setMatchCompleteModalVisible(true);
+      } else {
+        setTestBreakModalVisible(false);
+        matchStatusHandler(false);
+      }
+    } else if (
       (currentStatus === "INNINGS_I_ENDED" ||
       currentStatus === "INNINGS_BREAK" ||
       currentStatus === MATCH_STATUS.INNINGS_I_ENDED ||
@@ -1503,7 +1637,9 @@ export default function ScorerScreen() {
         !score?.bowler?.isBowlingCurrentOver &&
         (score?.matchCurrentStatus === MATCH_STATUS.MATCH_STARTED ||
           score?.matchCurrentStatus === MATCH_STATUS.INNINGS_I ||
-          score?.matchCurrentStatus === MATCH_STATUS.INNINGS_II);
+          score?.matchCurrentStatus === MATCH_STATUS.INNINGS_II ||
+          // Test innings 1 and 3 are played as MATCH_IN_PROGRESS
+          (isTest && score?.matchCurrentStatus === MATCH_STATUS.MATCH_IN_PROGRESS));
 
       if (bowlerSelectionCondition) {
         handleOverCompleteRef.current?.();
@@ -1587,15 +1723,11 @@ export default function ScorerScreen() {
             console.warn("[MOUNT] ⚠️ score response missing batting/batsman/bowler. Keys:", Object.keys(formatted));
           }
 
-          // Purge any stale offline actions that the server has already applied/saved
-          const serverUpdatedTs = new Date(
-            formatted?.modifiedTime || formatted?.updatedAt || matchRes?.data?.updatedAt || 0
-          ).getTime();
-          if (serverUpdatedTs > 0) {
-            purgeStaleActions(matchID, serverUpdatedTs).then((remaining) => {
-              setPendingActionCount(remaining.length);
-            });
-          }
+          // Replaying queued actions is safe (the server skips ones it
+          // already applied), so only drop those too old for it to recognise.
+          purgeExpiredActions(matchID).then((remaining) => {
+            setPendingActionCount(remaining.length);
+          });
         } else {
           console.warn("[MOUNT] ⚠️ score response invalid. success:", formatted?.success, "message:", formatted?.message);
         }
@@ -1684,6 +1816,30 @@ export default function ScorerScreen() {
         currentLatestScore?.status === MATCH_STATUS.SUPER_OVER ||
         currentLatestScore?.matchCurrentStatus === "SUPER_OVER";
 
+      if (isTestMatchData(currentLatestScore, matchDetailsRef.current)) {
+        setTestBreakModalVisible(false);
+        // The latest score may still show the innings that just ended.
+        const testNextInn =
+          (currentLatestScore?.currentInnings || 1) + (currentLatestScore?.isInningsCompleted ? 1 : 0);
+        navigation.navigate(SCREENS.PlayerSelectionScreen, {
+          ...route.params,
+          matchId: matchID,
+          matchID: matchID,
+          isTestMatch: true,
+          isInningsTwo: testNextInn > 1,
+          currentInnings: testNextInn,
+          action: "END_OF_INNINGS",
+          targetScore: undefined,
+          isSuperOver: false,
+          striker: null,
+          nonStriker: null,
+          bowler: null,
+          battingTeam: null,
+          bowlingTeam: null,
+        });
+        return;
+      }
+
       const nextInn = (currentLatestScore?.currentInning || 1) + 1;
       const inning1Runs =
         currentLatestScore?.batting?.score?.runs ??
@@ -1713,7 +1869,7 @@ export default function ScorerScreen() {
     const stableOverComplete = (...args) => handleOverCompleteRef.current?.(...args);
     const stableInningsComplete = () => {
       matchStatusHandler("isInningCompleted", true);
-      handleInningsCompleteRef.current?.();
+      handleInningsCompleteRef.current?.({ fromServer: true });
     };
     const handlePowerplayStart = (data) => {
       showPowerplayBanner(`🏏 Powerplay is ON — first ${data?.oversCount ?? ""} overs`);
@@ -1792,6 +1948,17 @@ export default function ScorerScreen() {
         const response = await emitWithAck("update-score", payload, 5000);
         if (response?.success) {
           // Successfully acknowledged and recorded by server! No disk write needed.
+          return;
+        }
+        if (!isRetryableAck(response)) {
+          // The server looked at it and said no; queueing it would only
+          // block later actions. Tell the scorer instead.
+          showAlert({
+            title: "Couldn't record that",
+            message: response?.message || "The server rejected this action.",
+            type: "warning",
+            confirmText: "OK",
+          });
           return;
         }
       } catch (err) {
@@ -2161,7 +2328,11 @@ export default function ScorerScreen() {
   const tossDecision = matchDetails?.score?.toss?.decision;
   const tossWinningTeam = String(matchDetails?.score?.toss?.winningTeam?._id || matchDetails?.score?.toss?.winningTeam || "");
 
-  if (tossDecision === "BAT" && tossWinningTeam && allTeams.length >= 2) {
+  const isTestMatchView = isTestMatchData(score, matchDetails);
+  if (isTestMatchView && battingTeamId) {
+    resolvedBattingObj = allTeams.find((t) => getTeamId(t) === battingTeamId) || null;
+    resolvedBowlingObj = allTeams.find((t) => getTeamId(t) !== battingTeamId) || null;
+  } else if (tossDecision === "BAT" && tossWinningTeam && allTeams.length >= 2) {
     allTeams.forEach((team) => {
       const tId = getTeamId(team);
       if (tId === tossWinningTeam) {
@@ -2190,7 +2361,7 @@ export default function ScorerScreen() {
     score?.matchCurrentStatus === MATCH_STATUS.INNINGS_II
   );
 
-  if (isInningsTwo && resolvedBattingObj && resolvedBowlingObj) {
+  if (!isTestMatchView && isInningsTwo && resolvedBattingObj && resolvedBowlingObj) {
     [resolvedBattingObj, resolvedBowlingObj] = [resolvedBowlingObj, resolvedBattingObj];
   }
 
@@ -2372,7 +2543,11 @@ export default function ScorerScreen() {
               {`${score?.batting?.score?.runs ?? 0}/${score?.batting?.score?.wicket ?? 0}`}
             </ThemedText>
             <ThemedText className={`${hasTopBanner ? "text-lg" : "text-2xl"} text-gray-200`}>
-              {`(${score?.batting?.score?.over ?? 0}/${score?.totalOvers ?? 0})`}
+              {isTestMatchView
+                ? `(${score?.batting?.score?.over ?? 0} ov · ${
+                    score?.test?.isStumps ? `Stumps, Day ${score?.test?.day || 1}` : `Day ${score?.test?.day || 1}`
+                  })`
+                : `(${score?.batting?.score?.over ?? 0}/${score?.totalOvers ?? 0})`}
             </ThemedText>
             {Boolean(score?.description) && (
               <ThemedText className={`${hasTopBanner ? "text-xs" : "text-sm"} text-gray-300 mt-0.5 text-center px-4`}>
@@ -2389,7 +2564,9 @@ export default function ScorerScreen() {
                 matchDetails?.status === MATCH_STATUS.SUPER_OVER ||
                 route.params?.isSuperOver
               );
-              const target = score?.target || (score?.lastInningScore !== undefined && score?.lastInningScore !== null ? Number(score.lastInningScore) + 1 : null);
+              const target = isTestMatchView
+                ? score?.test?.target || null // only the 4th innings of a Test is a chase
+                : score?.target || (score?.lastInningScore !== undefined && score?.lastInningScore !== null ? Number(score.lastInningScore) + 1 : null);
               if (!isChasing || !target) return null;
 
               const curRuns = Number(score?.batting?.score?.runs ?? 0);
@@ -2416,11 +2593,45 @@ export default function ScorerScreen() {
                     🎯 Target: {target}
                   </ThemedText>
                   <ThemedText style={{ fontSize: 12, color: "#f1f5f9", fontWeight: "500" }}>
-                    • Need {runsNeeded} {runsNeeded === 1 ? "run" : "runs"} in {ballsLeft} {ballsLeft === 1 ? "ball" : "balls"}
+                    • Need {runsNeeded} {runsNeeded === 1 ? "run" : "runs"}
+                    {isTestMatchView ? "" : ` in ${ballsLeft} ${ballsLeft === 1 ? "ball" : "balls"}`}
                   </ThemedText>
                 </View>
               );
             })()}
+            {isTestMatchView &&
+              ![MATCH_STATUS.MATCH_COMPLETED, MATCH_STATUS.MATCH_ENDED].includes(score?.matchCurrentStatus) && (
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                {[
+                  // Declaring needs an innings in play
+                  ...(score?.matchCurrentStatus !== MATCH_STATUS.INNINGS_I_ENDED && !score?.isInningsCompleted
+                    ? [{ label: "Declare", icon: "flag-outline", onPress: handleDeclareInnings }]
+                    : []),
+                  { label: "Stumps", icon: "moon-outline", onPress: handleStumps },
+                  { label: "Draw", icon: "remove-circle-outline", onPress: handleDrawMatch },
+                ].map((action) => (
+                  <TouchableOpacity
+                    key={action.label}
+                    onPress={action.onPress}
+                    activeOpacity={0.75}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      paddingHorizontal: 12,
+                      paddingVertical: 5,
+                      borderRadius: 14,
+                      backgroundColor: "rgba(0, 0, 0, 0.3)",
+                    }}
+                  >
+                    <Ionicons name={action.icon} size={13} color="#f1f5f9" />
+                    <ThemedText style={{ fontSize: 12, fontWeight: "600", color: "#f1f5f9" }}>
+                      {action.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
             {Boolean(score?.dls?.applied) && (
               <View
                 style={{
@@ -2741,7 +2952,9 @@ export default function ScorerScreen() {
                   <View style={styles.inningCompleteBadge}>
                     <Ionicons name="flag" size={22} color="#2563eb" />
                     <ThemedText style={styles.inningCompleteTitle}>
-                      {isSuperOver ? "Super Over Innings 1 Complete" : "Innings 1 Complete"}
+                      {isTestMatchView
+                        ? `Innings ${score?.currentInnings || 1} Complete`
+                        : isSuperOver ? "Super Over Innings 1 Complete" : "Innings 1 Complete"}
                     </ThemedText>
                   </View>
                   <ThemedText
@@ -2754,7 +2967,9 @@ export default function ScorerScreen() {
                   </ThemedText>
                   <TouchableOpacity
                     style={styles.endInningsMainBtn}
-                    onPress={() => handleStartInningsTwo()}
+                    onPress={() =>
+                      isTestMatchView ? setTestBreakModalVisible(true) : handleStartInningsTwo()
+                    }
                     activeOpacity={0.8}
                   >
                     <ThemedText style={styles.endInningsMainBtnText}>
@@ -3614,6 +3829,135 @@ export default function ScorerScreen() {
         </View>
       )}
 
+      {/* Test match: innings break (next innings, follow-on choice) */}
+      {testBreakModalVisible && isFocused && isTestMatchView && (() => {
+        const endedInnings = score?.currentInnings || 1;
+        const battingName = score?.batting?.battingTeam || "Batting side";
+        const otherName = score?.bowling?.teamName || "the other side";
+        const lead = Number(score?.test?.lead ?? 0);
+        const followOn = Boolean(score?.test?.followOnAvailable);
+        const declared = Boolean(score?.isDeclared);
+        const runs = score?.batting?.score?.runs ?? 0;
+        const wickets = score?.batting?.score?.wicket ?? 0;
+        // After the 3rd innings the side batting 4th needs the lead plus one.
+        const fourthTarget = endedInnings === 3 && lead >= 0 ? lead + 1 : null;
+        const standing =
+          endedInnings === 1
+            ? null
+            : lead > 0
+            ? `${battingName} lead by ${lead} run${lead === 1 ? "" : "s"}`
+            : lead < 0
+            ? `${battingName} trail by ${-lead} run${lead === -1 ? "" : "s"}`
+            : "Scores are level";
+        return (
+          <View style={styles.dialogOverlay} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.sheetBackdrop}
+              activeOpacity={1}
+              onPress={() => setTestBreakModalVisible(false)}
+            />
+            <View style={[styles.dialogCard, { backgroundColor: isDarkMode ? "#1f2937" : "#ffffff" }]}>
+              <TouchableOpacity
+                onPress={() => setTestBreakModalVisible(false)}
+                style={{ position: "absolute", top: 16, right: 16, padding: 6, zIndex: 10 }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color={isDarkMode ? "#9ca3af" : "#6b7280"} />
+              </TouchableOpacity>
+
+              <ThemedText style={{ fontSize: 22, fontWeight: "bold", marginBottom: 8, marginTop: 4, color: isDarkMode ? "#ffffff" : "#111827" }}>
+                {`🏏 End of Innings ${endedInnings}`}
+              </ThemedText>
+              <ThemedText style={{ fontSize: 15, color: isDarkMode ? "#d1d5db" : "#4b5563", textAlign: "center", marginBottom: 16 }}>
+                {`${battingName} ${runs}/${wickets}${declared ? " declared" : ""} in ${score?.batting?.score?.over || 0} overs.`}
+              </ThemedText>
+
+              {(standing || fourthTarget) && (
+                <View
+                  style={{
+                    width: "100%",
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: isDarkMode ? "#111827" : "#eff6ff",
+                    marginBottom: 20,
+                    alignItems: "center",
+                  }}
+                >
+                  {standing && (
+                    <ThemedText style={{ fontSize: 15, fontWeight: "600", color: isDarkMode ? "#93c5fd" : "#1d4ed8", textAlign: "center" }}>
+                      {standing}
+                    </ThemedText>
+                  )}
+                  {fourthTarget && (
+                    <>
+                      <ThemedText style={{ fontSize: 13, color: "#3b82f6", fontWeight: "600", marginTop: standing ? 10 : 0 }}>
+                        Target for {otherName}
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 28, fontWeight: "bold", color: isDarkMode ? "#60a5fa" : "#1d4ed8", marginTop: 4 }}>
+                        {fourthTarget} runs
+                      </ThemedText>
+                    </>
+                  )}
+                </View>
+              )}
+
+              {!declared && (
+                <TouchableOpacity
+                  onPress={() => {
+                    handleUndo();
+                    setTestBreakModalVisible(false);
+                  }}
+                  style={{ width: "100%", paddingVertical: 10, borderRadius: 8, marginBottom: 14, backgroundColor: isDarkMode ? "#451a1a" : "#fee2e2", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 4 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="arrow-undo-outline" size={15} color="#dc2626" />
+                  <ThemedText style={{ fontSize: 13, fontWeight: "600", color: "#dc2626" }}>
+                    Undo Last Ball
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+
+              {followOn ? (
+                <>
+                  <ThemedText style={{ fontSize: 14, color: isDarkMode ? "#d1d5db" : "#4b5563", textAlign: "center", marginBottom: 12 }}>
+                    {`${otherName} lead by ${-lead} — enough to make ${battingName} follow on (bat again straight away).`}
+                  </ThemedText>
+                  <TouchableOpacity
+                    onPress={() => handleStartNextTestInnings(true)}
+                    style={{ width: "100%", padding: 16, borderRadius: 12, backgroundColor: "#2563eb", alignItems: "center" }}
+                    activeOpacity={0.8}
+                  >
+                    <ThemedText style={{ color: "#ffffff", fontSize: 16, fontWeight: "bold" }}>
+                      {`Enforce Follow-on (${battingName} bat)`}
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleStartNextTestInnings(false)}
+                    style={{ width: "100%", padding: 14, borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: "#2563eb", alignItems: "center" }}
+                    activeOpacity={0.8}
+                  >
+                    <ThemedText style={{ color: "#2563eb", fontSize: 15, fontWeight: "600" }}>
+                      {`Don't Enforce (${otherName} bat)`}
+                    </ThemedText>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => handleStartNextTestInnings(false)}
+                  style={{ width: "100%", padding: 16, borderRadius: 12, backgroundColor: "#2563eb", alignItems: "center" }}
+                  activeOpacity={0.8}
+                >
+                  <ThemedText style={{ color: "#ffffff", fontSize: 16, fontWeight: "bold" }}>
+                    {`Select Innings ${endedInnings + 1} Openers`}
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+      })()}
+
       {/* Ending Innings Loading Indicator */}
       {isEndingInnings && (
         <View style={styles.sheetBackdrop}>
@@ -3623,7 +3967,7 @@ export default function ScorerScreen() {
               Ending Innings...
             </ThemedText>
             <ThemedText style={{ color: "#9ca3af", marginTop: 4, fontSize: 12 }}>
-              Setting up Innings 2 openers
+              {isTestMatchView ? "Setting up the next innings" : "Setting up Innings 2 openers"}
             </ThemedText>
           </View>
         </View>
@@ -3875,6 +4219,8 @@ export default function ScorerScreen() {
               </View>
             )}
 
+            {/* Single wicket has no super over: a tie is final */}
+            {!isSingleWicketData(score, matchDetails) && (
             <TouchableOpacity
               onPress={handleSuperOver}
               style={{
@@ -3891,6 +4237,7 @@ export default function ScorerScreen() {
                 Start Super Over
               </ThemedText>
             </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               onPress={handleDeclareTied}

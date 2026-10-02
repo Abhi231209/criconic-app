@@ -83,6 +83,16 @@ export default function WagonPitchViewerModal({
     fetchedMatch?.matchType === "box" ||
     fetchedMatch?.type === "box";
 
+  // Test match: up to four regular innings, never a super over
+  const isTestMatch =
+    matchDetails?.matchType === "test" ||
+    matchDetails?.type === "test" ||
+    score?.matchType === "test" ||
+    score?.type === "test" ||
+    fetchedMatch?.matchType === "test" ||
+    fetchedMatch?.type === "test" ||
+    fetchedMatch?.score?.matchType === "test";
+
   const batterStance = (
     selectedPlayer?.battingStyle ||
     selectedPlayer?.batting_style ||
@@ -277,7 +287,7 @@ export default function WagonPitchViewerModal({
         return {
           number: num,
           key: String(num),
-          label: i.label || (num >= 3 ? `Super Over ${num - 2}` : `Inning ${num}`),
+          label: i.label || (isTestMatch ? `Innings ${num}` : (num >= 3 ? `Super Over ${num - 2}` : `Inning ${num}`)),
           data: i.data || i,
         };
       });
@@ -297,7 +307,7 @@ export default function WagonPitchViewerModal({
             number: num,
             key: String(num),
             data: scoreObj[k],
-            isSuperOver: Boolean(scoreObj[k]?.isSuperOver || num >= 3),
+            isSuperOver: !isTestMatch && Boolean(scoreObj[k]?.isSuperOver || num >= 3),
           });
         }
       }
@@ -311,7 +321,7 @@ export default function WagonPitchViewerModal({
             number: num,
             key: String(num),
             data: inn,
-            isSuperOver: Boolean(inn?.isSuperOver || num >= 3),
+            isSuperOver: !isTestMatch && Boolean(inn?.isSuperOver || num >= 3),
           });
         }
       });
@@ -325,15 +335,39 @@ export default function WagonPitchViewerModal({
           number: num,
           key: String(num),
           data: null,
-          isSuperOver: num >= 3,
+          isSuperOver: !isTestMatch && num >= 3,
         });
       }
     });
 
     const sortedNums = Array.from(map.keys()).sort((a, b) => a - b);
     let soCount = 0;
+    // Test match: "<team> 1st Inn" / "<team> 2nd Inn", or "Innings N" when the team is unknown
+    const teamsList = targetSource?.teams || score?.teams || matchDetails?.teams || [];
+    const getTestTeamName = (data) => {
+      if (!data) return "";
+      if (data?.batting?.battingTeam) return data.batting.battingTeam;
+      const raw = data?.battingTeam?._id || data?.battingTeam || data?.battingId;
+      const team = teamsList.find((t) => String(t?.teamId || t?._id || t?.id) === String(raw));
+      return team?.title || team?.name || "";
+    };
+    const testTeamCounts = {};
     return sortedNums.map((num) => {
       const item = map.get(num);
+      if (isTestMatch) {
+        const teamName = getTestTeamName(item?.data);
+        if (teamName) testTeamCounts[teamName] = (testTeamCounts[teamName] || 0) + 1;
+        const teamInnNum = Number(item?.data?.teamInningsNumber) || (teamName ? testTeamCounts[teamName] : 0);
+        const label = teamName
+          ? `${teamName} ${teamInnNum === 2 ? "2nd" : "1st"} Inn${item?.data?.isFollowOn ? " (f/o)" : ""}`
+          : `Innings ${num}`;
+        return {
+          number: num,
+          key: String(num),
+          label,
+          data: item?.data || {},
+        };
+      }
       const isSO = item?.isSuperOver || num >= 3;
       if (isSO) soCount++;
       const label = isSO ? `Super Over ${soCount}` : `Inning ${num}`;
@@ -344,7 +378,7 @@ export default function WagonPitchViewerModal({
         data: item?.data || {},
       };
     });
-  }, [inningsList, fetchedMatch, matchDetails, score, allDeliveries]);
+  }, [inningsList, fetchedMatch, matchDetails, score, allDeliveries, isTestMatch]);
 
   // Innings in which the selected batsman actually batted
   const batsmanInnings = useMemo(() => {

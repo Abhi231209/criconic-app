@@ -39,13 +39,16 @@ export default function FullScoreCard({
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const [activeTab, setActiveTab] = useState("batting");
-  const [activeInning, setActiveInning] = useState(isChasing ? 2 : 1); // defaults to whichever innings is currently live
+  // A Test has up to four innings: default to the one currently in play.
+  const isTestMatch = score?.matchType === "test";
+  const liveInning = isTestMatch ? (Number(score?.currentInnings) || 1) : (isChasing ? 2 : 1);
+  const [activeInning, setActiveInning] = useState(liveInning); // defaults to whichever innings is currently live
 
   // Keep the displayed innings in sync with the match's live innings (e.g. when
   // the match transitions from 1st to 2nd innings while this screen is open).
   useEffect(() => {
-    setActiveInning(isChasing ? 2 : 1);
-  }, [isChasing]);
+    setActiveInning(liveInning);
+  }, [liveInning]);
   const [trackerModalVisible, setTrackerModalVisible] = useState(false);
   const [trackerModalTab, setTrackerModalTab] = useState("wagon");
   const [trackerModalRole, setTrackerModalRole] = useState("all");
@@ -174,7 +177,7 @@ export default function FullScoreCard({
       rawInning.isSuperOver ||
       rawInning.batting?.isSuperOver ||
       rawInning.isSuperOverInning ||
-      (typeof inningIdx === "number" && inningIdx >= 2)
+      (!isTestMatch && typeof inningIdx === "number" && inningIdx >= 2)
     );
 
     const battingTeamTitle =
@@ -223,6 +226,10 @@ export default function FullScoreCard({
       fallOfWickets: Array.isArray(rawInning.fallOfWickets) ? rawInning.fallOfWickets : [],
       inningNumber: rawInning.inningNumber || (inningIdx + 1),
       description: rawInning.description || "",
+      // Test match only
+      isDeclared: Boolean(rawInning.isDeclared),
+      isFollowOn: Boolean(rawInning.isFollowOn),
+      teamInningsNumber: rawInning.teamInningsNumber,
     };
   };
 
@@ -230,7 +237,9 @@ export default function FullScoreCard({
   const resolvedInningsList = (() => {
     if (Array.isArray(score?.inning) && score.inning.length > 0) {
       return score.inning.map((inn, idx) => {
-        const fallbackInning = idx === 0 ? (score?.innings_1 || score?.score?.innings_1) : (score?.innings_2 || score?.score?.innings_2);
+        const fallbackInning = isTestMatch
+          ? (score?.[`innings_${idx + 1}`] || score?.score?.[`innings_${idx + 1}`])
+          : idx === 0 ? (score?.innings_1 || score?.score?.innings_1) : (score?.innings_2 || score?.score?.innings_2);
         return fallbackInning ? { ...fallbackInning, ...inn } : inn;
       });
     }
@@ -239,11 +248,38 @@ export default function FullScoreCard({
     const list = [];
     if (raw1) list.push(raw1);
     if (raw2 && (raw2.totalRuns || raw2.totalOvers || raw2.batsman?.length || raw2.score?.runs)) list.push(raw2);
+    if (isTestMatch) {
+      [3, 4].forEach((n) => {
+        const rawN = score?.[`innings_${n}`] || score?.score?.[`innings_${n}`];
+        if (rawN && (rawN.totalRuns || rawN.totalOvers || rawN.batsman?.length || rawN.score?.runs)) list.push(rawN);
+      });
+    }
     if (list.length === 0 && score) list.push(score);
     return list;
   })();
 
+  // Test match: "<team> 1st Inn" / "<team> 2nd Inn", "(f/o)" for a follow-on innings
+  const getTestInningLabel = (data, idx) => {
+    const team = data?.batting?.battingTeam || `Innings ${idx + 1}`;
+    let teamInnNum = Number(data?.teamInningsNumber) || 0;
+    if (!teamInnNum) {
+      teamInnNum = resolvedInningsList
+        .slice(0, idx + 1)
+        .filter((inn, i) => getInningData(inn, "", i).batting.battingTeam === data?.batting?.battingTeam).length || 1;
+    }
+    return `${team} ${teamInnNum === 2 ? "2nd" : "1st"} Inn${data?.isFollowOn ? " (f/o)" : ""}`;
+  };
+
   const inningsList = resolvedInningsList.map((inn, idx) => {
+    if (isTestMatch) {
+      const fallbackTeamName = score?.teams?.[idx % 2]?.title || score?.teams?.[idx % 2]?.name || `Innings ${idx + 1}`;
+      const data = getInningData(inn, fallbackTeamName, idx);
+      return {
+        number: Number(inn?.inningsNumber) || idx + 1,
+        label: getTestInningLabel(data, idx),
+        data,
+      };
+    }
     const isSuperOver = Boolean(
       inn?.isSuperOver ||
       inn?.batting?.isSuperOver ||
@@ -263,7 +299,8 @@ export default function FullScoreCard({
     };
   });
 
-  const selectedInningObj = inningsList.find(i => i.number === activeInning) || inningsList[0];
+  const selectedInningObj = inningsList.find(i => i.number === activeInning) ||
+    (isTestMatch ? inningsList[inningsList.length - 1] : inningsList[0]);
   const currentInning = selectedInningObj?.data || emptyInning;
 
   const allScorecardPlayers = React.useMemo(() => {
@@ -395,6 +432,15 @@ export default function FullScoreCard({
                   </ThemedText>
                 </View>
               )}
+              {isTestMatch && selectedInningObj?.label ? (
+                <View className={`ml-2 px-2 py-0.5 rounded-full border ${
+                  isDark ? "bg-blue-950/80 border-blue-500/50" : "bg-blue-100 border-blue-300"
+                }`}>
+                  <ThemedText className={`text-xs font-semibold ${isDark ? "text-blue-300" : "text-blue-800"}`}>
+                    {selectedInningObj.label.replace(`${currentInning.batting.battingTeam} `, "")}
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"} mt-1`}>
               {currentInning.description}
@@ -405,7 +451,7 @@ export default function FullScoreCard({
             <ThemedText className={`text-2xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
               {currentInning.batting.score.runs}
               <ThemedText className={`text-lg ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                /{currentInning.batting.score.wicket}
+                /{currentInning.batting.score.wicket}{isTestMatch && currentInning.isDeclared ? "d" : ""}
               </ThemedText>
             </ThemedText>
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"} mt-1`}>
@@ -414,7 +460,7 @@ export default function FullScoreCard({
             <ThemedText className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
               CRR: {currentInning.batting.score.CRR}
             </ThemedText>
-            {activeInning === 1 && currentInning.batting.score.projectedScore && (
+            {!isTestMatch && activeInning === 1 && currentInning.batting.score.projectedScore && (
               <ThemedText className={`text-sm ${isDark ? "text-green-400" : "text-green-600"} mt-1`}>
                 Proj: {currentInning.batting.score.projectedScore}
               </ThemedText>
@@ -432,7 +478,7 @@ export default function FullScoreCard({
           } mb-4`}
         >
           <ThemedText className={`text-center font-bold text-sm ${isDark ? "text-emerald-300" : "text-emerald-800"}`}>
-            🏆 {description}
+            {isTestMatch && !score?.matchResult?.prompt ? "" : "🏆 "}{description}
           </ThemedText>
         </Animated.View>
       ) : null}

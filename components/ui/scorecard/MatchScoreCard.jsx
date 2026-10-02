@@ -1784,7 +1784,11 @@ export default function MatchScoreCard({
     */
 
     const currentInningScore = (score?.inning && score.inning[score.inning.length - 1]) || score;
-    const isChasing = score?.matchCurrentStatus === "INNINGS_II";
+    // Test match: four regular innings, no super overs; only the 4th innings is a chase.
+    const isTestMatch = score?.matchType === "test";
+    const isChasing = isTestMatch
+        ? Boolean(score?.test?.target || Number(score?.currentInnings) === 4)
+        : score?.matchCurrentStatus === "INNINGS_II";
 
     // Detect Super Over and match ended status
     const matchStatusRaw = String(score?.matchCurrentStatus || score?.status || "").toUpperCase();
@@ -1804,7 +1808,13 @@ export default function MatchScoreCard({
         score?.matchResult?.winner ||
         score?.matchResult?.winTeam ||
         score?.matchResult?.winningTeam ||
-        (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over"))
+        (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over")) ||
+        (isTestMatch && (
+            score?.matchResult?.isMatchDrawn ||
+            score?.matchResult?.isMatchTied ||
+            lowerPrompt.includes("match drawn") ||
+            lowerPrompt.includes("match tied")
+        ))
     );
 
     const isMatchEnded = Boolean(
@@ -1857,7 +1867,7 @@ export default function MatchScoreCard({
         )
     );
 
-    const isSuperOverMatch = Boolean(
+    const isSuperOverMatch = !isTestMatch && Boolean(
         score?.isSuperOver ||
         score?.score?.isSuperOver ||
         score?.inning?.some((inn) => inn?.isSuperOver) ||
@@ -1874,9 +1884,10 @@ export default function MatchScoreCard({
     const regularInnings = allInnings.filter(inn => !inn?.isSuperOver);
 
     // If superOverInnings has no isSuperOver tags but total innings > 2:
+    // (a Test has up to four regular innings and never a super over)
     let trueRegularInnings = regularInnings;
     let trueSuperOverInnings = superOverInnings;
-    if (superOverInnings.length === 0 && allInnings.length > 2) {
+    if (!isTestMatch && superOverInnings.length === 0 && allInnings.length > 2) {
         trueRegularInnings = allInnings.slice(0, 2);
         trueSuperOverInnings = allInnings.slice(2);
     }
@@ -1994,6 +2005,63 @@ export default function MatchScoreCard({
         }
     }
 
+    // Test match: one row per team with both its innings joined by " & " ("150/0d & 12/0"),
+    // "d" after a declared total and a bare number for an all-out total.
+    const testTeamScores = (() => {
+        if (!isTestMatch) return [];
+        const testInnings = allInnings.length > 0
+            ? allInnings
+            : [1, 2, 3, 4].map((n) => score?.[`innings_${n}`]).filter(Boolean);
+        const rows = [];
+        testInnings.forEach((inn) => {
+            const teamName = resolveTeamTitle(inn?.batting?.battingTeam || inn?.battingTeam, "Team");
+            const runs = inn?.batting?.score?.runs ?? inn?.score?.runs ?? inn?.totalRuns ?? 0;
+            const wkts = inn?.batting?.score?.wicket ?? inn?.score?.wicket ?? inn?.totalWickets ?? 0;
+            const over = inn?.batting?.score?.over ?? inn?.score?.over ?? inn?.totalOvers ?? "0.0";
+            const isEmpty = !Number(runs) && !Number(wkts) && !parseFloat(over);
+            const declared = Boolean(inn?.isDeclared);
+            const allOut = Boolean(inn?.isInningsCompleted ?? inn?.isCompleted) && !declared;
+            let row = rows.find((r) => r.teamName === teamName);
+            if (!row) {
+                row = { teamName, scores: [], overs: [] };
+                rows.push(row);
+            }
+            // Skip an innings that hasn't started yet, unless it's the team's only one.
+            if (isEmpty && row.scores.length > 0) return;
+            row.scores.push(declared ? `${runs}/${wkts}d` : allOut ? `${runs}` : `${runs}/${wkts}`);
+            row.overs.push(String(over));
+        });
+        if (rows.length === 0 && Array.isArray(score?.summary?.teams)) {
+            return score.summary.teams.map((t) => ({
+                teamName: t?.title || "Team",
+                score: String(t?.score || "-").replace(/-/g, "/"),
+                overs: `${t?.overs ?? "0.0"} Ov`,
+            }));
+        }
+        return rows.map((r) => ({
+            teamName: r.teamName,
+            score: r.scores.join(" & "),
+            overs: `${r.overs.join(" & ")} Ov`,
+        }));
+    })();
+
+    // Test match status line from the server prompts: lead / trail / target, follow-on, day or stumps.
+    const testStatusText = (() => {
+        if (!isTestMatch || isMatchEnded) return "";
+        const testInfo = score?.test || {};
+        const prompts = Array.isArray(score?.prompt) ? score.prompt : [];
+        const isTestLine = (p) =>
+            typeof p === "string" &&
+            /( lead by | trail by | need \d+ runs? to win|Scores level|following on|enforce the follow-on|^Stumps, Day |^Day \d+ of )/.test(p);
+        const lines = prompts.filter(isTestLine).slice(0, 4);
+        if (lines.length === 0 && score?.description) lines.push(score.description);
+        const dayText = testInfo.day
+            ? (testInfo.isStumps ? `Stumps, Day ${testInfo.day}` : `Day ${testInfo.day} of ${testInfo.days || testInfo.day}`)
+            : "";
+        if (dayText && !lines.some((l) => String(l).includes(`Day ${testInfo.day}`))) lines.push(dayText);
+        return lines.filter((l, i) => lines.indexOf(l) === i).join(" · ");
+    })();
+
     const tabs = useMemo(() => {
         const list = [];
 
@@ -2044,7 +2112,11 @@ export default function MatchScoreCard({
                     score={score} 
                     inning_I={score?.inning?.[0]} 
                     isChasing={isChasing}
-                    description={score?.description || (score?.prompt && score.prompt[0]) || ""}
+                    description={
+                        isTestMatch
+                            ? (score?.matchResult?.prompt || score?.description || (score?.prompt && score.prompt[0]) || "")
+                            : (score?.description || (score?.prompt && score.prompt[0]) || "")
+                    }
                     matchId={matchID}
                 />
             ),
@@ -2208,11 +2280,18 @@ export default function MatchScoreCard({
                                 : (score?.batting?.score?.over ? `${score.batting.score.over} Ov` : "0.0 Ov")
                         }
                         crr={isMatchNotStarted ? "" : score?.batting?.score?.CRR}
-                        projjectedScore={isMatchNotStarted ? "" : score?.batting?.score?.projectedScore}
+                        projjectedScore={isMatchNotStarted || isTestMatch ? "" : score?.batting?.score?.projectedScore}
                         matchTotalOver={score?.totalOvers || score?.matchTotalOver || 20}
                         powerplayOvers={score?.powerplayOvers}
                         matchStatus={getMatchStatusDisplay(score?.matchCurrentStatus) || (isMatchEnded ? "Ended" : (isMatchNotStarted ? "Upcoming" : "Live"))}
-                        result={isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || "")}
+                        result={
+                            isTestMatch
+                                ? (isMatchEnded ? (score?.matchResult?.prompt || rawPrompt) : "")
+                                : (isSuperOverEnded ? (superOverWinnerPrompt || rawPrompt) : (rawPrompt || ""))
+                        }
+                        isTest={isTestMatch}
+                        testTeams={isMatchNotStarted ? [] : testTeamScores}
+                        testStatus={testStatusText}
                         motm={isMatchEnded ? score?.mom : null}
                         isSuperOverEnded={isSuperOverEnded}
                         inning1={isMatchNotStarted ? null : inning1Overview}

@@ -325,6 +325,13 @@ function ScoreCard({
   const team1Id = isTeamBBattedFirst ? teamBId : teamAId;
   const team2Id = isTeamBBattedFirst ? teamAId : teamBId;
 
+  // Test match: each team bats twice and there are no super overs
+  const isTestMatch = Boolean(
+    liveScore?.matchType === "test" ||
+    combinedMatch?.type === "test" ||
+    combinedMatch?.matchType === "test"
+  );
+
   // Extract all innings (including Super Over)
   const allInnings = useMemo(() => {
     if (Array.isArray(liveScore?.inning) && liveScore.inning.length > 0) {
@@ -373,6 +380,31 @@ function ScoreCard({
         }
       }
 
+      // Test match: one line with the team's innings joined by " & " ("150/0d & 12/0"), no overs
+      if (isTestMatch && matched.length > 0) {
+        const parts = [];
+        matched.forEach((inn) => {
+          const b = inn?.batting || inn;
+          const runs = b?.score?.runs ?? inn?.totalRuns ?? b?.totalRuns ?? 0;
+          const wickets = b?.score?.wicket ?? inn?.totalWickets ?? b?.totalWickets ?? 0;
+          const over = b?.score?.over ?? inn?.totalOvers ?? b?.totalOvers ?? "0.0";
+          // Skip an innings that hasn't started yet, unless it's the team's only one
+          if (parts.length > 0 && !Number(runs) && !Number(wickets) && !parseFloat(over)) return;
+          const declared = Boolean(inn?.isDeclared);
+          const allOut = Boolean(inn?.isInningsCompleted ?? inn?.isCompleted) && !declared;
+          parts.push(declared ? `${runs}/${wickets}d` : allOut ? `${runs}` : `${runs}/${wickets}`);
+        });
+        const scoreText = parts.join(" & ");
+        return [
+          {
+            isSuperOver: false,
+            scoreText,
+            oversText: "",
+            label: scoreText,
+          },
+        ];
+      }
+
       if (matched.length > 0) {
         return matched.map((inn, idx) => {
           const b = inn?.batting || inn;
@@ -408,7 +440,7 @@ function ScoreCard({
             over: `${over}`,
             isSuperOver: false,
             scoreText: `${runs}/${wickets}`,
-            oversText: `${over} ov`,
+            oversText: isTestMatch ? "" : `${over} ov`,
             label: `${runs}/${wickets} (${over} ov)`,
           },
         ];
@@ -416,7 +448,7 @@ function ScoreCard({
 
       return [];
     },
-    [allInnings, liveScore, combinedMatch]
+    [allInnings, liveScore, combinedMatch, isTestMatch]
   );
 
   const team1Innings = useMemo(() => {
@@ -683,13 +715,15 @@ function ScoreCard({
                       >
                         {inn.scoreText}
                       </ThemedText>
-                      <ThemedText
-                        className={`text-[10px] ml-1 ${
-                          isDarkMode ? "text-gray-400" : "text-gray-500"
-                        }`}
-                      >
-                        ({inn.oversText})
-                      </ThemedText>
+                      {inn.oversText ? (
+                        <ThemedText
+                          className={`text-[10px] ml-1 ${
+                            isDarkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          ({inn.oversText})
+                        </ThemedText>
+                      ) : null}
                     </View>
                   ))}
                 </View>
@@ -755,13 +789,15 @@ function ScoreCard({
                       >
                         {inn.scoreText}
                       </ThemedText>
-                      <ThemedText
-                        className={`text-[10px] ml-1 ${
-                          isDarkMode ? "text-gray-400" : "text-gray-500"
-                        }`}
-                      >
-                        ({inn.oversText})
-                      </ThemedText>
+                      {inn.oversText ? (
+                        <ThemedText
+                          className={`text-[10px] ml-1 ${
+                            isDarkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          ({inn.oversText})
+                        </ThemedText>
+                      ) : null}
                     </View>
                   ))}
                 </View>

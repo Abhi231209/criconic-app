@@ -23,6 +23,9 @@ export default function MatchOverview({
   superOverSummary = "",
   superOverList = [],
   isChasing = false,
+  isTest = false,
+  testTeams = [],
+  testStatus = "",
 }) {
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
@@ -68,10 +71,11 @@ export default function MatchOverview({
     (inning2 && inning2?.score && inning2?.score !== "-")
   );
 
-  let projText = (!isInning2 && projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object" && String(projjectedScore) !== "0" && String(projjectedScore) !== "-") 
+  // A Test has no overs limit, so never project a score
+  let projText = (!isTest && !isInning2 && projjectedScore !== undefined && projjectedScore !== null && typeof projjectedScore !== "object" && String(projjectedScore) !== "0" && String(projjectedScore) !== "-") 
     ? String(projjectedScore) 
     : "";
-  if (!isInning2 && !projText && crrText && crrText !== "0.00" && matchStatus === "Live") {
+  if (!isTest && !isInning2 && !projText && crrText && crrText !== "0.00" && matchStatus === "Live") {
     const crrNum = parseFloat(crrText) || 0;
     const totalMatchOvers = Number(matchTotalOver || 20);
     if (crrNum > 0 && totalMatchOvers > 0) {
@@ -141,7 +145,9 @@ export default function MatchOverview({
       {/* Team name and match status */}
       <View className="flex-row justify-between items-center mb-2">
         <ThemedText className={`text-lg font-semibold flex-1 mr-2 ${textColor}`} numberOfLines={1}>
-          {hasSuperOver && inning1?.teamName && inning2?.teamName
+          {isTest && testTeams?.length >= 2
+            ? `${testTeams[0].teamName} vs ${testTeams[1].teamName}`
+            : hasSuperOver && inning1?.teamName && inning2?.teamName
             ? `${inning1.teamName} vs ${inning2.teamName}`
             : teamName}
         </ThemedText>
@@ -170,8 +176,31 @@ export default function MatchOverview({
         </View>
       </View>
 
-      {/* When match went to Super Over (live or ended): show Inning 1 & Inning 2 scores */}
-      {hasSuperOver && inning1 && inning2 ? (
+      {/* Test match: each team's innings joined with " & " (e.g. "150/0d & 12/0") */}
+      {isTest && testTeams?.length > 0 ? (
+        <View className="my-1.5 py-1 border-y border-dashed border-gray-200 dark:border-gray-700/60">
+          {testTeams.map((row, idx) => (
+            <View key={`${row.teamName}_${idx}`} className="flex-row justify-between items-center py-1">
+              <View className="flex-row items-center flex-1 mr-2">
+                <ThemedText className={`text-base font-semibold ${textColor}`} numberOfLines={1}>
+                  {row.teamName}
+                </ThemedText>
+                {isStatusLive && row.teamName === teamName ? (
+                  <ThemedText className="ml-1.5 text-xs">🏏</ThemedText>
+                ) : null}
+              </View>
+              <View className="items-end">
+                <ThemedText className={`text-xl font-bold ${textColor}`}>
+                  {row.score}
+                </ThemedText>
+                <ThemedText className={`text-xs font-medium ${labelColor}`}>
+                  ({row.overs})
+                </ThemedText>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : hasSuperOver && inning1 && inning2 ? (
         <View className="my-1.5 py-1 border-y border-dashed border-gray-200 dark:border-gray-700/60">
           {/* Inning 1 */}
           <View className="flex-row justify-between items-center py-1">
@@ -254,6 +283,19 @@ export default function MatchOverview({
           {crrText && projText ? "  •  " : ""}
           {projText ? <>PROJ. SCORE <ThemedText className="font-bold">{projText}</ThemedText></> : null}
         </ThemedText>
+      ) : null}
+
+      {/* Test match status: lead / trail / target, follow-on, day or stumps */}
+      {isTest && testStatus ? (
+        <View className={`mt-2.5 px-3 py-1.5 rounded-lg border self-start ${
+          isDark
+            ? "bg-blue-950/70 border-blue-500/40"
+            : "bg-blue-50 border-blue-300"
+        }`}>
+          <ThemedText className={`text-sm font-semibold ${isDark ? "text-blue-300" : "text-blue-800"}`}>
+            {testStatus}
+          </ThemedText>
+        </View>
       ) : null}
 
       {/* Match Result */}

@@ -600,7 +600,12 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
       {!isPreScorer && (
         <View style={{ marginTop: 8 }}>
           <ActionButton
-            title="End Inning"
+            // In a Test, ending an innings early is a declaration
+            title={
+              String(score?.matchType || matchDetails?.type || "").toLowerCase() === "test"
+                ? "Declare Innings"
+                : "End Inning"
+            }
             icon={Clock}
             variant="danger"
             isDarkMode={isDarkMode}

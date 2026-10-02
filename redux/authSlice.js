@@ -24,8 +24,14 @@ const authSlice = createSlice({
         name: payload.username || payload.name || null,
         is_logged_in: true,
       };
+      // The startup status check and profile updates re-dispatch login with a
+      // user object that has no token. Keep the token we have when it's the
+      // same user — dropping it logs the socket out and blocks scoring.
+      const isSameUser =
+        Boolean(normalizedUser._id) &&
+        String(state.user?._id || state.user?.id || "") === String(normalizedUser._id);
       state.user = normalizedUser;
-      state.token = payload.token || payload.access_token || null;
+      state.token = payload.token || payload.access_token || (isSameUser ? state.token : null);
       state.isAuthenticated = true;
       state.is_logged_in = true;
       state.loading = false;
@@ -62,6 +68,12 @@ const authSlice = createSlice({
       User.login(updatedUser);
     },
 
+    // New token for the logged-in user (restored from secure storage on launch,
+    // or returned after a password change).
+    setToken: (state, action) => {
+      state.token = action.payload || null;
+    },
+
     setLoading: (state, action) => {
       state.loading = action.payload;
     },
@@ -74,7 +86,7 @@ const authSlice = createSlice({
 });
 
 // Export actions
-export const { login, logout, updateUser, reset, setLoading, setError } = authSlice.actions;
+export const { login, logout, updateUser, setToken, reset, setLoading, setError } = authSlice.actions;
 
 // Export reducer
 export default authSlice.reducer;

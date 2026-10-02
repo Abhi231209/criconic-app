@@ -28,6 +28,7 @@ import TournamentUpgrade from "@/components/ui/profile/TournamentUpgrade";
 import PlayerRankings from "@/components/ui/PlayerRankings";
 import AddPlayer from "@/components/ui/create/AddPlayer";
 import CreateMatch from "@/components/ui/createMatch/CreateMatch";
+import SingleWicketSetup from "@/components/ui/createMatch/SingleWicketSetup";
 import SelectSquadScreen from "@/components/ui/createMatch/SelectSquadScreen";
 import SelectTeamScreen from "@/components/ui/createMatch/SelectTeamScreen";
 import MatchDetailsScreen from "@/components/ui/createMatch/MatchDetailsScreen";
@@ -122,6 +123,7 @@ function MainStack() {
       <Stack.Screen name={SCREENS.PlayerRankings} component={PlayerRankings} />
       <Stack.Screen name={SCREENS.AddPlayer} component={AddPlayer} />
       <Stack.Screen name={SCREENS.CreateMatch} component={CreateMatch} />
+      <Stack.Screen name={SCREENS.SingleWicketSetup} component={SingleWicketSetup} />
       <Stack.Screen
         name={SCREENS.SelectSquadScreen}
         component={SelectSquadScreen}

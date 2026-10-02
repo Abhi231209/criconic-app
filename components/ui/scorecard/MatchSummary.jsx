@@ -201,7 +201,10 @@ export default function MatchSummary({ matchData }) {
     ""
   ).toUpperCase();
 
-  const isSuperOverMatch = Boolean(
+  // Test match: no super overs; each team bats twice
+  const isTestMatch = matchData?.matchType === "test";
+
+  const isSuperOverMatch = !isTestMatch && Boolean(
     matchData?.isSuperOver ||
     matchData?.score?.isSuperOver ||
     superOverInnings.length > 0 ||
@@ -225,7 +228,13 @@ export default function MatchSummary({ matchData }) {
     matchData?.matchResult?.winner ||
     matchData?.matchResult?.winTeam ||
     matchData?.matchResult?.winningTeam ||
-    (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over"))
+    (lowerPrompt.includes("won by") || lowerPrompt.includes("won the match") || lowerPrompt.includes("win declare") || lowerPrompt.includes("won in super over") || lowerPrompt.includes("wins in super over")) ||
+    (isTestMatch && (
+      matchData?.matchResult?.isMatchDrawn ||
+      matchData?.matchResult?.isMatchTied ||
+      lowerPrompt.includes("match drawn") ||
+      lowerPrompt.includes("match tied")
+    ))
   );
 
   const isMatchEnded = (hasEndedStatus || hasWinningResult) &&
@@ -258,22 +267,71 @@ export default function MatchSummary({ matchData }) {
     }
   }
 
+  // Test match: each team's innings joined with " & " ("150/0d & 12/0"), "d" after a declared
+  // total and a bare number for an all-out total; falls back to the server's summary.teams.
+  const testTeamRows = (() => {
+    if (!isTestMatch) return [];
+    const resolveTitle = (raw) => {
+      const matched = (matchData?.teams || []).find((t) => String(t?.teamId || t?._id || t?.id) === String(raw));
+      return matched?.title || matched?.name || raw;
+    };
+    const testInnings = allInnings.length > 0
+      ? allInnings
+      : [1, 2, 3, 4].map((n) => matchData?.[`innings_${n}`]).filter(Boolean);
+    const rows = [];
+    testInnings.forEach((inn) => {
+      const teamName = resolveTitle(inn?.batting?.battingTeam || inn?.battingTeam) || "Team";
+      const runs = inn?.batting?.score?.runs ?? inn?.totalRuns ?? 0;
+      const wkts = inn?.batting?.score?.wicket ?? inn?.totalWickets ?? 0;
+      const over = inn?.batting?.score?.over ?? inn?.totalOvers ?? "0.0";
+      const isEmpty = !Number(runs) && !Number(wkts) && !parseFloat(over);
+      const declared = Boolean(inn?.isDeclared);
+      const allOut = Boolean(inn?.isInningsCompleted ?? inn?.isCompleted) && !declared;
+      let row = rows.find((r) => r.teamName === teamName);
+      if (!row) {
+        row = { teamName, scores: [], overs: [] };
+        rows.push(row);
+      }
+      // Skip an innings that hasn't started yet, unless it's the team's only one.
+      if (isEmpty && row.scores.length > 0) return;
+      row.scores.push(declared ? `${runs}/${wkts}d` : allOut ? `${runs}` : `${runs}/${wkts}`);
+      row.overs.push(String(over));
+    });
+    if (rows.length === 0 && Array.isArray(matchData?.summary?.teams)) {
+      return matchData.summary.teams.map((t) => ({
+        teamName: t?.title || "Team",
+        score: String(t?.score || "0-0").replace(/-/g, "/"),
+        overs: String(t?.overs ?? "0.0"),
+      }));
+    }
+    return rows.map((r) => ({
+      teamName: r.teamName,
+      score: r.scores.join(" & "),
+      overs: r.overs.join(" & "),
+    }));
+  })();
+  const testTeam1 = testTeamRows.find((r) => r.teamName === team1Name) || testTeamRows[0];
+  const testTeam2 = testTeamRows.find((r) => r.teamName === team2Name && r !== testTeam1) ||
+    testTeamRows.find((r) => r !== testTeam1);
+
   const matchInfo = {
     team1: {
-      name: team1Name,
-      score: `${team1Score?.runs ?? 0}/${team1Score?.wicket ?? 0}`,
-      overs: team1Score?.over || "0.0",
+      name: isTestMatch && testTeam1 ? testTeam1.teamName : team1Name,
+      score: isTestMatch ? (testTeam1?.score || "-") : `${team1Score?.runs ?? 0}/${team1Score?.wicket ?? 0}`,
+      overs: isTestMatch ? (testTeam1?.overs || "0.0") : (team1Score?.over || "0.0"),
       result: resultStr
     },
     team2: {
-      name: team2Name,
-      score: `${team2Score?.runs ?? 0}/${team2Score?.wicket ?? 0}`,
-      overs: team2Score?.over || "0.0",
+      name: isTestMatch && testTeam2 ? testTeam2.teamName : team2Name,
+      score: isTestMatch ? (testTeam2?.score || "-") : `${team2Score?.runs ?? 0}/${team2Score?.wicket ?? 0}`,
+      overs: isTestMatch ? (testTeam2?.overs || "0.0") : (team2Score?.over || "0.0"),
       result: ""
     },
     venue: matchData?.venue || matchData?.location || "Ground",
     date: matchData?.date ? new Date(matchData.date).toLocaleDateString() : "",
-    matchType: matchData?.matchType ? `${matchData.matchType} Match` : "Cricket Match"
+    matchType: isTestMatch
+      ? "Test Match"
+      : matchData?.matchType ? `${matchData.matchType} Match` : "Cricket Match"
   };
 
   const rawMom = isMatchEnded ? (matchData?.mom || matchData?.manOfTheMatch || null) : null;

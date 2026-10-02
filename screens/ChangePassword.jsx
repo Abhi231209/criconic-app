@@ -14,11 +14,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
+import { useDispatch } from "react-redux";
 import { request } from "@/utils/api";
+import { setToken } from "@/redux/authSlice";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import useAppTheme from "@/hooks/useAppTheme";
 
 export default function ChangePassword({ navigation }) {
+  const dispatch = useDispatch();
   const { theme, isDark } = useAppTheme();
   const isDarkMode = isDark;
 
@@ -61,6 +64,9 @@ export default function ChangePassword({ navigation }) {
       });
 
       if (res?.data?.success || res?.status === 200) {
+        // Changing the password ends every older login, including the token
+        // this app is using; the server returns a new one for this device.
+        if (res?.data?.access_token) dispatch(setToken(res.data.access_token));
         Alert.alert(
           "Success",
           res?.data?.message || "Password changed successfully!",

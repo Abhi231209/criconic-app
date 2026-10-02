@@ -2,13 +2,17 @@ import axios from "axios";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDeviceId } from "./index";
-import { store } from "@/redux/store";
+import { store, authTokenReady, selectAuthToken } from "@/redux/store";
+import { logout as logoutAction } from "@/redux/authSlice";
+import { getSecureItem, setSecureItem, deleteSecureItem } from "./secureStorage";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import User from "./User";
 import { BASE_URL, API_URL, apiUrl, SOCKET_URL } from "@/config";
 export { BASE_URL, API_URL, apiUrl, SOCKET_URL };
 
-const COOKIE_STORAGE_KEY = "@auth_cookie";
+const COOKIE_STORAGE_KEY = "criconic_session_cookie";
+// Where versions before SecureStore kept it; read once and migrated.
+const LEGACY_COOKIE_STORAGE_KEY = "@auth_cookie";
 let sessionCookie = null;
 let isCookieInitialized = false;
 
@@ -34,14 +38,21 @@ export const extractCookie = (setCookieHeader) => {
 };
 
 /**
- * Initializes the in-memory session cookie from AsyncStorage.
+ * Initializes the in-memory session cookie from secure storage.
  */
 export const initSessionCookie = async () => {
   try {
-    const saved = await AsyncStorage.getItem(COOKIE_STORAGE_KEY);
+    let saved = await getSecureItem(COOKIE_STORAGE_KEY);
+    if (!saved) {
+      saved = await AsyncStorage.getItem(LEGACY_COOKIE_STORAGE_KEY);
+      if (saved) {
+        await setSecureItem(COOKIE_STORAGE_KEY, saved);
+        await AsyncStorage.removeItem(LEGACY_COOKIE_STORAGE_KEY);
+      }
+    }
     if (saved) {
       sessionCookie = saved;
-      console.log("🍪 [API] Restored session cookie from AsyncStorage");
+      console.log("🍪 [API] Restored session cookie");
     }
   } catch (e) {
     console.warn("🍪 [API] Error loading cookie from storage:", e);
@@ -59,8 +70,8 @@ export const setSessionCookie = async (cookie) => {
   sessionCookie = cookie;
   isCookieInitialized = true;
   try {
-    await AsyncStorage.setItem(COOKIE_STORAGE_KEY, cookie);
-    console.log("🍪 [API] Stored session cookie to AsyncStorage");
+    await setSecureItem(COOKIE_STORAGE_KEY, cookie);
+    console.log("🍪 [API] Stored session cookie");
   } catch (e) {
     console.warn("🍪 [API] Error saving cookie to storage:", e);
   }
@@ -72,7 +83,8 @@ export const setSessionCookie = async (cookie) => {
 export const clearSessionCookie = async () => {
   sessionCookie = null;
   try {
-    await AsyncStorage.removeItem(COOKIE_STORAGE_KEY);
+    await deleteSecureItem(COOKIE_STORAGE_KEY);
+    await AsyncStorage.removeItem(LEGACY_COOKIE_STORAGE_KEY);
     console.log("🍪 [API] Cleared session cookie");
   } catch (e) {
     console.warn("🍪 [API] Error clearing cookie from storage:", e);
@@ -84,18 +96,11 @@ export const getSessionCookie = () => sessionCookie;
 /**
  * Current JWT for the logged-in user, or undefined when logged out.
  */
-export const getAuthToken = () => {
-  const state = store?.getState?.();
-  const user = state?.auth?.user || User.user;
-  return (
-    state?.auth?.token ||
-    user?.access_token ||
-    user?.token ||
-    User.user?.access_token ||
-    User.user?.token ||
-    undefined
-  );
-};
+export const getAuthToken = () =>
+  selectAuthToken(store?.getState?.()) ||
+  User.user?.access_token ||
+  User.user?.token ||
+  undefined;
 
 /**
  * Universal request function matching sports-arena website Api.js
@@ -116,6 +121,7 @@ export const request = async (
     if (!isCookieInitialized) {
       await initSessionCookie();
     }
+    await authTokenReady; // the saved token is back in the store
 
     const deviceId = await getDeviceId();
     const state = store?.getState?.();
@@ -208,6 +214,19 @@ export const request = async (
 
     console.warn(`[API] Error on ${endpoint}:`, errorMsg);
 
+    // The server's login check (isAuthenticated) rejected us: this login was
+    // ended elsewhere — logout, or a password change on another device. Log
+    // out locally so the app returns to the login screen (AppContent watches
+    // is_logged_in). Other 401s ("not allowed to do this") don't match.
+    if (
+      error?.response?.status === 401 &&
+      error.response.data?.error === "Unauthorized" &&
+      store.getState()?.auth?.is_logged_in
+    ) {
+      store.dispatch(logoutAction());
+      clearSessionCookie();
+    }
+
     if (errorAlert) {
       showGlobalAlert({
         title: "Notice",
@@ -230,6 +249,7 @@ export const upload = async (fileInput, folderName = "general") => {
     if (!isCookieInitialized) {
       await initSessionCookie();
     }
+    await authTokenReady; // the saved token is back in the store
     const formData = new FormData();
     const deviceId = await getDeviceId();
     const state = store?.getState?.();
@@ -367,9 +387,17 @@ export const authApi = {
     request("api/users/signup", { method: "POST", data }),
   register: (data) =>
     request("api/users/signup", { method: "POST", data }),
-  logout: async () => {
+  // Pass the token read *before* clearing local auth state, so the server can
+  // revoke it (callers dispatch logout first to update the UI immediately).
+  logout: async (token = getAuthToken()) => {
     try {
-      await request("api/logout", { method: "POST", errorAlert: false });
+      await request("api/logout", {
+        method: "POST",
+        errorAlert: false,
+        headers: token
+          ? { token, access_token: token, Authorization: `Bearer ${token}` }
+          : {},
+      });
     } finally {
       User.logout();
       await clearSessionCookie();

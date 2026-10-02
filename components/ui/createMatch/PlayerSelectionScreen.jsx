@@ -173,6 +173,8 @@ export default function PlayerSelectionScreen() {
 
   const [striker, setStriker] = useState(null);
   const [nonStriker, setNonStriker] = useState(null);
+  // Single wicket: one batter (no non-striker), and the other player bowls.
+  const [isSingleWicket, setIsSingleWicket] = useState(route.params?.matchType === "single_wicket");
   const [bowler, setBowler] = useState(null);
   const [selectedRole, setSelectedRole] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -180,6 +182,10 @@ export default function PlayerSelectionScreen() {
   const [openersCompleted, setOpenersCompleted] = useState(false);
   const [isStatusChecked, setIsStatusChecked] = useState(false);
   const [targetScore, setTargetScore] = useState(route.params?.targetScore || null);
+  // Test matches: the innings (1–4) these openers are for.
+  const [testInnings, setTestInnings] = useState(
+    route.params?.isTestMatch ? Number(route.params?.currentInnings) || null : null
+  );
   const isLeavingRef = useRef(false);
 
   // Settings Drawer State
@@ -322,8 +328,15 @@ export default function PlayerSelectionScreen() {
           m.currentInnings === 2 ||
           m.score?.currentInning === 2;
 
+        const isTestMatch = String(m.type || "").toLowerCase() === "test";
+        const isSingleWicketMatch = String(m.type || "").toLowerCase() === "single_wicket";
+        if (isSingleWicketMatch) setIsSingleWicket(true);
+        const testInn = m.currentInnings || 1;
+        if (isTestMatch) setTestInnings(testInn);
+
         if (
           isInningBreak &&
+          !isTestMatch &&
           !isSuperOverMatch &&
           route.params?.action !== "END_OF_INNINGS" &&
           !route.params?.isInningsTwo &&
@@ -340,7 +353,41 @@ export default function PlayerSelectionScreen() {
 
         if (isSuperOverMatch) {
           // Super Over: stay on selection screen until openers are submitted
-        } else if (isSecondInnings) {
+        } else if (isTestMatch && testInn > 1) {
+          // Test innings 2–4. The server has set up this innings (and its
+          // batting side) once the scorer started it.
+          const innObj = m.score?.[`innings_${testInn}`];
+          if (innObj?.isCompleted || (!isInningBreak && innObj?.batsman?.length)) {
+            // The innings has ended (the scorer offers the next one), or its
+            // openers are already picked.
+            setOpenersCompleted(!innObj?.isCompleted);
+            isLeavingRef.current = true;
+            navigation.replace(SCREENS.ScorerScreen, { ...route.params, matchId, currentInnings: testInn });
+            return;
+          }
+          setIsInningsTwo(true);
+          setStriker(null);
+          setNonStriker(null);
+          setBowler(null);
+          setOpenersCompleted(false);
+          // Only the 4th innings is a chase: the other side's total minus
+          // what this side has already scored, plus one.
+          if (testInn === 4) {
+            const batId = String(innObj?.battingTeam?._id || innObj?.battingTeam || "");
+            let own = 0;
+            let other = 0;
+            [1, 2, 3].forEach((n) => {
+              const inn = m.score?.[`innings_${n}`];
+              const id = String(inn?.battingTeam?._id || inn?.battingTeam || "");
+              if (!id) return;
+              if (id === batId) own += Number(inn?.totalRuns) || 0;
+              else other += Number(inn?.totalRuns) || 0;
+            });
+            setTargetScore(other - own + 1);
+          } else {
+            setTargetScore(null);
+          }
+        } else if (isSecondInnings && !isTestMatch) {
           setIsInningsTwo(true);
           // Clear any Inning 1 opener selections so Inning 2 openers can be selected fresh
           setStriker(null);
@@ -502,6 +549,12 @@ export default function PlayerSelectionScreen() {
 
           const apiBatPlayers = normalizeSquad(batTeam?.players || []);
           const apiBowlPlayers = normalizeSquad(bowlTeam?.players || []);
+
+          // Each single-wicket side is one player, so both picks are known.
+          if (isSingleWicketMatch) {
+            if (apiBatPlayers[0]) setStriker(apiBatPlayers[0]);
+            if (apiBowlPlayers[0]) setBowler(apiBowlPlayers[0]);
+          }
 
           const teamIds = [
             String(batTeam?.teamId?._id || batTeam?.teamId?.id || batTeam?.teamId || ""),
@@ -729,16 +782,21 @@ export default function PlayerSelectionScreen() {
   };
 
   const handleStartMatch = async () => {
-    if (!striker || !nonStriker || !bowler) {
-      Alert.alert("Selection Required", "Please select Striker, Non-Striker, and Opening Bowler.");
+    if (!striker || (!nonStriker && !isSingleWicket) || !bowler) {
+      Alert.alert(
+        "Selection Required",
+        isSingleWicket
+          ? "Please select the batter and the bowler."
+          : "Please select Striker, Non-Striker, and Opening Bowler."
+      );
       return;
     }
 
     const strikerId = getPlayerId(striker);
-    const nonStrikerId = getPlayerId(nonStriker);
+    const nonStrikerId = isSingleWicket ? null : getPlayerId(nonStriker);
     const bowlerId = getPlayerId(bowler);
 
-    if (strikerId === nonStrikerId) {
+    if (!isSingleWicket && strikerId === nonStrikerId) {
       Alert.alert("Invalid Selection", "Striker and Non-Striker cannot be the same player.");
       return;
     }
@@ -756,12 +814,17 @@ export default function PlayerSelectionScreen() {
               battingPosition: 1,
               isStrikeEnd: true,
             },
-            {
-              name: getPlayerName(nonStriker),
-              playerId: nonStrikerId,
-              battingPosition: 2,
-              isStrikeEnd: false,
-            },
+            // single wicket: the batter bats alone
+            ...(isSingleWicket
+              ? []
+              : [
+                  {
+                    name: getPlayerName(nonStriker),
+                    playerId: nonStrikerId,
+                    battingPosition: 2,
+                    isStrikeEnd: false,
+                  },
+                ]),
           ],
           bowler: {
             name: getPlayerName(bowler),
@@ -822,7 +885,7 @@ export default function PlayerSelectionScreen() {
         bowlingTeam,
         isInningsTwo,
         isSuperOver,
-        currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        currentInnings: testInnings || (isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1)),
         isWagonWheelEnabled,
         isPitchMapEnabled,
         tournamentId: route.params?.tournamentId || route.params?.tournamentID,
@@ -852,7 +915,7 @@ export default function PlayerSelectionScreen() {
         bowlingTeam,
         isInningsTwo,
         isSuperOver,
-        currentInnings: isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1),
+        currentInnings: testInnings || (isSuperOver ? (route.params?.currentInnings || 3) : (isInningsTwo ? 2 : 1)),
         isWagonWheelEnabled,
         isPitchMapEnabled,
         tournamentId: route.params?.tournamentId || route.params?.tournamentID,
@@ -1046,7 +1109,7 @@ export default function PlayerSelectionScreen() {
               {isSuperOver
                 ? "Select Players - Super Over"
                 : isInningsTwo
-                ? "Select Players - Innings 2"
+                ? `Select Players - Innings ${testInnings || 2}`
                 : "Select Players"}
             </ThemedText>
           </View>
@@ -1113,12 +1176,12 @@ export default function PlayerSelectionScreen() {
               {isSuperOver
                 ? "Batting Team Selection (Super Over)"
                 : isInningsTwo
-                ? "Batting Team Selection (Innings 2)"
+                ? `Batting Team Selection (Innings ${testInnings || 2})`
                 : "Batting Team Selection"}
             </ThemedText>
             
-            {renderSelectionButton('striker', striker, 'Striker')}
-            {renderSelectionButton('nonStriker', nonStriker, 'Non-Striker')}
+            {renderSelectionButton('striker', striker, isSingleWicket ? 'Batter' : 'Striker')}
+            {!isSingleWicket && renderSelectionButton('nonStriker', nonStriker, 'Non-Striker')}
           </View>
 
           <View className="mb-6">
@@ -1126,7 +1189,7 @@ export default function PlayerSelectionScreen() {
               {isSuperOver
                 ? "Bowling Team Selection (Super Over)"
                 : isInningsTwo
-                ? "Bowling Team Selection (Innings 2)"
+                ? `Bowling Team Selection (Innings ${testInnings || 2})`
                 : "Bowling Team Selection"}
             </ThemedText>
             
@@ -1152,12 +1215,12 @@ export default function PlayerSelectionScreen() {
                 ? isSuperOver
                   ? "Starting Super Over..."
                   : isInningsTwo
-                  ? "Starting Innings 2..."
+                  ? `Starting Innings ${testInnings || 2}...`
                   : "Starting Match..."
                 : isSuperOver
                 ? "Start Super Over"
                 : isInningsTwo
-                ? "Start Innings 2"
+                ? `Start Innings ${testInnings || 2}`
                 : "Start Match"}
             </ThemedText>
           </TouchableOpacity>

@@ -57,10 +57,13 @@ export default function MatchLive({ score }) {
     });
   };
 
+  // Test match: no overs limit, so no projections or required run rate
+  const isTestMatch = score?.matchType === "test";
+
   // Projected score & run rate calculation
   const runs = Number(score?.batting?.score?.runs || 0);
   const overStr = String(score?.batting?.score?.over || "0.0");
-  const totalOvers = Number(score?.totalOvers || score?.matchTotalOver || 20);
+  const totalOvers = isTestMatch ? 0 : Number(score?.totalOvers || score?.matchTotalOver || 20);
   const calculatedCrr = calculateCRR(runs, overStr);
   const effectiveCrr = (calculatedCrr && calculatedCrr !== "0.00") 
     ? calculatedCrr 
@@ -72,7 +75,7 @@ export default function MatchLive({ score }) {
     : (computedProjected ?? "-");
 
   // Inning 2 detection (chasing / second innings)
-  const isInning2 = Boolean(
+  const isInning2 = !isTestMatch && Boolean(
     score?.isChasing ||
     score?.matchCurrentStatus === "INNINGS_II" ||
     score?.currentInnings === 2 ||
@@ -131,6 +134,36 @@ export default function MatchLive({ score }) {
     balls: bObj.balls ?? 0,
     economy: bObj.eco ?? "0.00"
   };
+
+  // Test match: day / stumps and the batting side's lead, deficit or 4th-innings target
+  const testInfo = (isTestMatch && score?.test) || {};
+  const testDayText = testInfo.day
+    ? (testInfo.isStumps ? `Stumps, Day ${testInfo.day}` : `Day ${testInfo.day} of ${testInfo.days || testInfo.day}`)
+    : "";
+  const testTarget = isTestMatch ? Number(testInfo.target ?? score?.target) || 0 : 0;
+  const testNeed = testTarget > 0 ? Math.max(testTarget - runs, 0) : null;
+  const testLead = testInfo.lead !== undefined && testInfo.lead !== null ? Number(testInfo.lead) : null;
+  const testBattingTeam = score?.batting?.battingTeam || "Batting side";
+
+  // The server's prompt order differs for a Test, so take the last wicket from the fall of wickets
+  const fallOfWickets = Array.isArray(score?.fallOfWickets) ? score.fallOfWickets : [];
+  const lastFow = fallOfWickets[fallOfWickets.length - 1];
+  const lastWicketText = isTestMatch
+    ? (lastFow
+        ? `${resolvePlayerDisplayName(lastFow?.batsman, playerMap) || "Batter"} ${lastFow?.teamRuns ?? 0}/${fallOfWickets.length}`
+        : "None")
+    : (score?.prompt?.[2] || "None");
+
+  const renderTestRow = (label, value, valueClass) => (
+    <View className="flex-row justify-between items-center mb-2">
+      <ThemedText className={isDark ? "text-gray-400 text-sm" : "text-gray-600 text-sm"}>
+        {label}
+      </ThemedText>
+      <ThemedText className={`${valueClass || "text-blue-500"} font-bold text-base`}>
+        {value}
+      </ThemedText>
+    </View>
+  );
 
   const commentaryData = (Array.isArray(score?.commentary) ? score.commentary : []).map((c, idx) => ({
     over: c?.over || String(idx + 1),
@@ -382,7 +415,7 @@ export default function MatchLive({ score }) {
               P'ship: {score?.partnerships?.totalRuns ?? 0}({score?.partnerships?.balls ?? 0})
             </ThemedText>
             <ThemedText className={isDark ? "text-gray-400 text-xs" : "text-gray-500 text-xs"}>
-              Last Wkt: {score?.prompt?.[2] || "None"}
+              Last Wkt: {lastWicketText}
             </ThemedText>
           </View>
         </View>
@@ -445,8 +478,51 @@ export default function MatchLive({ score }) {
         </View>
       </View>
 
+      {/* Test match: day / stumps, lead or target, CRR (no projections) */}
+      {isTestMatch && (
+        <View className={`p-4 border-b ${
+          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        }`}>
+          <ThemedText className={`font-semibold text-center mb-3 ${
+            isDark ? "text-white" : "text-gray-900"
+          }`}>
+            Test Match
+          </ThemedText>
+
+          <View className={`rounded-lg p-4 ${
+            isDark ? "bg-gray-700" : "bg-gray-100"
+          }`}>
+            {testDayText ? renderTestRow(testInfo.isStumps ? "Close of play" : "Day", testDayText) : null}
+            {testNeed !== null ? (
+              <>
+                {renderTestRow("Target", testTarget)}
+                {renderTestRow(`${testBattingTeam} need`, `${testNeed} run${testNeed === 1 ? "" : "s"}`, "text-red-500")}
+              </>
+            ) : testLead !== null ? (
+              renderTestRow(
+                testLead > 0 ? `${testBattingTeam} lead by` : testLead < 0 ? `${testBattingTeam} trail by` : "Scores",
+                testLead === 0 ? "Level" : `${Math.abs(testLead)} run${Math.abs(testLead) === 1 ? "" : "s"}`,
+                testLead >= 0 ? "text-green-500" : "text-red-500"
+              )
+            ) : null}
+            {testInfo.isFollowOn ? renderTestRow("Follow-on", `${testBattingTeam} following on`, "text-amber-500") : null}
+            {testInfo.followOnAvailable ? renderTestRow("Follow-on", "Can be enforced", "text-amber-500") : null}
+            {renderTestRow("Current Run Rate (CRR)", `${effectiveCrr}*`, "text-green-500")}
+
+            {/* Server status line, when it adds something the rows above don't show */}
+            {score?.description && score.description !== testDayText && !/ lead by | trail by | need \d+ runs? to win|Scores level/.test(score.description) ? (
+              <ThemedText className={`text-xs text-center mt-2 ${
+                isDark ? "text-gray-400" : "text-gray-600"
+              }`}>
+                {score.description}
+              </ThemedText>
+            ) : null}
+          </View>
+        </View>
+      )}
+
       {/* Run Rate Projection (Inning 1 only) */}
-      {!isInning2 && (
+      {!isTestMatch && !isInning2 && (
         <View className={`p-4 border-b ${
           isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
         }`}>

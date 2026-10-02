@@ -17,6 +17,7 @@ const SCREENS = {
   CreateTournament: "CreateTournament",
   CreateTeam: "CreateTeam",
   CreateMatch: "CreateMatch",
+  SingleWicketSetup: "SingleWicketSetup",
   MyCricket: "MyCricket",
   TeamProfile: "TeamProfile",
   EditTeam: "EditTeam",

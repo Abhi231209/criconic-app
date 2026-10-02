@@ -58,27 +58,44 @@ export async function clearQueue(matchId) {
   }
 }
 
+// How long the server remembers applied action ids (see
+// server/models/ProcessedScoreAction.js). Within that window a replayed
+// action is recognised and skipped, so the queue never has to guess what the
+// server already has.
+export const SERVER_DEDUPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Purges actions created before or at minTimestamp (e.g. server match.updatedAt).
- * Stale actions that were already saved/applied to the database are removed so
- * they are never replayed upon screen load.
+ * Drops queued actions older than the server's de-duplication window: past
+ * that point the server no longer recognises them, so replaying one could
+ * score it twice. Ages are measured on this phone's own clock only — the old
+ * approach compared against the server's clock, and a phone running behind
+ * silently discarded balls that had never been sent.
  */
-export async function purgeStaleActions(matchId, minTimestamp) {
+export async function purgeExpiredActions(matchId, maxAgeMs = SERVER_DEDUPE_WINDOW_MS) {
   if (!matchId) return [];
   const queue = await loadQueue(matchId);
   if (!queue.length) return [];
 
+  const oldestAllowed = Date.now() - maxAgeMs;
   const filtered = queue.filter((item) => {
     const itemTs = item.createdAt || parseInt(item.actionId?.split("-")?.[0], 10);
-    if (!itemTs || isNaN(itemTs)) return false;
-    return itemTs > minTimestamp;
+    return !itemTs || isNaN(itemTs) || itemTs >= oldestAllowed;
   });
 
   if (filtered.length !== queue.length) {
     console.log(
-      `[offlineActionQueue] Purged ${queue.length - filtered.length} stale actions from queue for match ${matchId}`
+      `[offlineActionQueue] Dropped ${queue.length - filtered.length} expired actions for match ${matchId}`
     );
     await saveQueue(matchId, filtered);
   }
   return filtered;
 }
+
+/**
+ * Whether an action should stay queued and be retried later: it never reached
+ * the server (timeout/offline), the socket wasn't logged in yet (401), or the
+ * match was busy (503). Any other refusal is final — retrying it would only
+ * block every action queued behind it.
+ */
+export const isRetryableAck = (response) =>
+  !response || response.timedOut || response.status === 401 || response.status === 503;

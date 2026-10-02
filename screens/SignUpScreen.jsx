@@ -338,6 +338,8 @@ export default function SignUpScreen() {
             finalUser = {
               ...finalUser,
               ...loginRes.data.user,
+              // The token is next to `user` in the response, not inside it.
+              access_token: loginRes.data.access_token,
             };
           }
         } catch (loginErr) {

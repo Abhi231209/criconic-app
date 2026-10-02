@@ -19,7 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSelector, useDispatch } from "react-redux";
 import { logout as logoutAction } from "@/redux/authSlice";
 import { clearUser } from "@/redux/userSlice";
-import { authApi } from "@/utils/api";
+import { authApi, getAuthToken } from "@/utils/api";
 import User from "@/utils/User";
 import { getImageFullUrl } from "@/utils";
 import useAppTheme from "@/hooks/useAppTheme";
@@ -84,11 +84,12 @@ export default function CustomDrawer(props) {
 
         try {
           analytics.logLogout();
+          const token = getAuthToken(); // read before logoutAction clears it
           dispatch(logoutAction());
           dispatch(clearUser());
           User.logout();
           resetToAuth();
-          await authApi.logout();
+          await authApi.logout(token);
         } catch (e) {
           console.warn("[CustomDrawer] Logout error:", e);
         }

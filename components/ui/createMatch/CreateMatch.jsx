@@ -644,6 +644,31 @@ export default function CreateMatch() {
           </ThemedText>
         </View>
 
+        {/* Single wicket (player vs player); not available for tournaments yet */}
+        {!(selectedTournament || tournamentId) && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => {
+              isLeavingRef.current = true;
+              navigation.navigate(SCREENS.SingleWicketSetup);
+            }}
+            className={`flex-row items-center p-3.5 rounded-2xl mb-5 border ${
+              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+            }`}
+          >
+            <Ionicons name="person-outline" size={20} color="#2563EB" />
+            <View className="flex-1 ml-3">
+              <ThemedText className={`text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                Single Wicket
+              </ThemedText>
+              <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Player vs player — no teams needed
+              </ThemedText>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+          </TouchableOpacity>
+        )}
+
         {/* Team A Selection */}
         <TeamCard
           title="Team A"
