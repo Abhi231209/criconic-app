@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Modal,
   View,
@@ -9,10 +9,15 @@ import {
   useColorScheme,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from "react-native";
-import { X, Filter, BarChart2, ChevronRight } from "lucide-react-native";
+import { X, Filter, BarChart2, ChevronRight, Share2 } from "lucide-react-native";
+import { captureRef } from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
 import PitchMap, { LENGTH_ZONES } from "./PitchMap";
 import WagonWheel, { ZONES } from "./WagonWheel";
+import WagonShareCard from "./WagonShareCard";
 import { COLORS } from "@/theme/colors";
 import { matchesApi } from "@/utils/api";
 
@@ -74,6 +79,9 @@ export default function WagonPitchViewerModal({
   const [selectedOver, setSelectedOver] = useState("all"); // all or over number
   const [fetchedMatch, setFetchedMatch] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const shareCardRef = useRef(null);
 
   const isBoxCricket =
     matchDetails?.matchType === "box" ||
@@ -116,6 +124,7 @@ export default function WagonPitchViewerModal({
       setSelectedOver("all");
       setSelectedFacedBatsmanId("all");
       setPitchStanceFilter("all");
+      setShareVisible(false);
       const pId = initialPlayer?.playerId || initialPlayer?.id || initialPlayer?._id;
       if (currentResolvedTab === "wagon" && pId) {
         setSelectedBatsmanId(String(pId));
@@ -851,12 +860,89 @@ export default function WagonPitchViewerModal({
     return null;
   }, [selectedPlayer, selectedInning, allMatchInnings]);
 
+  // The selected batter's figures: scorecard numbers when we have them,
+  // otherwise what the tracked shots add up to.
+  const batterLine = useMemo(() => {
+    if (!selectedPlayer) return null;
+    const stats = activeBatsmanInningStats;
+    return {
+      runs: stats?.runs ?? selectedPlayer.runs ?? wagonStats.runs ?? 0,
+      balls: stats?.ballsFaced ?? stats?.balls ?? selectedPlayer.ballsFaced ?? selectedPlayer.balls ?? wagonStats.balls ?? 0,
+      fours: stats?.fours ?? selectedPlayer.fours ?? wagonStats.fours ?? 0,
+      sixes: stats?.sixes ?? selectedPlayer.sixes ?? wagonStats.sixes ?? 0,
+      sr: stats?.sr ?? selectedPlayer.sr ?? (wagonStats.balls ? ((wagonStats.runs / wagonStats.balls) * 100).toFixed(1) : "0.00"),
+    };
+  }, [selectedPlayer, activeBatsmanInningStats, wagonStats]);
+
+  // What the share card says about the wheel on screen
+  const shareCardProps = useMemo(() => {
+    const teams = fetchedMatch?.teams || matchDetails?.teams || score?.teams || [];
+    const matchTitle = teams
+      .slice(0, 2)
+      .map((t) => t?.shortName || t?.title || t?.name)
+      .filter(Boolean)
+      .join(" vs ");
+    const inningsLabel =
+      selectedInning !== "all"
+        ? allMatchInnings.find((i) => i.key === String(selectedInning))?.label || ""
+        : "";
+    const filterLabel =
+      { dots: "Dot balls only", singles: "1-3 runs only", fours: "Fours only", sixes: "Sixes only" }[shotFilter] || "";
+    const stats = batterLine && shotFilter === "all"
+      ? [
+          { label: "RUNS", value: batterLine.runs },
+          { label: "BALLS", value: batterLine.balls },
+          { label: "FOURS", value: batterLine.fours },
+          { label: "SIXES", value: batterLine.sixes },
+        ]
+      : [
+          { label: "RUNS", value: wagonStats.runs },
+          { label: "SHOTS", value: wagonStats.balls },
+          { label: "FOURS", value: wagonStats.fours },
+          { label: "SIXES", value: wagonStats.sixes },
+        ];
+    return {
+      playerName: selectedPlayer?.name || selectedPlayer?.username || selectedPlayer?.playerName || "",
+      matchTitle,
+      inningsLabel,
+      filterLabel,
+      stats,
+    };
+  }, [fetchedMatch, matchDetails, score, selectedInning, allMatchInnings, shotFilter, batterLine, wagonStats, selectedPlayer]);
+
+  // Turn the share card into a PNG and hand it to the system share sheet
+  const handleShareWagon = async () => {
+    if (!shareCardRef.current || isSharing) return;
+    setIsSharing(true);
+    try {
+      const uri = await captureRef(shareCardRef, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: "image/png",
+          dialogTitle: `Share ${shareCardProps.playerName || "match"} wagon wheel`,
+          UTI: "public.png",
+        });
+      } else {
+        Alert.alert("Notice", "Sharing is not available on this device.");
+      }
+    } catch (error) {
+      console.warn("Wagon wheel share error:", error);
+      Alert.alert("Sharing Failed", "Could not create the image. Please try again.");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent={true}
-      onRequestClose={onClose}
+      onRequestClose={() => (shareVisible ? setShareVisible(false) : onClose?.())}
     >
       <View style={styles.modalOverlay}>
         <SafeAreaView
@@ -901,6 +987,28 @@ export default function WagonPitchViewerModal({
             </View>
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {/* image capture isn't available on the web build */}
+              {Platform.OS !== "web" && activeTab === "wagon" && filteredShots.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setShareVisible(true)}
+                  accessibilityLabel="Share wagon wheel"
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 5,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 8,
+                    backgroundColor: isDarkMode ? "#334155" : "#E2E8F0",
+                  }}
+                >
+                  <Share2 size={12} color={isDarkMode ? "#38BDF8" : "#0284C7"} />
+                  <Text style={{ fontSize: 11, fontWeight: "600", color: isDarkMode ? "#38BDF8" : "#0284C7" }}>
+                    Share
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               {Boolean(selectedPlayer && onViewProfile) && (
                 <TouchableOpacity
                   onPress={() => {
@@ -1032,7 +1140,7 @@ export default function WagonPitchViewerModal({
                     numberOfLines={1}
                   >
                     {activeTab === "wagon"
-                      ? `${activeBatsmanInningStats?.runs ?? selectedPlayer.runs ?? wagonStats.runs ?? 0} runs (${activeBatsmanInningStats?.ballsFaced ?? activeBatsmanInningStats?.balls ?? selectedPlayer.ballsFaced ?? selectedPlayer.balls ?? wagonStats.balls ?? 0}b) • 4s: ${activeBatsmanInningStats?.fours ?? selectedPlayer.fours ?? wagonStats.fours ?? 0} • 6s: ${activeBatsmanInningStats?.sixes ?? selectedPlayer.sixes ?? wagonStats.sixes ?? 0} • SR: ${activeBatsmanInningStats?.sr ?? selectedPlayer.sr ?? (wagonStats.balls ? ((wagonStats.runs / wagonStats.balls) * 100).toFixed(1) : "0.00")}`
+                      ? `${batterLine.runs} runs (${batterLine.balls}b) • 4s: ${batterLine.fours} • 6s: ${batterLine.sixes} • SR: ${batterLine.sr}`
                       : `${selectedPlayer.over ?? "0.0"} ov • ${selectedPlayer.runsGiven ?? selectedPlayer.runs ?? 0} runs • ${selectedPlayer.wicketsTaken ?? selectedPlayer.wickets ?? 0} wkts • ECO: ${selectedPlayer.eco ?? "0.00"}`}
                   </Text>
                 </View>
@@ -2286,6 +2394,44 @@ export default function WagonPitchViewerModal({
             )}
             <View style={{ height: 30 }} />
           </ScrollView>
+
+          {/* Share preview: the card exactly as it will be sent */}
+          {shareVisible && (
+            <View style={styles.shareOverlay}>
+              <ScrollView
+                contentContainerStyle={styles.shareScroll}
+                showsVerticalScrollIndicator={false}
+              >
+                <WagonShareCard
+                  ref={shareCardRef}
+                  {...shareCardProps}
+                  shots={filteredShots}
+                  isBoxCricket={isBoxCricket}
+                  batterStance={batterStance}
+                />
+                <View style={styles.shareActions}>
+                  <TouchableOpacity
+                    style={styles.shareCloseBtn}
+                    onPress={() => setShareVisible(false)}
+                  >
+                    <Text style={styles.shareCloseText}>Close</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.shareSendBtn}
+                    onPress={handleShareWagon}
+                    disabled={isSharing}
+                  >
+                    {isSharing ? (
+                      <ActivityIndicator size="small" color="#06251F" />
+                    ) : (
+                      <Share2 size={16} color="#06251F" />
+                    )}
+                    <Text style={styles.shareSendText}>Share Image</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          )}
         </SafeAreaView>
       </View>
     </Modal>
@@ -2303,6 +2449,51 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     overflow: "hidden",
+  },
+  shareOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(2, 6, 14, 0.94)",
+  },
+  shareScroll: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+  },
+  shareActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+    width: 340,
+  },
+  shareCloseBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  shareCloseText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#E2E8F0",
+  },
+  shareSendBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: "#4DD6C7",
+  },
+  shareSendText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#06251F",
   },
   header: {
     flexDirection: "row",
