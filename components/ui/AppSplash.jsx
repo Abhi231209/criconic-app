@@ -32,6 +32,8 @@ const WORDMARK_RATIO = 900 / 220;
 
 // How far the wordmark moves up to make room for the details below it.
 const LIFT = 84;
+// Inner (dashed) ring radius, as a share of the backdrop's half-width.
+const INNER_RING = 0.52;
 const TRACK_WIDTH = 168;
 const BALL = 14;
 
@@ -98,7 +100,7 @@ function Backdrop({ size, style }) {
           <Circle
             cx={c}
             cy={c}
-            r={c * 0.52}
+            r={c * INNER_RING}
             stroke={TEAL}
             strokeOpacity={0.2}
             strokeWidth={1.5}
@@ -168,6 +170,9 @@ export default function AppSplash({ fontsLoaded, ready, userName, onDone }) {
   const logoWidth = Math.min(width * 0.6, 300);
   const logoHeight = logoWidth / WORDMARK_RATIO;
   const backdropSize = Math.min(Math.max(width, 320) * 1.25, 620);
+  // The features sit just outside the dashed ring, which is centred on the
+  // lifted wordmark.
+  const featuresTop = height / 2 - LIFT + (backdropSize / 2) * INNER_RING + 22;
 
   // Read through a ref so a re-render of the parent can't restart the exit.
   const onDoneRef = useRef(onDone);
@@ -300,7 +305,9 @@ export default function AppSplash({ fontsLoaded, ready, userName, onDone }) {
                 Live Cricket Scoring & Tournaments
               </ThemedText>
             </Rise>
+          </View>
 
+          <View style={[styles.details, { top: featuresTop }]}>
             <View style={styles.features}>
               {FEATURES.map((feature, index) => {
                 const Icon = feature.material ? MaterialCommunityIcons : Ionicons;
@@ -373,7 +380,6 @@ const styles = StyleSheet.create({
   features: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 30,
   },
   feature: {
     width: 96,
