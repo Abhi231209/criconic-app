@@ -16,6 +16,7 @@ import useAppTheme from "@/hooks/useAppTheme";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSocket } from "@/contexts/SocketContext";
 import User from "@/utils/User";
+import useWatchMatch from "@/hooks/useWatchMatch";
 
 const ACTION_SHEET_SNAP_POINTS = ["72%", "88%"];
 
@@ -41,6 +42,7 @@ function ScoreCard({
   onDeleteSuccess,
 }) {
   const effectiveMatchId = matchId || match?._id || match?.id || match?.matchId;
+  useWatchMatch(effectiveMatchId);
   const cachedData = effectiveMatchId ? MATCH_CACHE.get(String(effectiveMatchId)) : null;
   const hasExistingData = Boolean(match?.teams?.length || match?.score || match?.title || cachedData);
 

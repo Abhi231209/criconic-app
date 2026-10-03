@@ -32,6 +32,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
+import { useSelector } from "react-redux";
 import ThemedText from "../custom/ThemedText";
 import AppKeyboardAwareScrollView from "../custom/AppKeyboardAwareScrollView";
 import SCREENS from "@/screens";
@@ -139,6 +140,8 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const navigation = useNavigation();
   const C = isDarkMode ? COLORS.dark : COLORS.light;
   const { emit, isConnected } = useSocket();
+  const authUser = useSelector((state) => state.auth?.user);
+  const myUserId = String(authUser?._id || authUser?.id || "");
 
   const [expandedSections, setExpandedSections] = useState({
     player: !isPreScorer,
@@ -160,6 +163,29 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   const [organizerResults, setOrganizerResults] = useState([]);
   const [isSearchingOrganizer, setIsSearchingOrganizer] = useState(false);
   const [addingOrganizerId, setAddingOrganizerId] = useState(null);
+  const [organizers, setOrganizers] = useState([]);
+  const [isLoadingOrganizers, setIsLoadingOrganizers] = useState(false);
+  const [removingOrganizerId, setRemovingOrganizerId] = useState(null);
+
+  const loadOrganizers = useCallback(async () => {
+    if (!matchId) return;
+    setIsLoadingOrganizers(true);
+    try {
+      const res = await matchesApi.getOrganizers(matchId);
+      if (res?.data?.success && Array.isArray(res.data.data)) {
+        setOrganizers(res.data.data);
+      }
+    } catch (err) {
+      console.warn("[MatchSetting] loading organizers failed:", err);
+    } finally {
+      setIsLoadingOrganizers(false);
+    }
+  }, [matchId]);
+
+  // Fetched when the section is opened, so it's current each time.
+  useEffect(() => {
+    if (expandedSections.organizers) loadOrganizers();
+  }, [expandedSections.organizers, loadOrganizers]);
 
   const searchOrganizerCandidates = useCallback(async (text) => {
     if (!text || text.trim().length < 2) {
@@ -190,6 +216,7 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         Alert.alert("Added", res.data.message || `${user?.username || "Player"} can now score this match`);
         setOrganizerQuery("");
         setOrganizerResults([]);
+        loadOrganizers();
       } else {
         Alert.alert("Couldn't add organizer", res?.data?.message || "Please try again.");
       }
@@ -198,6 +225,42 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     } finally {
       setAddingOrganizerId(null);
     }
+  };
+
+  const removeOrganizer = async (user) => {
+    const userId = String(user?._id || "");
+    setRemovingOrganizerId(userId);
+    try {
+      const res = await matchesApi.removeOrganizer(matchId, userId);
+      if (res?.data?.success) {
+        setOrganizers((prev) => prev.filter((o) => String(o._id) !== userId));
+        if (userId === myUserId) {
+          Alert.alert("Removed", "You can no longer score this match.");
+          onClose?.();
+        }
+      } else {
+        Alert.alert("Couldn't remove organizer", res?.data?.message || "Please try again.");
+        loadOrganizers();
+      }
+    } catch (err) {
+      Alert.alert("Couldn't remove organizer", err?.response?.data?.message || "Please try again.");
+    } finally {
+      setRemovingOrganizerId(null);
+    }
+  };
+
+  const handleRemoveOrganizer = (user) => {
+    const isSelf = String(user?._id) === myUserId;
+    Alert.alert(
+      isSelf ? "Stop scoring this match?" : "Remove organizer?",
+      isSelf
+        ? "You won't be able to score or change this match any more."
+        : `${user?.username || "This player"} won't be able to score or change this match any more.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => removeOrganizer(user) },
+      ]
+    );
   };
 
   const loadConfigs = useCallback(async () => {
@@ -588,10 +651,55 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   // Anyone who can already score this match (creator, existing organizer,
   // tournament organizer, or an admin/super admin — see
   // isUserMatchOrganizer server-side) can grant scoring access to someone
-  // else by adding them here.
+  // else by adding them here, or take it away from a co-scorer. The match
+  // creator can't be removed; tournament organizers aren't listed because
+  // their access comes from the tournament.
   const renderOrganizerSettings = () => (
     <View style={styles.sectionGroup}>
       <ThemedText className="font-normal text-xs" style={[styles.sectionHint, { color: C.textSecondary }]}>
+        People who can score this match.
+        {matchDetails?.tournament ? " Organizers of its tournament can always score it too." : ""}
+      </ThemedText>
+      {isLoadingOrganizers && organizers.length === 0 && (
+        <ThemedText className="text-xs" style={{ color: C.textSecondary, marginBottom: 8 }}>
+          Loading...
+        </ThemedText>
+      )}
+      {organizers.map((user) => {
+        const userId = String(user?._id);
+        const isSelf = userId === myUserId;
+        return (
+          <View
+            key={userId}
+            style={[
+              styles.settingRow,
+              { borderBottomColor: C.divider, alignItems: "center" },
+            ]}
+          >
+            <View style={styles.settingText}>
+              <ThemedText className="font-semibold text-sm" style={{ color: C.text }}>
+                {user?.username || "Player"}
+                {isSelf ? " (you)" : ""}
+              </ThemedText>
+              {user?.isCreator && (
+                <ThemedText className="font-normal text-xs" style={{ color: C.textSecondary, marginTop: 2 }}>
+                  Match creator
+                </ThemedText>
+              )}
+            </View>
+            {!user?.isCreator && (
+              <ActionButton
+                title={removingOrganizerId === userId ? "Removing..." : "Remove"}
+                variant="ghost"
+                isDarkMode={isDarkMode}
+                disabled={removingOrganizerId === userId}
+                onPress={() => handleRemoveOrganizer(user)}
+              />
+            )}
+          </View>
+        );
+      })}
+      <ThemedText className="font-normal text-xs" style={[styles.sectionHint, { color: C.textSecondary, marginTop: 12 }]}>
         Add another person who can score this match — search by name.
       </ThemedText>
       <TextInput

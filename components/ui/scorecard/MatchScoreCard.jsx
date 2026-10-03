@@ -41,6 +41,7 @@ import { getMatchStatusDisplay } from "@/utils/Common";
 import User from "@/utils/User";
 import MatchPlayerCardModal from "../card/MatchPlayerCardModal";
 import { loadOfflineMatch } from "@/utils/offlineMatch";
+import useWatchMatch from "@/hooks/useWatchMatch";
 
 export default function MatchScoreCard({
     matchID: matchIDProp,
@@ -59,6 +60,7 @@ export default function MatchScoreCard({
         route.params?.matchDetails?.id ||
         route.params?.match?._id ||
         route.params?.match?.id;
+    useWatchMatch(matchID);
     const colorScheme = useColorScheme();
     const isDarkMode = colorScheme === 'dark';
     

@@ -612,8 +612,12 @@ export const matchesApi = {
     request(`api/matches/${matchId}/settings`, { method: "POST", data }),
   goLive: (data) =>
     request("api/matches/public/go-live", { method: "POST", data }),
+  getOrganizers: (matchId) =>
+    request(`api/matches/${matchId}/organizers`, { method: "GET" }),
   addOrganizer: (matchId, userId) =>
     request(`api/matches/${matchId}/organizers`, { method: "POST", data: { userId } }),
+  removeOrganizer: (matchId, userId) =>
+    request(`api/matches/${matchId}/organizers/${userId}`, { method: "DELETE" }),
 };
 
 

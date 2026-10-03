@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   View,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -26,6 +27,17 @@ export default function AppAlertModal({
   onCancel,
 }) {
   const { isDark } = useAppTheme();
+
+  // On web, react-native-web appends each Modal's portal <div> to <body> once,
+  // on mount, so modals stack by mount order rather than by when they were
+  // shown. This alert stays mounted, so drawers opened later (e.g. RightDrawer)
+  // would cover it. Remount it each time it opens so its portal lands last.
+  const [webPortalKey, setWebPortalKey] = useState(0);
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible && Platform.OS === "web") setWebPortalKey((k) => k + 1);
+  }
 
   const handleConfirm = () => {
     if (onConfirm) {
@@ -87,6 +99,7 @@ export default function AppAlertModal({
 
   return (
     <Modal
+      key={Platform.OS === "web" ? webPortalKey : undefined}
       transparent
       visible={visible}
       animationType="fade"

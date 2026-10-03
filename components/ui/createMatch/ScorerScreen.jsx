@@ -53,6 +53,7 @@ import {
   saveSnapshot,
 } from "@/utils/offlineActionQueue";
 import { applyAction, replayQueue, prepareServerScore } from "@/utils/offlineScoreEngine";
+import useWatchMatch from "@/hooks/useWatchMatch";
 
 // A response from the match API that really is a match (a failed request
 // comes back as `{ success: false, message }`).
@@ -141,6 +142,7 @@ export default function ScorerScreen() {
     route.params?.matchDetails?.id ||
     route.params?.match?._id ||
     route.params?.match?.id;
+  useWatchMatch(matchID);
 
   console.log("[ScorerScreen] Resolved matchID:", matchID, "| route.params keys:", Object.keys(route.params || {}));
 
