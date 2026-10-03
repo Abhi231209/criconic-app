@@ -12,10 +12,15 @@ import {
   Alert,
   ActivityIndicator,
   BackHandler,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getTrackingDefaults, saveTrackingDefault } from "@/utils/trackingDefaults";
+import { MatchSettingEnum } from "@/utils/Common";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
@@ -143,6 +148,18 @@ export default function MatchDetailsScreen() {
       ).toUpperCase().includes("KNOCK")
         ? "Knockout"
         : "League Match"),
+    recordWagonWheel: Boolean(
+      route.params?.isWagonWheelEnabled ??
+      route.params?.recordWagonWheel ??
+      route.params?.matchDetails?.config?.recordWagonWheel ??
+      false
+    ),
+    recordPitchMap: Boolean(
+      route.params?.isPitchMapEnabled ??
+      route.params?.recordPitchMap ??
+      route.params?.matchDetails?.config?.recordPitchMap ??
+      false
+    ),
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -164,6 +181,39 @@ export default function MatchDetailsScreen() {
   // default (the saved match, or the user picking them here).
   const oversChosenRef = useRef(Boolean(route.params?.overs));
 
+  // Load tracking defaults for new matches if not explicitly passed
+  useEffect(() => {
+    (async () => {
+      try {
+        const defaults = await getTrackingDefaults();
+        const storedWW = matchId ? await AsyncStorage.getItem(`@criconic_ww_${matchId}`) : null;
+        const storedPM = matchId ? await AsyncStorage.getItem(`@criconic_pm_${matchId}`) : null;
+
+        setMatchDetails((prev) => ({
+          ...prev,
+          recordWagonWheel:
+            route.params?.isWagonWheelEnabled !== undefined
+              ? Boolean(route.params.isWagonWheelEnabled)
+              : route.params?.recordWagonWheel !== undefined
+              ? Boolean(route.params.recordWagonWheel)
+              : storedWW !== null
+              ? storedWW === "true"
+              : prev.recordWagonWheel ?? defaults.wagonWheel ?? false,
+          recordPitchMap:
+            route.params?.isPitchMapEnabled !== undefined
+              ? Boolean(route.params.isPitchMapEnabled)
+              : route.params?.recordPitchMap !== undefined
+              ? Boolean(route.params.recordPitchMap)
+              : storedPM !== null
+              ? storedPM === "true"
+              : prev.recordPitchMap ?? defaults.pitchMap ?? false,
+        }));
+      } catch (err) {
+        console.warn("[MatchDetailsScreen] Error loading tracking defaults:", err);
+      }
+    })();
+  }, [matchId]);
+
   // New limited-overs match: start from the default in Settings → Scoring.
   useEffect(() => {
     if (route.params?.overs || route.params?.matchType === "single_wicket") return;
@@ -181,15 +231,29 @@ export default function MatchDetailsScreen() {
           const m = res?.data;
           if (m) {
             setFetchedMatch(m);
+            const isLimitedOvers = m.type !== "test";
+            const hasValidOvers = !isLimitedOvers || Number(m.totalOvers) > 0;
+            const hasLocation = Boolean(m.location?.trim() || m.address?.trim());
+            const isDetailsIncomplete = !hasValidOvers || !hasLocation;
+
             if (
               m.status &&
               m.status !== MATCH_STATUS.MATCH_CREATED &&
-              m.status !== MATCH_STATUS.MATCH_SCHEDULED
+              m.status !== MATCH_STATUS.MATCH_SCHEDULED &&
+              !(m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED && isDetailsIncomplete)
             ) {
               isLeavingRef.current = true;
               const target = matchRedirectBasedOnStatus(matchId, m.status);
               navigation.replace(target.screen, target.params);
               return;
+            }
+
+            if (m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED && isDetailsIncomplete) {
+              matchesApi
+                .updateMatch(matchId, {
+                  updateField: { status: MATCH_STATUS.MATCH_CREATED },
+                })
+                .catch(() => {});
             }
             if (m.teams && m.teams.length >= 2) {
               if (!teamA) setTeamA({ name: m.teams[0].title, _id: m.teams[0].teamId, id: m.teams[0].teamId });
@@ -201,6 +265,14 @@ export default function MatchDetailsScreen() {
             if (m.type) handleInputChange("matchType", m.type);
             if (m.config?.testDays) handleInputChange("testDays", m.config.testDays);
             if (m.ballType) handleInputChange("ballType", m.ballType);
+            if (m.config?.recordWagonWheel !== undefined) {
+              const ww = m.config.recordWagonWheel;
+              handleInputChange("recordWagonWheel", typeof ww === "boolean" ? ww : !!ww?.active);
+            }
+            if (m.config?.recordPitchMap !== undefined) {
+              const pm = m.config.recordPitchMap;
+              handleInputChange("recordPitchMap", typeof pm === "boolean" ? pm : !!pm?.active);
+            }
             const fetchedLoc = isValidLocation(m.location)
               ? m.location
               : isValidLocation(m.address)
@@ -306,7 +378,7 @@ export default function MatchDetailsScreen() {
       short: isTestMatch ? "Format" : "Overs",
     },
     { key: "venue", title: "Date & Venue", short: "Venue" },
-    { key: "conditions", title: "Ball & Pitch", short: "Ball & Pitch" },
+    { key: "conditions", title: "Ball, Pitch & Tracking", short: "Ball & Pitch" },
   ];
   const sectionIndex = Math.max(0, sections.findIndex((s) => s.key === sectionKey));
   const section = sections[sectionIndex];
@@ -341,21 +413,57 @@ export default function MatchDetailsScreen() {
     goToSection(sectionIndex + 1);
   };
 
+  const autoSaveDraftDetails = async () => {
+    if (!matchId) return;
+    try {
+      const existingStatus = fetchedMatch?.status || MATCH_STATUS.MATCH_CREATED;
+      const updatePayload = {
+        type: matchDetails.matchType,
+        ballType: matchDetails.ballType,
+        pitchType: matchDetails.pitchType,
+        status: existingStatus,
+        config: {
+          recordWagonWheel: Boolean(matchDetails.recordWagonWheel),
+          recordPitchMap: Boolean(matchDetails.recordPitchMap),
+          ...(isTestMatch ? { testDays: Number(matchDetails.testDays) || 5 } : {}),
+        },
+        ...(isTestMatch
+          ? { testDays: Number(matchDetails.testDays) || 5 }
+          : matchDetails.overs
+          ? {
+              totalOvers: Number(matchDetails.overs),
+              powerplayOvers: isSingleWicket ? 0 : Number(matchDetails.powerplay || 0),
+            }
+          : {}),
+      };
+      if (matchDetails.location?.trim()) {
+        updatePayload.location = matchDetails.location.trim();
+      }
+      if (matchDetails.locationId?.trim()) {
+        updatePayload.locationId = matchDetails.locationId.trim();
+      }
+      if (isTournamentMatch && matchDetails.roundType) {
+        updatePayload.roundType = matchDetails.roundType;
+        updatePayload.round = matchDetails.roundType;
+        updatePayload.stage = matchDetails.roundType;
+      }
+      await matchesApi.updateMatch(matchId, { updateField: updatePayload });
+    } catch (e) {
+      console.warn("[MatchDetailsScreen] auto-save draft on back error:", e);
+    }
+  };
+
   const handleBack = () => {
     if (sectionIndex > 0) {
       goToSection(sectionIndex - 1);
       return;
-    }
-    if (matchId && matchDetails.location?.trim()) {
-      saveMatchDetails(MATCH_STATUS.MATCH_DETAILS_ENTERED).catch((e) =>
-        console.warn("[MatchDetailsScreen] auto-save on back error:", e)
-      );
     }
     confirmLeavePreScore({
       navigation,
       route,
       onLeave: () => {
         isLeavingRef.current = true;
+        autoSaveDraftDetails().catch(() => {});
       },
     });
   };
@@ -453,6 +561,24 @@ export default function MatchDetailsScreen() {
     });
   };
 
+  const handleToggleWagonWheel = (val) => {
+    handleInputChange("recordWagonWheel", val);
+    saveTrackingDefault("wagonWheel", val);
+    if (matchId) {
+      AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordWagonWheel: val } }).catch(() => {});
+    }
+  };
+
+  const handleTogglePitchMap = (val) => {
+    handleInputChange("recordPitchMap", val);
+    saveTrackingDefault("pitchMap", val);
+    if (matchId) {
+      AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val)).catch(() => {});
+      matchesApi.updateMatch(matchId, { config: { recordPitchMap: val } }).catch(() => {});
+    }
+  };
+
   const handleDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
@@ -538,6 +664,11 @@ export default function MatchDetailsScreen() {
         pitchType: matchDetails.pitchType,
         startDate,
         status: targetStatus,
+        config: {
+          recordWagonWheel: Boolean(matchDetails.recordWagonWheel),
+          recordPitchMap: Boolean(matchDetails.recordPitchMap),
+          ...(isTestMatch ? { testDays: Number(matchDetails.testDays) || 5 } : {}),
+        },
         // A Test has no overs limit; the server stores 0 for both.
         ...(isTestMatch
           ? { testDays: Number(matchDetails.testDays) || 5 }
@@ -618,6 +749,10 @@ export default function MatchDetailsScreen() {
           teams,
           pitchType: matchDetails.pitchType,
           ballType: matchDetails.ballType,
+          config: {
+            recordWagonWheel: Boolean(matchDetails.recordWagonWheel),
+            recordPitchMap: Boolean(matchDetails.recordPitchMap),
+          },
         };
         if (route.params?.tournamentId || route.params?.tournamentID) {
           dataToSend.tournamentID =
@@ -693,7 +828,18 @@ export default function MatchDetailsScreen() {
       teamB,
       teamASquad,
       teamBSquad,
-      matchDetails,
+      matchDetails: {
+        ...matchDetails,
+        config: {
+          ...matchDetails?.config,
+          recordWagonWheel: Boolean(matchDetails.recordWagonWheel),
+          recordPitchMap: Boolean(matchDetails.recordPitchMap),
+        },
+        recordWagonWheel: Boolean(matchDetails.recordWagonWheel),
+        recordPitchMap: Boolean(matchDetails.recordPitchMap),
+      },
+      isWagonWheelEnabled: Boolean(matchDetails.recordWagonWheel),
+      isPitchMapEnabled: Boolean(matchDetails.recordPitchMap),
       fromMatchDetails: true,
       returnScreen: route.params?.returnScreen,
       tournamentId: route.params?.tournamentId || route.params?.tournamentID,
@@ -1562,6 +1708,70 @@ export default function MatchDetailsScreen() {
                 {renderPitchTypeOption("matting", "Matting", matchDetails.pitchType === "matting")}
                 {renderPitchTypeOption("astroturf", "AstroTurf", matchDetails.pitchType === "astroturf")}
                 {renderPitchTypeOption("mud_rough", "Rough / Soil", matchDetails.pitchType === "mud_rough")}
+              </View>
+            </View>
+
+            {/* Visual Tracking Options: Wagon Wheel & Pitch Map */}
+            <View className="mb-6">
+              <ThemedText className="text-lg font-semibold mb-1 text-gray-900 dark:text-white">
+                Visual Tracking Options
+              </ThemedText>
+              <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Enable interactive shot and delivery tracking during scoring
+              </ThemedText>
+
+              {/* Wagon Wheel Toggle Card */}
+              <View
+                className={`p-4 rounded-xl mb-3 flex-row items-center justify-between border ${
+                  isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                }`}
+              >
+                <View className="flex-row items-center flex-1 mr-3">
+                  <View className="w-10 h-10 rounded-full items-center justify-center mr-3 bg-blue-100 dark:bg-blue-900/40">
+                    <MaterialCommunityIcons name="compass-outline" size={22} color="#2563EB" />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText className="text-base font-semibold text-gray-900 dark:text-white">
+                      Wagon Wheel
+                    </ThemedText>
+                    <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Record batter shot zones and boundary directions
+                    </ThemedText>
+                  </View>
+                </View>
+                <Switch
+                  value={Boolean(matchDetails.recordWagonWheel)}
+                  onValueChange={handleToggleWagonWheel}
+                  trackColor={{ false: isDarkMode ? "#4B5563" : "#D1D5DB", true: "#2563EB" }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              {/* Pitch Map Toggle Card */}
+              <View
+                className={`p-4 rounded-xl flex-row items-center justify-between border ${
+                  isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                }`}
+              >
+                <View className="flex-row items-center flex-1 mr-3">
+                  <View className="w-10 h-10 rounded-full items-center justify-center mr-3 bg-emerald-100 dark:bg-emerald-900/40">
+                    <MaterialCommunityIcons name="target" size={22} color="#10B981" />
+                  </View>
+                  <View className="flex-1">
+                    <ThemedText className="text-base font-semibold text-gray-900 dark:text-white">
+                      Pitch Map
+                    </ThemedText>
+                    <ThemedText className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Record bowling lengths, line, and ball pitch landing points
+                    </ThemedText>
+                  </View>
+                </View>
+                <Switch
+                  value={Boolean(matchDetails.recordPitchMap)}
+                  onValueChange={handleTogglePitchMap}
+                  trackColor={{ false: isDarkMode ? "#4B5563" : "#D1D5DB", true: "#10B981" }}
+                  thumbColor="#FFFFFF"
+                />
               </View>
             </View>
           </>

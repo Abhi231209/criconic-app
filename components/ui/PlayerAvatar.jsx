@@ -9,11 +9,16 @@ const PlayerAvatar = ({ player, size = 40, onPress, style }) => {
   const isDarkMode = colorScheme === 'dark';
 
   const rawImgUri =
+    player?.teamLogo ||
+    player?.logo ||
+    player?.teamImage ||
     player?.profileImg ||
     player?.profileImage ||
     player?.image ||
     player?.avatar ||
     player?.photo ||
+    player?.raw?.teamLogo ||
+    player?.raw?.logo ||
     player?.raw?.profileImg ||
     player?.raw?.profileImage ||
     player?.raw?.image ||
