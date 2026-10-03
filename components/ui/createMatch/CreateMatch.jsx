@@ -413,7 +413,7 @@ export default function CreateMatch() {
       <TouchableOpacity
         onPress={() => handleTeamSelection(teamType)}
         activeOpacity={0.85}
-        className={`p-5 rounded-2xl items-center justify-center border ${
+        className={`px-3 py-4 rounded-2xl items-center justify-center border ${
           team
             ? isDarkMode
               ? "bg-gray-800 border-gray-700 shadow-md shadow-black/30"
@@ -422,7 +422,7 @@ export default function CreateMatch() {
             ? "bg-gray-800/40 border-dashed border-gray-700"
             : "bg-blue-50/40 border-dashed border-blue-300"
         }`}
-        style={{ minHeight: 130 }}
+        style={{ minHeight: 140 }}
       >
         {team ? (
           <View className="items-center">
@@ -454,7 +454,7 @@ export default function CreateMatch() {
             <View className="mt-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-500/20">
               <ThemedText className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
                 {squad.length > 0
-                  ? `${squad.length} Players Selected`
+                  ? `${squad.length} Players`
                   : "Squad Pending"}
               </ThemedText>
             </View>
@@ -546,7 +546,7 @@ export default function CreateMatch() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         className="flex-1 px-4 pt-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 24 }}
       >
         {/* Tournament Info Banner / Status Chip */}
         {selectedTournament || tournamentId ? (
@@ -669,42 +669,44 @@ export default function CreateMatch() {
           </TouchableOpacity>
         )}
 
-        {/* Team A Selection */}
-        <TeamCard
-          title="Team A"
-          team={teamA}
-          squad={teamASquad}
-          teamType="teamA"
-        />
+        {/* Team A vs Team B, side by side so the screen needs no scroll */}
+        <View className="flex-row items-center">
+          <TeamCard
+            title="Team A"
+            team={teamA}
+            squad={teamASquad}
+            teamType="teamA"
+          />
 
-        {/* Electric VS Badge Divider */}
-        <View className="items-center my-4">
-          <LinearGradient
-            colors={["#2563EB", "#7C3AED"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="w-12 h-12 rounded-full items-center justify-center border-2 border-white dark:border-gray-900"
-            style={{
-              shadowColor: "#2563EB",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.4,
-              shadowRadius: 6,
-              elevation: 5,
-            }}
-          >
-            <ThemedText className="font-black text-sm text-white tracking-widest">
-              VS
-            </ThemedText>
-          </LinearGradient>
+          {/* Electric VS Badge Divider */}
+          <View className="items-center mx-2 mt-6">
+            <LinearGradient
+              colors={["#2563EB", "#7C3AED"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              className="w-10 h-10 rounded-full items-center justify-center border-2 border-white dark:border-gray-900"
+              style={{
+                shadowColor: "#2563EB",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4,
+                shadowRadius: 6,
+                elevation: 5,
+              }}
+            >
+              <ThemedText className="font-black text-sm text-white tracking-widest">
+                VS
+              </ThemedText>
+            </LinearGradient>
+          </View>
+
+          {/* Team B Selection */}
+          <TeamCard
+            title="Team B"
+            team={teamB}
+            squad={teamBSquad}
+            teamType="teamB"
+          />
         </View>
-
-        {/* Team B Selection */}
-        <TeamCard
-          title="Team B"
-          team={teamB}
-          squad={teamBSquad}
-          teamType="teamB"
-        />
 
         {/* Status / Guidance Pill */}
         {!isReady && (
@@ -738,12 +740,19 @@ export default function CreateMatch() {
           </View>
         )}
 
-        {/* Continue Button */}
+      </ScrollView>
+
+      <View
+        className={`px-4 py-3 border-t ${
+          isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
+        }`}
+      >
+        {/* Next: on to match details */}
         <TouchableOpacity
           onPress={handleContinue}
           disabled={!isReady || isCreating}
           activeOpacity={0.88}
-          className="mt-8 rounded-xl overflow-hidden"
+          className="rounded-xl overflow-hidden"
           style={{
             shadowColor: "#2563EB",
             shadowOffset: { width: 0, height: 4 },
@@ -776,14 +785,14 @@ export default function CreateMatch() {
                   : "text-gray-200"
               }`}
             >
-              {isCreating ? "Creating Match..." : "Proceed to Match Details"}
+              {isCreating ? "Creating Match..." : "Next: Match Details"}
             </ThemedText>
             {isReady && !isCreating && (
               <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
             )}
           </LinearGradient>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
 
       {/* Match Type Selection Modal */}
       <Modal
