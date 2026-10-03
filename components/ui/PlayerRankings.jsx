@@ -1152,7 +1152,7 @@ export default function PlayerRankings() {
               }}
             >
               <Ionicons
-                name="sparkles-outline"
+                name="podium-outline"
                 size={14}
                 color="#3B82F6"
                 style={{ marginRight: 6 }}
@@ -1600,7 +1600,7 @@ export default function PlayerRankings() {
                           )}
                           {pickerType === "state" && (
                             <Ionicons
-                              name={isAll ? "sparkles" : "map-outline"}
+                              name={isAll ? "globe-outline" : "map-outline"}
                               size={15}
                               color={
                                 isSelected
@@ -1616,7 +1616,7 @@ export default function PlayerRankings() {
                           )}
                           {pickerType === "district" && (
                             <Ionicons
-                              name={isAll ? "sparkles" : "location-outline"}
+                              name={isAll ? "globe-outline" : "location-outline"}
                               size={15}
                               color={
                                 isSelected

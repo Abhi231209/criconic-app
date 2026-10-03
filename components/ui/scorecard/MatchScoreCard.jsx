@@ -15,7 +15,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Keyboard
+  Keyboard,
+  DeviceEventEmitter
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -31,12 +32,15 @@ import { useSocket } from "@/contexts/SocketContext";
 import { matchesApi, request } from "@/utils/api";
 import MatchFullCommentary from "./MatchFullCommentry";
 import CurrentSquad from "./CurrentSquad";
+import MatchCharts from "./MatchCharts";
+import MatchAnalysis from "./MatchAnalysis";
 import MatchLive from "./MatchLive";
 import MatchVideoPlayer from "./MatchVideoPlayer";
 import ThemedText from "../custom/ThemedText";
 import { getMatchStatusDisplay } from "@/utils/Common";
 import User from "@/utils/User";
 import MatchPlayerCardModal from "../card/MatchPlayerCardModal";
+import { loadOfflineMatch } from "@/utils/offlineMatch";
 
 export default function MatchScoreCard({
     matchID: matchIDProp,
@@ -1225,7 +1229,46 @@ export default function MatchScoreCard({
     );
 
     const [loading, setLoading] = useState(!hasInitialData);
+    // The server couldn't be reached for this match (no connection, or it
+    // answered with an error); whatever is on screen is this phone's own copy.
+    const [loadFailed, setLoadFailed] = useState(false);
     const prevMatchIDRef = useRef(matchID);
+
+    // Loads the match and its score. If the server gives nothing usable, or
+    // this phone holds scoring that hasn't been uploaded yet (so the server is
+    // behind it), the copy saved by the scorer on this phone is shown instead.
+    const loadMatchAndScore = useCallback(async () => {
+        if (!matchID) return;
+        const isUsable = (payload) =>
+            Boolean(payload) && typeof payload === "object" && payload.success !== false;
+        try {
+            const [matchRes, scoreRes] = await Promise.all([
+                matchesApi.getMatchById(matchID).catch(() => null),
+                matchesApi.getMatchScore(matchID).catch(() => null),
+            ]);
+            const matchData = matchRes?.match || matchRes?.data || matchRes;
+            const scoreData = scoreRes?.data?.data || scoreRes?.data;
+            const matchOk = isUsable(matchData);
+            const scoreOk = isUsable(scoreData);
+            const saved = await loadOfflineMatch(matchID).catch(() => null);
+            const useSaved = Boolean(saved?.score) && ((!matchOk && !scoreOk) || saved.pending > 0);
+
+            if (matchOk || scoreOk || useSaved) {
+                setScore(prev => ({
+                    ...prev,
+                    ...(matchOk ? matchData : {}),
+                    ...(scoreOk ? scoreData : {}),
+                    ...(useSaved ? { ...(matchOk ? {} : saved.match || {}), ...saved.score } : {}),
+                }));
+            }
+            setLoadFailed(!matchOk && !scoreOk);
+        } catch (err) {
+            console.log('Error fetching match by id:', err);
+            setLoadFailed(true);
+        } finally {
+            setLoading(false);
+        }
+    }, [matchID]);
 
     useEffect(() => {
         if (!matchID) {
@@ -1255,24 +1298,8 @@ export default function MatchScoreCard({
         prevMatchIDRef.current = matchID;
 
         // Fetch primary match and score data immediately
-        Promise.all([
-            matchesApi.getMatchById(matchID).catch(() => null),
-            matchesApi.getMatchScore(matchID).catch(() => null),
-        ])
-            .then(([matchRes, scoreRes]) => {
-                const matchData = matchRes?.match || matchRes?.data || matchRes;
-                const scoreData = scoreRes?.data?.data || scoreRes?.data;
-                if (matchData || scoreData) {
-                    setScore(prev => ({
-                        ...prev,
-                        ...(matchData && typeof matchData === "object" ? matchData : {}),
-                        ...(scoreData && typeof scoreData === "object" ? scoreData : {}),
-                    }));
-                }
-                setLoading(false);
-            })
-            .catch(err => console.log('Error fetching match by id:', err))
-            .finally(() => setLoading(false));
+        setLoadFailed(false);
+        loadMatchAndScore();
 
         // Fetch secondary head-to-head and recent form in background without blocking screen render
         matchesApi.getHeadToHead(matchID)
@@ -1295,6 +1322,19 @@ export default function MatchScoreCard({
             })
             .catch(() => {});
     }, [matchID]);
+
+    // Load again once the connection is back after a load that didn't get
+    // through, and after scoring saved on this phone has been uploaded.
+    useEffect(() => {
+        if (isConnected && loadFailed) loadMatchAndScore();
+    }, [isConnected]);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener("OFFLINE_SCORES_SYNCED", () => {
+            loadMatchAndScore();
+        });
+        return () => sub.remove();
+    }, [loadMatchAndScore]);
 
     // Start animations on component mount
 
@@ -2122,6 +2162,20 @@ export default function MatchScoreCard({
             ),
         });
 
+        // Charts tab: run progression, runs per over and partnerships
+        list.push({
+            id: "charts",
+            label: "Charts",
+            content: <MatchCharts score={score} />,
+        });
+
+        // Analysis tab: wagon wheel and pitch map for the whole match
+        list.push({
+            id: "analysis",
+            label: "Analysis",
+            content: <MatchAnalysis score={score} />,
+        });
+
         // Commentary tab
         list.push({
             id: "commentry",
@@ -2194,6 +2248,36 @@ export default function MatchScoreCard({
 
     // Defensive render if loading or score data not yet received (placed after all hooks to respect Rules of Hooks)
     const isScoreEmpty = !score?.title && !score?.teams?.length && !score?.batting?.score && !score?.inning?.length;
+    // Opened from a list while offline there may be a title and teams but no
+    // scoreboard; a 0/0 card would be wrong, so that counts as not loaded too.
+    const hasScoreboard = Boolean(score?.batting?.score || score?.inning?.length);
+    if (!loading && loadFailed && !hasScoreboard) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}>
+                <Ionicons name="cloud-offline-outline" size={40} color={isDarkMode ? '#94A3B8' : '#64748B'} />
+                <ThemedText style={{ marginTop: 16, fontSize: 15, fontWeight: "600", textAlign: "center", color: isDarkMode ? '#E2E8F0' : '#334155' }}>
+                    Couldn't load this scorecard. Check your internet connection and try again.
+                </ThemedText>
+                <View style={{ flexDirection: "row", marginTop: 20, gap: 12 }}>
+                    <TouchableOpacity
+                        onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home"))}
+                        style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: isDarkMode ? '#475569' : '#CBD5E1' }}
+                    >
+                        <ThemedText style={{ fontWeight: "700", color: isDarkMode ? '#E2E8F0' : '#334155' }}>Go back</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => {
+                            setLoading(true);
+                            loadMatchAndScore();
+                        }}
+                        style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: '#2563EB' }}
+                    >
+                        <ThemedText style={{ fontWeight: "700", color: '#ffffff' }}>Retry</ThemedText>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
     if (loading || score.isLoading || isScoreEmpty) {
         return (
             <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
@@ -2224,6 +2308,14 @@ export default function MatchScoreCard({
                                 setHeaderCardModalVisible(true);
                             }}
                         />
+                    )}
+
+                    {loadFailed && (
+                        <View style={{ backgroundColor: '#F59E0B', paddingVertical: 6, paddingHorizontal: 12 }}>
+                            <Text style={{ color: '#1F2937', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+                                Offline — showing the score saved on this phone
+                            </Text>
+                        </View>
                     )}
 
                     {/* Live Match Video Player / Add Stream CTA */}

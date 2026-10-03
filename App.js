@@ -3,7 +3,7 @@ import "react-native-reanimated";
 import "./global.css";
 
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, useColorScheme, KeyboardAvoidingView, Platform } from "react-native";
+import { StyleSheet, View, useColorScheme, KeyboardAvoidingView, Platform } from "react-native";
 import { useFonts } from "expo-font";
 import {
   DarkerGrotesque_400Regular,
@@ -15,7 +15,7 @@ import {
 } from "@expo-google-fonts/darker-grotesque";
 
 import ThemedText from "./components/ui/custom/ThemedText";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import AppNavigator from "./navigation/AppNavigator";
 import { config } from "@gluestack-ui/config";
 import { GluestackUIProvider } from "@gluestack-ui/themed";
@@ -23,7 +23,7 @@ import { Provider } from "react-redux";
 import { persistor, store } from "./redux/store";
 import { PersistGate } from "redux-persist/integration/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { navigationRef, resetToAuth } from "./navigation/navigationRef";
 import { useSelector } from "react-redux";
@@ -39,6 +39,9 @@ import { login as loginAction } from "./redux/authSlice";
 import User from "./utils/User";
 import analytics from "./utils/analytics";
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from "./utils/notifications";
+import usePendingScoreSync from "./hooks/usePendingScoreSync";
+import OfflineBanner from "./components/ui/OfflineBanner";
+import AppSplash from "./components/ui/AppSplash";
 
 import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-reanimated";
 
@@ -69,6 +72,13 @@ function SocketNotificationListener() {
     return () => off("notification", handleNotification);
   }, [on, off]);
 
+  return null;
+}
+
+// Uploads scoring recorded offline once the app is online again. Rendered
+// inside SocketProvider and AlertProvider, which it uses.
+function PendingScoreSync() {
+  usePendingScoreSync();
   return null;
 }
 
@@ -128,11 +138,18 @@ function AppContent() {
         <BottomSheetModalProvider>
           <BottomSheetProvider>
             <AlertProvider>
+              <PendingScoreSync />
               <KeyboardAvoidingView
                 style={styles.keyboardAvoiding}
                 behavior={Platform.OS === "ios" ? "padding" : undefined}
               >
-                <AppNavigator />
+                <OfflineBanner />
+                {/* Its own safe-area provider, so that while the offline bar
+                    is showing (it covers the status bar area) the screens
+                    below it don't leave room for the status bar a second time. */}
+                <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+                  <AppNavigator />
+                </SafeAreaProvider>
               </KeyboardAvoidingView>
               <StatusBar style={isDark ? "light" : "dark"} />
             </AlertProvider>
@@ -142,6 +159,10 @@ function AppContent() {
     </NavigationContainer>
   );
 }
+
+// The splash waits for the start-up session check, but not longer than this
+// on a slow or missing connection.
+const SESSION_WAIT_MS = 3500;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -165,6 +186,8 @@ export default function App() {
   });
 
   const colorScheme = useColorScheme();
+  const [sessionSettled, setSessionSettled] = useState(false);
+  const [splashVisible, setSplashVisible] = useState(true);
 
   useEffect(() => {
     console.log("Detected color scheme:", colorScheme);
@@ -185,45 +208,55 @@ export default function App() {
         }
       } catch (err) {
         console.warn("🔐 [App] Auth status check error:", err);
+      } finally {
+        setSessionSettled(true);
       }
     };
     checkAuth();
+    const giveUp = setTimeout(() => setSessionSettled(true), SESSION_WAIT_MS);
+    return () => clearTimeout(giveUp);
   }, []);
 
-  // Show loading screen while fonts are loading
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.container}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
+  const splashUser = sessionSettled ? store.getState()?.auth?.user : null;
 
+  // The app mounts under the splash as soon as its fonts are in, so the first
+  // screen has already loaded by the time the splash lifts.
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <Provider store={store}>
-        <PersistGate loading={null} persistor={persistor}>
-          <QueryClientProvider client={queryClient}>
-            <GluestackUIProvider config={config}>
-              <SafeAreaProvider>
-                <ThemeProvider>
-                  <AppContent />
-                </ThemeProvider>
-              </SafeAreaProvider>
-            </GluestackUIProvider>
-          </QueryClientProvider>
-        </PersistGate>
-      </Provider>
-    </GestureHandlerRootView>
+    <View style={styles.root}>
+      {fontsLoaded && (
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <Provider store={store}>
+            <PersistGate loading={null} persistor={persistor}>
+              <QueryClientProvider client={queryClient}>
+                <GluestackUIProvider config={config}>
+                  <SafeAreaProvider>
+                    <ThemeProvider>
+                      <AppContent />
+                    </ThemeProvider>
+                  </SafeAreaProvider>
+                </GluestackUIProvider>
+              </QueryClientProvider>
+            </PersistGate>
+          </Provider>
+        </GestureHandlerRootView>
+      )}
+      {splashVisible && (
+        <AppSplash
+          fontsLoaded={fontsLoaded}
+          ready={fontsLoaded && sessionSettled}
+          userName={splashUser?.name || splashUser?.username}
+          onDone={() => setSplashVisible(false)}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
+    // Matches the native splash, so nothing flashes before the app paints.
+    backgroundColor: "#0A0F1C",
   },
   keyboardAvoiding: {
     flex: 1,

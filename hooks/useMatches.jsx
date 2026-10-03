@@ -13,6 +13,8 @@ function useMatches({
   const [loading, setLoading] = useState(false);
   const [hasData, setHasData] = useState(true);
   const [error, setError] = useState(null);
+  // When the list last came back from the server (0 = not yet).
+  const [loadedAt, setLoadedAt] = useState(0);
   const pageRef = useRef(initialCondition?.page || 1);
   const isFetchingRef = useRef(false);
   const cache = useRef({});
@@ -40,7 +42,15 @@ function useMatches({
 
       try {
         const res = await request(apiUrl, { method: "GET", errorAlert: false });
-        const content = res?.data?.content || [];
+        // request() doesn't throw: without a connection (or on a server
+        // error) there is simply no list in the answer. Keep what is shown
+        // rather than treating that as "no matches".
+        if (!Array.isArray(res?.data?.content)) {
+          setError("Failed to load matches. Please try again.");
+          return;
+        }
+        const content = res.data.content;
+        setLoadedAt(Date.now());
 
         cache.current[apiUrl] = content;
         if (isRefresh) {
@@ -147,6 +157,7 @@ function useMatches({
     loading,
     hasData,
     error,
+    loadedAt,
     setMatchesIds,
     fetchMore,
     refresh,

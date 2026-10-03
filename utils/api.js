@@ -16,6 +16,8 @@ const LEGACY_COOKIE_STORAGE_KEY = "@auth_cookie";
 let sessionCookie = null;
 let isCookieInitialized = false;
 
+const REQUEST_TIMEOUT_MS = 30000;
+
 /**
  * Extracts cookie pairs (e.g. "connect.sid=...") from a Set-Cookie header.
  */
@@ -161,6 +163,9 @@ export const request = async (
       method: method.toUpperCase(),
       headers: requestHeaders,
       withCredentials,
+      // Without a limit, a request on a dead connection never settles and
+      // the screen waiting on it shows its spinner forever.
+      timeout: REQUEST_TIMEOUT_MS,
       ...otherParams,
     };
 

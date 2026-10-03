@@ -35,6 +35,7 @@ import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
 import { THEME_STRIP_PREVIEWS } from "../themeConfig/DesktopOverlayPreview";
+import BroadcastThemeStrip, { getBroadcastPreview } from "../themeConfig/BroadcastThemeStrip";
 import SponsorAdEditor from "./SponsorAdEditor";
 
 // ---- Authentic Broadcast Scorecard Preview Component ----
@@ -48,6 +49,9 @@ function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
     : isIpl
     ? THEME_STRIP_PREVIEWS.ipl
     : THEME_STRIP_PREVIEWS.fox;
+  // Broadcast themes without an uploaded image get a drawn preview in their
+  // own colors instead of the Fox screenshot.
+  const drawn = !theme?.previewImage && getBroadcastPreview(theme);
 
   return (
     <View style={previewStyles.card}>
@@ -57,11 +61,17 @@ function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
         nestedScrollEnabled={true}
         contentContainerStyle={{ minWidth: '100%' }}
       >
-        <Image
-          source={imageSource}
-          style={previewStyles.image}
-          resizeMode="cover"
-        />
+        {drawn ? (
+          <View style={[previewStyles.image, { overflow: "hidden" }]}>
+            <BroadcastThemeStrip theme={theme} teamAColor={teamAColor} teamBColor={teamBColor} />
+          </View>
+        ) : (
+          <Image
+            source={imageSource}
+            style={previewStyles.image}
+            resizeMode="cover"
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -134,6 +144,11 @@ const swatchStyles = StyleSheet.create({
 });
 
 // ===== MAIN SCREEN =====
+// The shared tournament live link is /go-live/<tournament slug>, the same
+// key the website uses. A tournament or match id is never a valid key.
+const getTournamentLiveKey = (tournament, match) =>
+  tournament?.slug || match?.tournament?.slug || "";
+
 export default function GoLiveSetupScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -203,7 +218,9 @@ export default function GoLiveSetupScreen() {
         const tId = mData.tournamentID || route.params?.tournamentId;
         try {
           const tRes = await request(`api/tournaments/${tId}`, { method: "GET", errorAlert: false });
-          const tData = tRes?.data?.data || tRes?.data;
+          // The tournament endpoint answers { success, content }.
+          const tData =
+            tRes?.data?.content || tRes?.data?.tournament || tRes?.data?.data;
           if (tData) {
             currentTournInfo = tData;
             setTournamentInfo(tData);
@@ -216,13 +233,7 @@ export default function GoLiveSetupScreen() {
       const tournLive = configRes?.data?.content?.goLiveTournament || mData?.config?.goLiveTournament || mData?.goLiveTournament;
       const matchLive = configRes?.data?.content?.goLive || mData?.config?.goLive || mData?.goLive;
 
-      const tournKey =
-        currentTournInfo?.slug ||
-        currentTournInfo?._id ||
-        currentTournInfo?.id ||
-        mData?.tournamentID ||
-        mData?.tournament?._id ||
-        mData?.tournament?.slug;
+      const tournKey = getTournamentLiveKey(currentTournInfo, mData);
 
       const isTournActive = Boolean(
         tournLive?.active === true ||
@@ -237,7 +248,7 @@ export default function GoLiveSetupScreen() {
       if (isTournActive && tournKey) {
         setLiveMode("tournament");
         setIsThisMatchLiveOnTournament(true);
-        const urlKey = tournLive?.url || tournKey || matchId;
+        const urlKey = tournLive?.url || tournKey;
         setTournamentLiveUrl(`${WEB_URL}/go-live/${urlKey}`);
       } else {
         setLiveMode("match");
@@ -464,15 +475,17 @@ export default function GoLiveSetupScreen() {
       }
 
       // 3. Trigger Go Live API
-      const tournKey =
-        tournamentInfo?.slug ||
-        tournamentInfo?._id ||
-        tournamentInfo?.id ||
-        matchDetails?.tournamentID ||
-        matchDetails?.tournament?._id ||
-        matchDetails?.tournament?.slug;
+      const tournKey = getTournamentLiveKey(tournamentInfo, matchDetails);
 
-      const isTournLive = Boolean((isThisMatchLiveOnTournament || liveMode === "tournament") && tournKey);
+      const wantsTournLive = isThisMatchLiveOnTournament || liveMode === "tournament";
+      if (wantsTournLive && !tournKey) {
+        Alert.alert(
+          "Tournament link unavailable",
+          "This tournament has no public link yet, so the match can't go live on it. Switch to the match's own link."
+        );
+        return;
+      }
+      const isTournLive = Boolean(wantsTournLive && tournKey);
 
       let fullUrl = "";
       if (isTournLive) {
@@ -517,7 +530,10 @@ export default function GoLiveSetupScreen() {
             },
           },
         });
-        const urlKey = goLiveRes?.data?.matchId?.url || matchId;
+        // The link is /go-live/<key the server generated>; a match id is not
+        // a valid key, so don't build a link without one.
+        const urlKey = goLiveRes?.data?.matchId?.url;
+        if (!urlKey) throw new Error("Live link was not returned");
         fullUrl = `${WEB_URL}/go-live/${urlKey}`;
         setIsThisMatchLiveOnTournament(false);
         setLiveMode("match");
@@ -538,15 +554,8 @@ export default function GoLiveSetupScreen() {
     setIsThisMatchLiveOnTournament(value);
     if (value) {
       setLiveMode("tournament");
-      const tournKey =
-        tournamentInfo?.slug ||
-        tournamentInfo?._id ||
-        tournamentInfo?.id ||
-        matchDetails?.tournamentID ||
-        matchDetails?.tournament?._id ||
-        matchDetails?.tournament?.slug;
-      const previewUrl = `${WEB_URL}/go-live/${tournKey || matchId}`;
-      setTournamentLiveUrl(previewUrl);
+      const tournKey = getTournamentLiveKey(tournamentInfo, matchDetails);
+      setTournamentLiveUrl(tournKey ? `${WEB_URL}/go-live/${tournKey}` : "");
     } else {
       setLiveMode("match");
       setTournamentLiveUrl("");

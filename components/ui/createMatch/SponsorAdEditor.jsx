@@ -21,7 +21,7 @@ import {
   ImagePlus,
   Upload,
   Code,
-  Sparkles,
+  Paintbrush,
   Eye,
   Trash2,
   RefreshCw,
@@ -586,7 +586,7 @@ export default function SponsorAdEditor({
                   },
                 ]}
               >
-                <Sparkles
+                <Paintbrush
                   size={13}
                   color={editorMode === "visual" ? "#FFFFFF" : C.textSecondary}
                 />

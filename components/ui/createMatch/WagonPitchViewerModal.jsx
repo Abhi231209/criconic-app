@@ -18,6 +18,7 @@ import * as Sharing from "expo-sharing";
 import PitchMap, { LENGTH_ZONES } from "./PitchMap";
 import WagonWheel, { ZONES } from "./WagonWheel";
 import WagonShareCard from "./WagonShareCard";
+import PitchShareCard from "./PitchShareCard";
 import { COLORS } from "@/theme/colors";
 import { matchesApi } from "@/utils/api";
 
@@ -874,7 +875,20 @@ export default function WagonPitchViewerModal({
     };
   }, [selectedPlayer, activeBatsmanInningStats, wagonStats]);
 
-  // What the share card says about the wheel on screen
+  // The selected bowler's figures from the scorecard row they were opened from
+  const bowlerLine = useMemo(() => {
+    if (!selectedPlayer) return null;
+    return {
+      overs: selectedPlayer.over ?? "0.0",
+      runs: selectedPlayer.runsGiven ?? selectedPlayer.runs ?? 0,
+      wickets: selectedPlayer.wicketsTaken ?? selectedPlayer.wickets ?? 0,
+      eco: selectedPlayer.eco ?? "0.00",
+      // a bowler picked from the filter chips carries no figures
+      hasFigures: selectedPlayer.over !== undefined && selectedPlayer.over !== null,
+    };
+  }, [selectedPlayer]);
+
+  // What the share card says about the wheel / pitch map on screen
   const shareCardProps = useMemo(() => {
     const teams = fetchedMatch?.teams || matchDetails?.teams || score?.teams || [];
     const matchTitle = teams
@@ -886,6 +900,45 @@ export default function WagonPitchViewerModal({
       selectedInning !== "all"
         ? allMatchInnings.find((i) => i.key === String(selectedInning))?.label || ""
         : "";
+    const playerName = selectedPlayer?.name || selectedPlayer?.username || selectedPlayer?.playerName || "";
+
+    if (activeTab === "pitch") {
+      const facedBatsman = facedBatsmen.find((b) => b.id === selectedFacedBatsmanId);
+      const filterLabel = [
+        facedBatsman && `vs ${facedBatsman.name}`,
+        pitchStanceFilter !== "all" && `vs ${pitchStanceFilter}`,
+        selectedOver !== "all" && `Over ${selectedOver}`,
+        { dots: "Dot balls only", runs: "Scoring balls only", wickets: "Wickets only" }[pitchFilter],
+      ]
+        .filter(Boolean)
+        .join("  •  ");
+      let runs = 0, wickets = 0, dots = 0;
+      filteredPitches.forEach((d) => {
+        const pm = d.pitchMap || d;
+        const r = Number(d.runs ?? pm.runs ?? 0);
+        const isWicket = Boolean(d.isWicket || pm.isWicket);
+        runs += r;
+        if (isWicket) wickets++;
+        if (r === 0 && !isWicket) dots++;
+      });
+      // Scorecard figures for the whole spell; once it is narrowed down,
+      // count the balls on the map instead.
+      const stats = bowlerLine?.hasFigures && !filterLabel
+        ? [
+            { label: "OVERS", value: bowlerLine.overs },
+            { label: "RUNS", value: bowlerLine.runs },
+            { label: "WICKETS", value: bowlerLine.wickets },
+            { label: "ECON", value: bowlerLine.eco },
+          ]
+        : [
+            { label: "BALLS", value: filteredPitches.length },
+            { label: "RUNS", value: runs },
+            { label: "WICKETS", value: wickets },
+            { label: "DOTS", value: dots },
+          ];
+      return { playerName, matchTitle, inningsLabel, filterLabel, stats };
+    }
+
     const filterLabel =
       { dots: "Dot balls only", singles: "1-3 runs only", fours: "Fours only", sixes: "Sixes only" }[shotFilter] || "";
     const stats = batterLine && shotFilter === "all"
@@ -901,17 +954,19 @@ export default function WagonPitchViewerModal({
           { label: "FOURS", value: wagonStats.fours },
           { label: "SIXES", value: wagonStats.sixes },
         ];
-    return {
-      playerName: selectedPlayer?.name || selectedPlayer?.username || selectedPlayer?.playerName || "",
-      matchTitle,
-      inningsLabel,
-      filterLabel,
-      stats,
-    };
-  }, [fetchedMatch, matchDetails, score, selectedInning, allMatchInnings, shotFilter, batterLine, wagonStats, selectedPlayer]);
+    return { playerName, matchTitle, inningsLabel, filterLabel, stats };
+  }, [
+    fetchedMatch, matchDetails, score, selectedInning, allMatchInnings, selectedPlayer, activeTab,
+    shotFilter, batterLine, wagonStats,
+    facedBatsmen, selectedFacedBatsmanId, pitchStanceFilter, selectedOver, pitchFilter, filteredPitches, bowlerLine,
+  ]);
+
+  // Nothing to share until the chart on screen has something plotted
+  const hasShareableChart =
+    activeTab === "wagon" ? filteredShots.length > 0 : filteredPitches.length > 0;
 
   // Turn the share card into a PNG and hand it to the system share sheet
-  const handleShareWagon = async () => {
+  const handleShareCard = async () => {
     if (!shareCardRef.current || isSharing) return;
     setIsSharing(true);
     try {
@@ -923,14 +978,14 @@ export default function WagonPitchViewerModal({
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: "image/png",
-          dialogTitle: `Share ${shareCardProps.playerName || "match"} wagon wheel`,
+          dialogTitle: `Share ${shareCardProps.playerName || "match"} ${activeTab === "wagon" ? "wagon wheel" : "pitch map"}`,
           UTI: "public.png",
         });
       } else {
         Alert.alert("Notice", "Sharing is not available on this device.");
       }
     } catch (error) {
-      console.warn("Wagon wheel share error:", error);
+      console.warn("Share card error:", error);
       Alert.alert("Sharing Failed", "Could not create the image. Please try again.");
     } finally {
       setIsSharing(false);
@@ -988,10 +1043,10 @@ export default function WagonPitchViewerModal({
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {/* image capture isn't available on the web build */}
-              {Platform.OS !== "web" && activeTab === "wagon" && filteredShots.length > 0 && (
+              {Platform.OS !== "web" && hasShareableChart && (
                 <TouchableOpacity
                   onPress={() => setShareVisible(true)}
-                  accessibilityLabel="Share wagon wheel"
+                  accessibilityLabel={activeTab === "wagon" ? "Share wagon wheel" : "Share pitch map"}
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
@@ -1141,7 +1196,7 @@ export default function WagonPitchViewerModal({
                   >
                     {activeTab === "wagon"
                       ? `${batterLine.runs} runs (${batterLine.balls}b) • 4s: ${batterLine.fours} • 6s: ${batterLine.sixes} • SR: ${batterLine.sr}`
-                      : `${selectedPlayer.over ?? "0.0"} ov • ${selectedPlayer.runsGiven ?? selectedPlayer.runs ?? 0} runs • ${selectedPlayer.wicketsTaken ?? selectedPlayer.wickets ?? 0} wkts • ECO: ${selectedPlayer.eco ?? "0.00"}`}
+                      : `${bowlerLine.overs} ov • ${bowlerLine.runs} runs • ${bowlerLine.wickets} wkts • ECO: ${bowlerLine.eco}`}
                   </Text>
                 </View>
               </View>
@@ -2402,13 +2457,23 @@ export default function WagonPitchViewerModal({
                 contentContainerStyle={styles.shareScroll}
                 showsVerticalScrollIndicator={false}
               >
-                <WagonShareCard
-                  ref={shareCardRef}
-                  {...shareCardProps}
-                  shots={filteredShots}
-                  isBoxCricket={isBoxCricket}
-                  batterStance={batterStance}
-                />
+                {activeTab === "wagon" ? (
+                  <WagonShareCard
+                    ref={shareCardRef}
+                    {...shareCardProps}
+                    shots={filteredShots}
+                    isBoxCricket={isBoxCricket}
+                    batterStance={batterStance}
+                  />
+                ) : (
+                  <PitchShareCard
+                    ref={shareCardRef}
+                    {...shareCardProps}
+                    pitches={filteredPitches}
+                    lengthCounts={pitchStats}
+                    batterStance={effectivePitchStance}
+                  />
+                )}
                 <View style={styles.shareActions}>
                   <TouchableOpacity
                     style={styles.shareCloseBtn}
@@ -2418,7 +2483,7 @@ export default function WagonPitchViewerModal({
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.shareSendBtn}
-                    onPress={handleShareWagon}
+                    onPress={handleShareCard}
                     disabled={isSharing}
                   >
                     {isSharing ? (

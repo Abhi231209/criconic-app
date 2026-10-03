@@ -363,18 +363,13 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     if (!matchId) return;
     setIsStartingLive(true);
     try {
-      const tournamentSlug =
-        score?.tournament?.slug ||
-        score?.tournament?._id ||
-        matchDetails?.tournament?.slug ||
-        matchDetails?.tournamentID ||
-        matchDetails?.tournament?._id;
+      // "Go Live" always creates this match's own link, as on the website.
+      // The shared tournament link is a separate switch ("Live as Tournament").
       const res = await request("api/matches/public/go-live", {
         method: "POST",
         data: {
           match: matchId,
-          userStream: !!tournamentSlug,
-          key: tournamentSlug,
+          userStream: false,
         },
       });
       if (res?.data?.success !== false) {
@@ -392,14 +387,18 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
   };
 
   const handleToggleTournamentMatch = async (val) => {
+    // The tournament's live link is /go-live/<tournament slug>; the slug is
+    // the only key the website uses, so an id here would make a second,
+    // different link for the same tournament.
     const tournamentKey =
-      score?.tournament?.slug ||
-      score?.tournament?._id ||
-      matchDetails?.tournament?.slug ||
-      matchDetails?.tournamentID ||
-      matchDetails?.tournament?._id;
+      score?.tournament?.slug || matchDetails?.tournament?.slug;
     if (!tournamentKey) {
-      Alert.alert("Tournament Required", "This match is not linked to a tournament.");
+      Alert.alert(
+        "Tournament Required",
+        score?.tournament || matchDetails?.tournament
+          ? "This tournament has no public link yet."
+          : "This match is not linked to a tournament."
+      );
       return;
     }
     try {
@@ -774,6 +773,13 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
         Broadcast Display Controls
       </ThemedText>
 
+      <SettingRow
+        title="Auto Highlight Show"
+        description="Ticker shows and hides the overlays below by itself at key moments"
+        value={getActive(MatchSettingEnum.AUTO_HIGHLIGHT_SHOW)}
+        onToggle={(v) => emitDisplaySetting(MatchSettingEnum.AUTO_HIGHLIGHT_SHOW, v)}
+        isDarkMode={isDarkMode}
+      />
       <SettingRow
         title="Match Preview"
         description="Pre-match information card overlay"

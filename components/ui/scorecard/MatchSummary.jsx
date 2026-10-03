@@ -682,7 +682,7 @@ export default function MatchSummary({ matchData }) {
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     className="ml-3 p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 items-center justify-center"
                   >
-                    <Ionicons name="sparkles" size={13} color="#0D9488" />
+                    <Ionicons name="id-card" size={13} color="#0D9488" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -759,7 +759,7 @@ export default function MatchSummary({ matchData }) {
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     className="ml-3 p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 items-center justify-center"
                   >
-                    <Ionicons name="sparkles" size={13} color="#0D9488" />
+                    <Ionicons name="id-card" size={13} color="#0D9488" />
                   </TouchableOpacity>
                 </View>
               </View>

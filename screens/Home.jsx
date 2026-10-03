@@ -1,11 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   ScrollView,
   FlatList,
   TouchableOpacity,
   Image,
-  useWindowDimensions,
   ImageBackground,
   useColorScheme,
   RefreshControl,
@@ -13,7 +12,6 @@ import {
   BackHandler,
   DeviceEventEmitter,
 } from "react-native";
-import Carousel from "react-native-reanimated-carousel";
 import useMatches from "../hooks/useMatches";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import ThemedText from "@/components/ui/custom/ThemedText";
@@ -28,40 +26,21 @@ import SCREENS from "@/screens";
 import AnimatedFooter from "@/components/ui/AnimatedFooter";
 import useRequireAuth from "@/hooks/useRequireAuth";
 import GreetingHeader from "@/components/ui/home/GreetingHeader";
+import HeroCarousel from "@/components/ui/home/HeroCarousel";
 import CricketPulse from "@/components/ui/home/CricketPulse";
 import FeatureHighlights from "@/components/ui/home/FeatureHighlights";
 import TopPlayersSpotlight from "@/components/ui/home/TopPlayersSpotlight";
 import CtaBanner from "@/components/ui/home/CtaBanner";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useSocket } from "@/contexts/SocketContext";
+import { slimMatch } from "@/utils/savedLists";
 
 const MATCHES_CONDITION = { items: 10 };
 
-const DEFAULT_HOLDINGS = [
-  {
-    id: "default-1",
-    tag: "Live Cricket",
-    heading: "Live Cricket Arena",
-    buttonText: "Follow real-time ball-by-ball commentary & live scores",
-    isMatch: true,
-    callToAction: "AllMatches",
-  },
-  {
-    id: "default-2",
-    tag: "Tournaments",
-    heading: "Tournaments & Leagues",
-    buttonText: "Explore featured tournaments, team standings & fixtures",
-    isMatch: false,
-    callToAction: "AllTournaments",
-  },
-  {
-    id: "default-3",
-    tag: "Host Match",
-    heading: "Start Your Own Match",
-    buttonText: "Create teams, score live balls, and broadcast matches",
-    isMatch: false,
-    callToAction: "CreateMatch",
-  },
-];
+// The Recent Matches list as it was last loaded, kept on the phone so the
+// section still shows matches without a connection.
+const SAVED_MATCHES_KEY = "@criconic_home_matches";
 
 export default function Home({}) {
   const navigation = useNavigation();
@@ -76,9 +55,19 @@ export default function Home({}) {
   const [matchDetailsMap, setMatchDetailsMap] = useState({});
   const lastFocusFetch = React.useRef(Date.now());
 
-  const { matchesIds, setMatchesIds, refresh: refreshMatches } = useMatches({
+  const {
+    matchesIds,
+    setMatchesIds,
+    refresh: refreshMatches,
+    loading: matchesLoading,
+    error: matchesError,
+    loadedAt: matchesLoadedAt,
+  } = useMatches({
     initialCondition: MATCHES_CONDITION,
   });
+  const { isConnected } = useSocket();
+  const matchesLoadedRef = React.useRef(false);
+  matchesLoadedRef.current = matchesLoadedAt > 0;
 
   // useMatches only returns bare ids ({_id, startDate, createdAt, address}) with
   // no teams/score, so ScoreCard would otherwise start empty and depend entirely
@@ -91,7 +80,10 @@ export default function Home({}) {
         { limit: MATCHES_CONDITION.items },
         { errorAlert: false }
       );
-      const list = res?.data?.matches || res?.data?.content || [];
+      const list = res?.data?.matches || res?.data?.content;
+      // No list in the answer means the request failed (request() doesn't
+      // throw): keep the cards as they are.
+      if (!Array.isArray(list)) return;
       const map = {};
       list.forEach((m) => {
         const id = String(m?._id || m?.id || m?.matchId || "");
@@ -106,6 +98,50 @@ export default function Home({}) {
   useEffect(() => {
     fetchMatchDetails();
   }, [fetchMatchDetails]);
+
+  // Start from the saved copy of the list, unless the server has already
+  // answered by the time it is read.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(SAVED_MATCHES_KEY)
+      .then((raw) => {
+        const saved = raw ? JSON.parse(raw) : null;
+        if (cancelled || !saved || matchesLoadedRef.current) return;
+        if (Array.isArray(saved.ids)) {
+          setMatchesIds((prev) => (prev.length ? prev : saved.ids));
+        }
+        if (saved.details && typeof saved.details === "object") {
+          setMatchDetailsMap((prev) => (Object.keys(prev).length ? prev : saved.details));
+        }
+      })
+      .catch((e) => console.warn("[Home] Failed to read saved matches:", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [setMatchesIds]);
+
+  // Keep the saved copy in step with what the server last returned.
+  useEffect(() => {
+    if (!matchesLoadedAt) return;
+    const details = {};
+    matchesIds.forEach((item) => {
+      const id = String(item?._id || item?.id || item || "");
+      if (matchDetailsMap[id]) details[id] = slimMatch(matchDetailsMap[id]);
+    });
+    AsyncStorage.setItem(
+      SAVED_MATCHES_KEY,
+      JSON.stringify({ ids: matchesIds, details })
+    ).catch((e) => console.warn("[Home] Failed to save matches:", e));
+  }, [matchesLoadedAt, matchesIds, matchDetailsMap]);
+
+  // The connection is back after a load that didn't get through: load again.
+  useEffect(() => {
+    if (isConnected && matchesError) {
+      lastFocusFetch.current = Date.now();
+      refreshMatches?.();
+      fetchMatchDetails();
+    }
+  }, [isConnected]);
 
   // Listen for match deletion globally to immediately prune it from home view
   useEffect(() => {
@@ -192,8 +228,6 @@ export default function Home({}) {
     useBaseURL: true,
   });
 
-  const { width } = useWindowDimensions();
-
   const getConfig = async () => {
     const res = await getConfigDetails();
     if (res?.data?.content && res?.data?.success) {
@@ -261,12 +295,6 @@ export default function Home({}) {
       )}
     </View>
   );
-
-  const banners = useMemo(() => {
-    return homeConfig?.holding?.length > 0
-      ? homeConfig.holding
-      : DEFAULT_HOLDINGS;
-  }, [homeConfig]);
 
   const handleBannerPress = useCallback(
     (item) => {
@@ -436,83 +464,10 @@ export default function Home({}) {
           </View>
 
           {/* Hero Highlights Carousel */}
-          {banners?.length > 0 && (
-            <View className="my-2">
-              <Carousel
-                loop={banners.length > 1}
-                width={width - 32}
-                height={width * 0.48}
-                autoPlay={banners.length > 1}
-                autoPlayInterval={5000}
-                data={banners}
-                scrollAnimationDuration={800}
-                mode="parallax"
-                parallaxScrollingScale={0.92}
-                parallaxScrollingOffset={40}
-                renderItem={({ item, index }) => (
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => handleBannerPress(item)}
-                    className="rounded-2xl overflow-hidden border border-slate-700/20"
-                    style={{
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.25,
-                      shadowRadius: 8,
-                      elevation: 5,
-                    }}
-                  >
-                    <ImageBackground
-                      source={
-                        item?.bannerImage
-                          ? { uri: item.bannerImage }
-                          : require("../assets/stadium-background-image.jpg")
-                      }
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    >
-                      <LinearGradient
-                        colors={[
-                          "rgba(15,23,42,0.1)",
-                          "rgba(15,23,42,0.6)",
-                          "rgba(15,23,42,0.92)",
-                        ]}
-                        className="absolute inset-0 px-4 pb-4 justify-between"
-                      >
-                        {/* Top Pill */}
-                        <View className="flex-row justify-between items-center pt-3">
-                          <View className="px-2.5 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/20">
-                            <ThemedText className="text-[11px] font-bold text-white uppercase tracking-wider">
-                              {item?.tag || `Match Highlights • #${index + 1}`}
-                            </ThemedText>
-                          </View>
-                          {item?.isMatch && (
-                            <View className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md items-center justify-center">
-                              <Ionicons name="play" size={16} color="#FFFFFF" />
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Bottom Info */}
-                        <View>
-                          {item?.heading && (
-                            <ThemedText className="text-white text-lg font-bold">
-                              {item.heading}
-                            </ThemedText>
-                          )}
-                          {item?.buttonText && (
-                            <ThemedText className="text-gray-300 text-xs mt-0.5">
-                              {item.buttonText}
-                            </ThemedText>
-                          )}
-                        </View>
-                      </LinearGradient>
-                    </ImageBackground>
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          )}
+          <HeroCarousel
+            banners={homeConfig?.holding}
+            onPress={handleBannerPress}
+          />
 
           {/* Personalized "Your Cricket Pulse" */}
           <CricketPulse />
@@ -553,6 +508,30 @@ export default function Home({}) {
               windowSize={3}
               contentContainerStyle={{ paddingVertical: 4 }}
             />
+          ) : matchesError ? (
+            <View className="py-6 px-4 items-center justify-center">
+              <Ionicons
+                name="cloud-offline-outline"
+                size={22}
+                color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+              />
+              <ThemedText className={`text-sm text-center mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Couldn't load matches. Check your internet connection.
+              </ThemedText>
+              <TouchableOpacity
+                onPress={onRefresh}
+                activeOpacity={0.8}
+                className="mt-3 px-4 py-1.5 rounded-full bg-blue-600"
+              >
+                <ThemedText className="text-white text-xs font-bold">Retry</ThemedText>
+              </TouchableOpacity>
+            </View>
+          ) : matchesLoading || !matchesLoadedAt ? (
+            <View className="py-6 px-4 items-center justify-center">
+              <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Loading matches…
+              </ThemedText>
+            </View>
           ) : (
             <View className="py-6 px-4 items-center justify-center">
               <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -560,6 +539,12 @@ export default function Home({}) {
               </ThemedText>
             </View>
           )}
+
+          {matchesError && matchesIds?.length > 0 ? (
+            <ThemedText className={`text-xs mt-2 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+              Couldn't load the latest — showing matches saved on this phone.
+            </ThemedText>
+          ) : null}
 
           {/* Why Criconic — Feature Highlights */}
           <FeatureHighlights />

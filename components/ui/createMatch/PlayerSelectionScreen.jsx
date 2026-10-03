@@ -25,6 +25,7 @@ import { MATCH_STATUS, matchRedirectBasedOnStatus, confirmLeavePreScore } from "
 import { MatchSettingEnum } from "@/utils/Common";
 import User from "@/utils/User";
 import { useSelector } from "react-redux";
+import { loadOfflineMatch, queueInningsOpeners } from "@/utils/offlineMatch";
 
 export default function PlayerSelectionScreen() {
   const navigation = useNavigation();
@@ -289,7 +290,18 @@ export default function PlayerSelectionScreen() {
     matchesApi
       .getMatchById(matchId)
       .then(async (res) => {
-        const m = res?.data;
+        let m = res?.data;
+        // Scoring recorded offline that hasn't been uploaded yet puts this
+        // phone ahead of the server (e.g. the innings was ended offline), and
+        // with no connection there is no answer from the server at all. Both
+        // times the match is taken from this phone's own copy.
+        const offline = await loadOfflineMatch(matchId);
+        const loaded = Boolean(m && m.success !== false && (m._id || Array.isArray(m.teams)));
+        if (offline.match && (offline.pending > 0 || !loaded)) {
+          m = offline.match;
+        } else if (!loaded) {
+          m = null;
+        }
         if (!m) {
           setIsStatusChecked(true);
           return;
@@ -834,9 +846,38 @@ export default function PlayerSelectionScreen() {
       };
 
       if (matchId) {
-        const res = await matchesApi.selectOpener(openerPayload);
-        if (!res?.data?.success && res?.status !== 200 && res?.status !== 202) {
-          console.warn("[PlayerSelection] selectOpener response:", res?.data);
+        // Saved through the offline queue instead of straight to the server
+        // when other actions are still queued for this match (the openers
+        // must reach the server after them), or when there's no connection.
+        const queueOpeners = async () => {
+          const result = isSingleWicket
+            ? { error: "Single wicket matches need a connection to start an innings." }
+            : await queueInningsOpeners(matchId, {
+                userId: effectiveUserId,
+                striker: { name: getPlayerName(striker), id: strikerId },
+                nonStriker: { name: getPlayerName(nonStriker), id: nonStrikerId },
+                bowler: { name: getPlayerName(bowler), id: bowlerId },
+              });
+          if (result.error) {
+            Alert.alert(
+              "Openers not saved",
+              `${result.error} Please check your internet connection and try again.`
+            );
+          }
+          return Boolean(result.queued);
+        };
+
+        const { pending } = await loadOfflineMatch(matchId);
+        if (pending > 0) {
+          if (!(await queueOpeners())) return;
+        } else {
+          const res = await matchesApi.selectOpener(openerPayload);
+          if (!res?.status) {
+            // No answer from the server.
+            if (!(await queueOpeners())) return;
+          } else if (!res?.data?.success && res?.status !== 200 && res?.status !== 202) {
+            console.warn("[PlayerSelection] selectOpener response:", res?.data);
+          }
         }
       }
 

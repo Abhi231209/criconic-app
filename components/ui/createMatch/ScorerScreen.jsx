@@ -21,7 +21,7 @@ import { matchRedirectBasedOnStatus, calculateOversLeft, calculateProjectedResul
 import MatchHeader from "./MatchHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSelector } from "react-redux";
-import { matchesApi, teamsApi, request, apiUrl } from "@/utils/api";
+import { matchesApi, teamsApi, request, apiUrl, getAuthToken } from "@/utils/api";
 import { SOCKET_URL } from "@/config";
 import { io } from "socket.io-client";
 import BallPreview from "./BallPreview";
@@ -40,19 +40,28 @@ import User from "@/utils/User";
 import analytics from "@/utils/analytics";
 import {
   generateActionId,
-  loadQueue as loadPendingActionQueue,
   enqueueAction as enqueuePendingAction,
-  removeAction as removePendingAction,
+  updateQueue as updatePendingActionQueue,
+  subscribeQueue,
   purgeExpiredActions,
   isRetryableAck,
-  clearQueue,
+  isLoggedOutAck,
+  flushQueue,
+  isFlushing,
+  markScorerOpen,
+  loadSnapshot,
+  saveSnapshot,
 } from "@/utils/offlineActionQueue";
+import { applyAction, replayQueue, prepareServerScore } from "@/utils/offlineScoreEngine";
 
-// ─── Offline Action Queue Helpers ────────────────────────────────────────────
-// Persists pending scorer actions in AsyncStorage so they survive reconnects
-// and app restarts. Each queue is keyed by matchId.
+// A response from the match API that really is a match (a failed request
+// comes back as `{ success: false, message }`).
+const isMatchPayload = (data) =>
+  Boolean(data && typeof data === "object" && data.success !== false && (data._id || Array.isArray(data.teams)));
 
-// Save a pending action and return the updated queue length for UI display.
+// A response from the score API that really is a score.
+const isScorePayload = (data) =>
+  Boolean(data && typeof data === "object" && data.success !== false && (data.batting || data.batsman || data.bowler));
 
 export const ScorerScreenContext = createContext(null);
 
@@ -135,9 +144,29 @@ export default function ScorerScreen() {
 
   console.log("[ScorerScreen] Resolved matchID:", matchID, "| route.params keys:", Object.keys(route.params || {}));
 
-  // Pending offline-queued actions not yet confirmed by the server.
+  // Actions not yet confirmed by the server. They are kept on disk
+  // (utils/offlineActionQueue.js); `queueRef` mirrors the stored queue so the
+  // score on screen can be rebuilt without waiting on storage.
   const [pendingActionCount, setPendingActionCount] = useState(0);
-  const isFlushingQueueRef = useRef(false);
+  const queueRef = useRef([]);
+  // The last score the server sent. What's shown is this plus the queue.
+  const baseScoreRef = useRef(null);
+  const lastServerScoreAtRef = useRef(0);
+  // Why the queue can't be sent even though we're connected ("loggedOut").
+  const [syncProblem, setSyncProblem] = useState(null);
+  // Set by updateScore when it has already put the action on screen itself.
+  const appliedLocallyRef = useRef(false);
+  // The score just before and after the last wicket ball applied on this
+  // phone (see handleWicket).
+  const lastLocalWicketRef = useRef(null);
+
+  // Queued actions whose write to storage hasn't finished yet.
+  const unsavedActionsRef = useRef([]);
+
+  const setQueue = useCallback((queue) => {
+    queueRef.current = queue;
+    setPendingActionCount(queue.length);
+  }, []);
 
   // Transient "Powerplay started/ended" banner, shown briefly on the
   // powerplay-start/powerplay-end socket events the server emits from
@@ -150,95 +179,126 @@ export default function ScorerScreen() {
     powerplayBannerTimeoutRef.current = setTimeout(() => setPowerplayBanner(null), 4000);
   }, []);
 
-  // Sends every locally-queued, unconfirmed action for this match to the
-  // server, in order, one at a time — waiting for each ack before sending
-  // the next so a backlog built up while offline can't be applied out of
-  // order. Re-reads the queue fresh on every pass (rather than a fixed
-  // snapshot) so it naturally coalesces with a live tap's own send attempt —
-  // `isFlushingQueueRef` ensures only one of them is ever actively emitting
-  // for this match at a time, avoiding a double-send race between the two.
-  // Stops only on network timeouts, removes completed/rejected items,
-  // and requests a single consolidated score update once complete.
-  const flushPendingActionQueue = useCallback(async () => {
-    if (!matchID || isFlushingQueueRef.current) return;
-    isFlushingQueueRef.current = true;
-    try {
-      const queue = await loadPendingActionQueue(matchID);
-      if (!queue.length) {
-        setPendingActionCount(0);
-        return;
-      }
-
-      console.log(`[OFFLINE-QUEUE] Flushing ${queue.length} pending actions for match ${matchID}...`);
-      let rejectedCount = 0;
-      for (const item of queue) {
-        if (!socketRef.current?.connected) break;
-        try {
-          const response = await emitWithAck(
-            "update-score",
-            {
-              userId: item.userId,
-              matchId: matchID,
-              action: item.action,
-              data: item.data,
-              actionId: item.actionId,
-            },
-            5000
-          );
-
-          if (response?.success) {
-            await removePendingAction(matchID, item.actionId);
-          } else if (isRetryableAck(response)) {
-            // Didn't get through (or can't yet) — keep it and everything
-            // after it, in order, for the next flush.
-            break;
-          } else {
-            // The server refused it for good; drop it so it doesn't block
-            // the rest of the queue.
-            console.warn("[OFFLINE-QUEUE] Server rejected queued action:", item.action, response?.message);
-            await removePendingAction(matchID, item.actionId);
-            rejectedCount++;
-          }
-        } catch (e) {
-          console.warn("[OFFLINE-QUEUE] Error flushing item:", e);
-          break;
-        }
-      }
-
-      const remaining = await loadPendingActionQueue(matchID);
-      setPendingActionCount(remaining.length);
-
-      if (rejectedCount > 0) {
-        showAlert({
-          title: "Some offline actions were skipped",
-          message: `${rejectedCount} action${rejectedCount > 1 ? "s" : ""} recorded while offline ${
-            rejectedCount > 1 ? "were" : "was"
-          } rejected by the server. Please check the scorecard and re-enter anything missing.`,
-          type: "warning",
-          confirmText: "OK",
-        });
-      }
-
-      // Once the backlog is flushed, fetch the authoritative score once
-      if (socketRef.current?.connected) {
-        socketRef.current.emit("score", { matchId: matchID, matchID });
-      }
-    } finally {
-      isFlushingQueueRef.current = false;
-    }
-  }, [matchID, emitWithAck, showAlert]);
-
-  // Seed the pending count from disk immediately on mount, independent of
-  // connection state — so a leftover queue from a previous session (e.g. the
-  // app was killed while offline) shows accurately even before the socket
-  // manages to connect for the first time.
-  useEffect(() => {
-    if (!matchID) return;
-    loadPendingActionQueue(matchID).then((queue) => setPendingActionCount(queue.length));
-  }, [matchID]);
-
   const [score, setScore] = useState({});
   const [matchDetails, setMatchDetails] = useState(null);
+  const scoreRef = useRef(score);
+  const matchDetailsRef = useRef(matchDetails);
+
+  const showScore = useCallback((next) => {
+    scoreRef.current = next;
+    setScore(next);
+  }, []);
+
+  // Shows the last server score with the queued actions replayed over it.
+  const shownBaseRef = useRef(null);
+  const showBaseWithQueue = useCallback(() => {
+    const base = baseScoreRef.current;
+    if (!base) return;
+    shownBaseRef.current = base;
+    showScore(queueRef.current.length ? replayQueue(base, queueRef.current).score : base);
+  }, [showScore]);
+
+  // Keeps the last server score (and the squads) on disk, so the scorer can
+  // be reopened without a connection.
+  const snapshotTimerRef = useRef(null);
+  const saveSnapshotNow = useCallback(() => {
+    if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = null;
+    if (!matchID || !baseScoreRef.current) return Promise.resolve();
+    return saveSnapshot(matchID, {
+      score: baseScoreRef.current,
+      matchDetails: matchDetailsRef.current,
+    });
+  }, [matchID]);
+  const saveSnapshotSoon = useCallback(() => {
+    if (snapshotTimerRef.current) return;
+    snapshotTimerRef.current = setTimeout(saveSnapshotNow, 400);
+  }, [saveSnapshotNow]);
+  useEffect(
+    () => () => {
+      if (snapshotTimerRef.current) saveSnapshotNow();
+    },
+    [saveSnapshotNow]
+  );
+
+  // Every score that comes from the server goes through here. While actions
+  // are still queued it isn't shown as it is — the queue is replayed over it
+  // — and while the queue is being sent it isn't shown at all, so the score
+  // doesn't jump around as each queued ball lands.
+  const acceptServerScore = useCallback(
+    (data) => {
+      baseScoreRef.current = prepareServerScore(data);
+      lastServerScoreAtRef.current = Date.now();
+      saveSnapshotSoon();
+      if (!isFlushing(matchID)) showBaseWithQueue();
+    },
+    [matchID, saveSnapshotSoon, showBaseWithQueue]
+  );
+
+  // The server said this socket has no logged-in user. The login token is
+  // read when the socket connects, so reconnect to send the current one.
+  const lastReloginAtRef = useRef(0);
+  const reconnectWithCurrentLogin = useCallback(() => {
+    const socketConn = socketRef.current;
+    if (!socketConn || !getAuthToken()) return;
+    if (Date.now() - lastReloginAtRef.current < 30000) return;
+    lastReloginAtRef.current = Date.now();
+    socketConn.disconnect();
+    socketConn.connect();
+  }, []);
+
+  // Sends the queue to the server (see flushQueue), then asks for the score
+  // once so the screen shows what the server ended up with.
+  const flushPendingActionQueue = useCallback(async () => {
+    if (!matchID || !socketRef.current?.connected) return;
+    const result = await flushQueue(matchID, {
+      emitWithAck,
+      isConnected: () => Boolean(socketRef.current?.connected),
+      onSent: saveSnapshotNow,
+    });
+    if (result.skipped) return;
+
+    setSyncProblem(result.stoppedBy === "loggedOut" ? "loggedOut" : null);
+    if (result.stoppedBy === "loggedOut") reconnectWithCurrentLogin();
+
+    if (result.rejected.length) {
+      const count = result.rejected.length;
+      showAlert({
+        title: "Some offline actions were skipped",
+        message: `${count} action${count > 1 ? "s" : ""} recorded while offline ${
+          count > 1 ? "were" : "was"
+        } rejected by the server${
+          result.rejected[0]?.message ? ` (${result.rejected[0].message})` : ""
+        }. Please check the scorecard and re-enter anything missing.`,
+        type: "warning",
+        confirmText: "OK",
+      });
+    }
+
+    if ((result.sent || result.rejected.length) && socketRef.current?.connected) {
+      // What the server ended up with.
+      socketRef.current.emit("score", { matchId: matchID, matchID });
+    } else if (baseScoreRef.current !== shownBaseRef.current) {
+      // A score that arrived while sending wasn't shown; show it now.
+      showBaseWithQueue();
+    }
+  }, [matchID, emitWithAck, showAlert, saveSnapshotNow, reconnectWithCurrentLogin, showBaseWithQueue]);
+
+  // While this screen is open it is the one sending this match's queue.
+  useEffect(() => (matchID ? markScorerOpen(matchID) : undefined), [matchID]);
+
+  // The stored queue changed (an action was saved, sent or undone — from this
+  // screen or elsewhere): refresh the copy held here.
+  useEffect(() => {
+    if (!matchID) return;
+    return subscribeQueue((changedMatchId, stored) => {
+      if (changedMatchId !== String(matchID)) return;
+      const unsaved = unsavedActionsRef.current.filter(
+        (item) => !stored.some((queued) => queued.actionId === item.actionId)
+      );
+      setQueue([...stored, ...unsaved]);
+    });
+  }, [matchID, setQueue]);
 
   const isSuperOver = Boolean(
     score?.isSuperOver ||
@@ -410,8 +470,6 @@ export default function ScorerScreen() {
   const [popupContent, setPopupContent] = useState(null);
 
   const isLeavingRef = useRef(false);
-  const scoreRef = useRef(score);
-  const matchDetailsRef = useRef(matchDetails);
 
   useEffect(() => {
     scoreRef.current = score;
@@ -502,8 +560,9 @@ export default function ScorerScreen() {
   const handleGoHome = useCallback(() => {
     showAlert({
       title: "Return to Home?",
-      message:
-        "Your match progress is saved and live. You can resume anytime from My Cricket.",
+      message: queueRef.current.length
+        ? "Your match progress is saved on this phone and will upload when you're back online. You can resume anytime from My Cricket."
+        : "Your match progress is saved and live. You can resume anytime from My Cricket.",
       type: "danger",
       confirmText: "Go to Home",
       cancelText: "Stay Scoring",
@@ -535,7 +594,7 @@ export default function ScorerScreen() {
         matchesApi
           .getMatchById(matchID)
           .then((res) => {
-            if (res?.data) {
+            if (isMatchPayload(res?.data)) {
               setMatchDetails(res.data);
             }
           })
@@ -590,12 +649,8 @@ export default function ScorerScreen() {
       matchesApi.getMatchById(matchID),
     ])
       .then(([scoreRes, matchRes]) => {
-        const formatted = scoreRes?.data;
-        if (formatted && typeof formatted === "object" && formatted.success !== false) {
-          const hasScoreShape = formatted.batting || formatted.batsman || formatted.bowler;
-          if (hasScoreShape) setScore(formatted);
-        }
-        if (matchRes?.data) {
+        if (isScorePayload(scoreRes?.data)) acceptServerScore(scoreRes.data);
+        if (isMatchPayload(matchRes?.data)) {
           setMatchDetails(matchRes.data);
         }
       })
@@ -615,13 +670,12 @@ export default function ScorerScreen() {
             matchesApi.getMatchById(matchID),
             matchesApi.getMatchScore(matchID),
           ]);
-          const updatedMatch = matchRes?.data;
-          const updatedScore = scoreRes?.data;
-          if (updatedMatch) setMatchDetails(updatedMatch);
-          if (updatedScore && typeof updatedScore === "object") setScore(updatedScore);
+          const updatedMatch = isMatchPayload(matchRes?.data) ? matchRes.data : matchDetailsRef.current;
+          if (isMatchPayload(matchRes?.data)) setMatchDetails(updatedMatch);
+          if (isScorePayload(scoreRes?.data)) acceptServerScore(scoreRes.data);
 
           const allTeams = updatedMatch?.teams || [];
-          const currentScore = updatedScore || scoreRef.current || {};
+          const currentScore = scoreRef.current || {};
           const battingId = String(currentScore?.batting?.battingId || currentScore?.batting?.teamId || "");
           const bowlingId = String(currentScore?.bowling?.bowlingId || currentScore?.bowling?.teamId || "");
 
@@ -713,13 +767,6 @@ export default function ScorerScreen() {
     (data) => {
       console.log("[SOCKET-SCORE] 📡 Received 'score' event");
 
-      // While actively flushing a backlog of offline actions, suppress
-      // intermediate per-ball renders so the UI does not visually replay the match.
-      if (isFlushingQueueRef.current) {
-        console.log("[SOCKET-SCORE] Suppressing intermediate score update during queue flush");
-        return;
-      }
-
       if (!data || typeof data !== "object") {
         console.warn("[SOCKET-SCORE] ⚠️ data is null or not an object");
         return;
@@ -752,20 +799,28 @@ export default function ScorerScreen() {
       const hasScoreShape =
         data.batting || data.batsman || data.bowler || data.inning || data.teams;
       if (hasScoreShape) {
-        console.log("[SOCKET-SCORE] ✅ Calling setScore for match:", matchID);
-        setScore(data);
+        console.log("[SOCKET-SCORE] ✅ Score received for match:", matchID);
+        acceptServerScore(data);
       } else {
         console.warn("[SOCKET-SCORE] ⚠️ No score shape found, skipping setScore");
       }
     },
-    [matchID]
+    [matchID, acceptServerScore]
   );
 
 
   // Wicket & Next Batter Flow
   const handleWicket = useCallback(
     (type = 1, callSelectStrike = false, options = {}) => {
-      const latestScore = scoreRef.current || {};
+      // This runs right after the wicket ball is sent, and works from the
+      // score as it was before that ball (online, the server's answer hasn't
+      // arrived yet). A ball applied on this phone is on screen already, so
+      // step back to the score it was applied to.
+      const localWicket = lastLocalWicketRef.current;
+      const latestScore =
+        (localWicket && localWicket.after === scoreRef.current
+          ? localWicket.before
+          : scoreRef.current) || {};
       const latestMatchDetails = matchDetailsRef.current || {};
       const currentStatus = latestScore?.matchCurrentStatus?.toUpperCase();
 
@@ -913,10 +968,11 @@ export default function ScorerScreen() {
         isStrikeEnd: isNonStrikerWicket ? false : true,
       },
     });
+    const shownByQueue = appliedLocallyRef.current;
     setNextBatterModalVisible(false);
 
     // Optimistically update score.batsman so the incoming batsman and strike indicator appear immediately
-    setScore((prev) => {
+    if (!shownByQueue) setScore((prev) => {
       if (!prev) return prev;
       const curBatsmen = prev.batsman || [];
 
@@ -1067,16 +1123,22 @@ export default function ScorerScreen() {
   const handleSelectStriker = (player) => {
     const strikerId = player.id || player._id || player.playerId;
     const strikerName = player?.name;
-    const data = {
-      userId: userId || User?.id,
-      matchId: matchID,
-      action: "SET_STRIKER",
-      data: {
-        striker: strikerId,
-      },
-    };
-    emit("set-striker", data);
     setSelectStrikerModalVisible(false);
+
+    if (!canSendDirectly()) {
+      // Goes through the queue, in order with the balls around it.
+      updateScore(MATCH_ACTION.CHANGE_STRIKE, { striker: strikerId });
+      if (appliedLocallyRef.current) return;
+    } else {
+      emit("set-striker", {
+        userId: userId || User?.id,
+        matchId: matchID,
+        action: "SET_STRIKER",
+        data: {
+          striker: strikerId,
+        },
+      });
+    }
 
     setScore((prevScore) => {
       if (!prevScore || !Array.isArray(prevScore?.batsman)) return prevScore;
@@ -1198,16 +1260,15 @@ export default function ScorerScreen() {
         matchesApi.getMatchScore(matchID),
       ]);
 
-      const freshMatch = mRes?.data;
-      const freshScore = sRes?.data;
-      if (freshMatch) setMatchDetails(freshMatch);
-      if (freshScore) setScore(freshScore);
+      const freshMatch = isMatchPayload(mRes?.data) ? mRes.data : matchDetailsRef.current;
+      if (isMatchPayload(mRes?.data)) setMatchDetails(freshMatch);
+      if (isScorePayload(sRes?.data)) acceptServerScore(sRes.data);
 
       checkAndPromptNextBatterAfterSquadUpdate(freshMatch);
     } catch (err) {
       console.warn("[SQUAD-UPDATE] Error refreshing squad after wicket:", err);
     }
-  }, [matchID, checkAndPromptNextBatterAfterSquadUpdate, matchStatusHandler]);
+  }, [matchID, checkAndPromptNextBatterAfterSquadUpdate, matchStatusHandler, acceptServerScore]);
 
   // Over Complete & Next Bowler Flow
   const handleOverComplete = useCallback(() => {
@@ -1344,17 +1405,12 @@ export default function ScorerScreen() {
   handleOverCompleteRef.current = handleOverComplete;
 
   const handleSelectNextBowler = (player) => {
-    const data = {
-      userId,
-      matchId: matchID,
-      action: "BOWLER_SELECTED",
-      data: {
-        bowler: player.id || player._id || player.playerId,
-        name: player.name || player.username,
-      },
-    };
-    emit("update-score", data);
+    // Closed first: if the choice is refused, updateScore reopens it.
     setNextBowlerModalVisible(false);
+    updateScore(MATCH_ACTION.BOWLER_SELECTED, {
+      bowler: player.id || player._id || player.playerId,
+      name: player.name || player.username,
+    });
   };
 
   // Innings Complete Flow
@@ -1666,86 +1722,88 @@ export default function ScorerScreen() {
       return;
     }
 
-    console.log("[MOUNT] 🔵 Starting API fetch for matchID:", matchID);
-    console.log("[MOUNT] URLs: GET api/matches/" + matchID + " | POST api/matches/" + matchID);
+    let cancelled = false;
+    (async () => {
+      // 1. What this phone already has: the last score the server sent and
+      //    the actions not yet confirmed. Shown straight away, so the scorer
+      //    opens without a connection too. Replaying queued actions is safe
+      //    (the server skips ones it already applied), so only those too old
+      //    for it to recognise are dropped.
+      const [snapshot, queue] = await Promise.all([
+        loadSnapshot(matchID),
+        purgeExpiredActions(matchID),
+      ]);
+      if (cancelled) return;
+      setQueue(queue);
+      if (snapshot) {
+        console.log("[MOUNT] Restored saved score, pending actions:", queue.length);
+        baseScoreRef.current = prepareServerScore(snapshot.score);
+        if (isMatchPayload(snapshot.matchDetails)) setMatchDetails(snapshot.matchDetails);
+        showBaseWithQueue();
+        setIsStatusChecked(true);
+      }
 
-    Promise.all([
-      matchesApi.getMatchById(matchID),
-      matchesApi.getMatchScore(matchID),
-    ])
-      .then(([matchRes, scoreRes]) => {
-        // --- Log raw responses ---
-        console.log("[MOUNT] matchRes HTTP status:", matchRes?.status);
-        console.log("[MOUNT] matchRes.data type:", typeof matchRes?.data);
-        console.log("[MOUNT] matchRes.data.status:", matchRes?.data?.status);
-        console.log("[MOUNT] matchRes.data._id:", matchRes?.data?._id);
+      // 2. The server's current state.
+      console.log("[MOUNT] 🔵 Starting API fetch for matchID:", matchID);
+      const [matchRes, scoreRes] = await Promise.all([
+        matchesApi.getMatchById(matchID),
+        matchesApi.getMatchScore(matchID),
+      ]);
+      if (cancelled) return;
 
-        console.log("[MOUNT] scoreRes HTTP status:", scoreRes?.status);
-        console.log("[MOUNT] scoreRes.data type:", typeof scoreRes?.data);
-        console.log("[MOUNT] scoreRes.data.success:", scoreRes?.data?.success);
-        console.log("[MOUNT] scoreRes.data.batting:", JSON.stringify(scoreRes?.data?.batting));
-        console.log("[MOUNT] scoreRes.data.batsman:", JSON.stringify(scoreRes?.data?.batsman));
-        console.log("[MOUNT] scoreRes.data.bowler:", JSON.stringify(scoreRes?.data?.bowler));
-        console.log("[MOUNT] scoreRes.data.matchCurrentStatus:", scoreRes?.data?.matchCurrentStatus);
-        console.log("[MOUNT] scoreRes.data keys:", Object.keys(scoreRes?.data || {}));
+      if (isMatchPayload(matchRes?.data)) {
+        const m = matchRes.data;
+        setMatchDetails(m);
 
-        // --- Status redirect check ---
-        if (matchRes?.data) {
-          const m = matchRes.data;
-          setMatchDetails(m);
-
-          if (
-            m.status === MATCH_STATUS.MATCH_CREATED ||
+        // With actions still queued, the server's status is behind this phone.
+        if (
+          !queue.length &&
+          (m.status === MATCH_STATUS.MATCH_CREATED ||
             m.status === MATCH_STATUS.MATCH_DETAILS_ENTERED ||
-            m.status === MATCH_STATUS.TOSS
-          ) {
-            console.log("[MOUNT] 🔀 Redirecting away from ScorerScreen, status:", m.status);
-            isLeavingRef.current = true;
-            const target = matchRedirectBasedOnStatus(matchID, m.status);
-            navigation.replace(target.screen, target.params);
-            return;
-          }
+            m.status === MATCH_STATUS.TOSS)
+        ) {
+          console.log("[MOUNT] 🔀 Redirecting away from ScorerScreen, status:", m.status);
+          isLeavingRef.current = true;
+          const target = matchRedirectBasedOnStatus(matchID, m.status);
+          navigation.replace(target.screen, target.params);
+          return;
         }
+      }
 
-        // --- Set score state ---
-        const formatted = scoreRes?.data;
-        const hasBatting = !!formatted?.batting;
-        const hasBatsman = !!formatted?.batsman;
-        const hasBowler = !!formatted?.bowler;
+      if (isScorePayload(scoreRes?.data)) {
+        acceptServerScore(scoreRes.data);
+      } else {
+        console.warn("[MOUNT] ⚠️ score not loaded:", scoreRes?.data?.message || scoreRes?.status);
+      }
+      setIsStatusChecked(true);
+    })().catch((err) => {
+      console.error("[MOUNT] ❌ Error loading match:", err?.message || err);
+      if (!cancelled) setIsStatusChecked(true);
+    });
 
-        console.log("[MOUNT] Score shape check — hasBatting:", hasBatting, "hasBatsman:", hasBatsman, "hasBowler:", hasBowler);
-
-        if (formatted && typeof formatted === "object" && formatted.success !== false) {
-          if (hasBatting || hasBatsman || hasBowler) {
-            console.log("[MOUNT] ✅ Calling setScore with formatted data");
-            setScore(formatted);
-          } else {
-            console.warn("[MOUNT] ⚠️ score response missing batting/batsman/bowler. Keys:", Object.keys(formatted));
-          }
-
-          // Replaying queued actions is safe (the server skips ones it
-          // already applied), so only drop those too old for it to recognise.
-          purgeExpiredActions(matchID).then((remaining) => {
-            setPendingActionCount(remaining.length);
-          });
-        } else {
-          console.warn("[MOUNT] ⚠️ score response invalid. success:", formatted?.success, "message:", formatted?.message);
-        }
-
-        console.log("[MOUNT] ✅ Calling setIsStatusChecked(true)");
-        setIsStatusChecked(true);
-      })
-      .catch((err) => {
-        console.error("[MOUNT] ❌ API fetch error:", err?.message || err);
-        setIsStatusChecked(true);
-      });
+    return () => {
+      cancelled = true;
+    };
   }, [matchID, navigation]);
 
+  // The squads are part of what's needed to keep scoring offline.
+  useEffect(() => {
+    if (matchDetails) saveSnapshotSoon();
+  }, [matchDetails, saveSnapshotSoon]);
 
-
-
-
-
+  // While connected with actions still queued, keep trying to send them — an
+  // action queued after a slow ack would otherwise wait for the next
+  // reconnect, which may never come.
+  const hasPendingActions = pendingActionCount > 0;
+  useEffect(() => {
+    if (!isConnected || !hasPendingActions) {
+      if (!hasPendingActions) setSyncProblem(null);
+      return;
+    }
+    flushPendingActionQueue();
+    const timer = setInterval(flushPendingActionQueue, 7000);
+    return () => clearInterval(timer);
+  }, [isConnected, hasPendingActions, flushPendingActionQueue]);
 
   useEffect(() => {
     if (!matchID) return;
@@ -1774,6 +1832,9 @@ export default function ScorerScreen() {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
+      // Sent on every (re)connect. Scoring events are rejected on a socket
+      // the server can't tie to a logged-in user.
+      auth: (cb) => cb({ token: getAuthToken() || null }),
     });
     socketRef.current = socketConn;
 
@@ -1803,14 +1864,16 @@ export default function ScorerScreen() {
       }
     };
 
-    const handleInningsStartSocket = () => {
+    // `endOfInningsScore`: passed when the innings was ended on this phone
+    // (offline); the server's INNINGS_START event carries nothing.
+    const handleInningsStartSocket = (endOfInningsScore) => {
       setIsEndingInnings(false);
       setInningsCompleteModalVisible(false);
       setMatchTiedModalVisible(false);
       setCommitteeEndModalVisible(false);
       isLeavingRef.current = true;
 
-      const currentLatestScore = scoreRef.current || score;
+      const currentLatestScore = endOfInningsScore || scoreRef.current || score;
       const isSuperOver =
         currentLatestScore?.matchCurrentStatus === MATCH_STATUS.SUPER_OVER ||
         currentLatestScore?.status === MATCH_STATUS.SUPER_OVER ||
@@ -1912,7 +1975,135 @@ export default function ScorerScreen() {
 
 
 
+  // Whether an action can go straight to the server: connected, and nothing
+  // queued ahead of it (queued actions must be sent first, in order).
+  const canSendDirectly = () =>
+    Boolean(socketRef.current?.connected) &&
+    !isFlushing(matchID) &&
+    queueRef.current.length === 0 &&
+    unsavedActionsRef.current.length === 0;
+
+  // Writes a queued action to storage, then tries to send the queue.
+  const storeQueuedAction = (item) => {
+    unsavedActionsRef.current = [...unsavedActionsRef.current, item];
+    return enqueuePendingAction(matchID, item)
+      .catch((queueErr) => console.warn("[UPDATE-SCORE] Error queueing pending action:", queueErr))
+      .then(() => {
+        unsavedActionsRef.current = unsavedActionsRef.current.filter(
+          (unsaved) => unsaved.actionId !== item.actionId
+        );
+        return flushPendingActionQueue();
+      });
+  };
+
+  // What the server announces over the socket after a ball, for a ball that
+  // has only been applied on this phone.
+  const announceLocalEvents = (events = {}) => {
+    setTimeout(() => {
+      if (events.inningsComplete) {
+        matchStatusHandler("isInningCompleted", true);
+        handleInningsCompleteRef.current?.({ fromServer: true });
+      } else if (events.overComplete) {
+        handleOverCompleteRef.current?.();
+      }
+    }, 0);
+  };
+
+  const refuseAction = (action, message, events = {}) => {
+    if (events.overComplete) {
+      // "Over finished": what's needed is the next bowler.
+      handleOverCompleteRef.current?.();
+      return;
+    }
+    showAlert({
+      title: "Couldn't record that",
+      message: message || "The server rejected this action.",
+      type: "warning",
+      confirmText: "OK",
+      onConfirm: () => {
+        if (action === MATCH_ACTION.BOWLER_SELECTED) handleOverCompleteRef.current?.();
+      },
+    });
+  };
+
+  // Saves an action to the queue and shows its effect right away, worked out
+  // on this phone. Everything up to the storage write runs synchronously, so
+  // the next tap already sees the updated score.
+  const queueAction = (item) => {
+    let preview = null;
+    if (!item.localSkip) {
+      preview = applyAction(scoreRef.current, item.action, item.data);
+      if (preview.error) {
+        refuseAction(item.action, preview.error, preview.events);
+        return Promise.resolve();
+      }
+    }
+
+    console.log("[UPDATE-SCORE] Queueing action:", item.action, item.actionId);
+    setQueue([...queueRef.current, item]);
+
+    if (preview && !preview.unsupported) {
+      appliedLocallyRef.current = true;
+      const scoreBefore = scoreRef.current;
+      if (item.action === MATCH_ACTION.MATCH_BALL && item.data?.isWicket) {
+        lastLocalWicketRef.current = { before: scoreBefore, after: preview.score };
+      }
+      showScore(preview.score);
+      announceLocalEvents(preview.events);
+      if (preview.events.inningsStart) {
+        // On to the next innings' openers — once the action is stored, since
+        // that screen reads the queue; with the score as it was at the end of
+        // the innings, which is what it works the target out from.
+        return storeQueuedAction(item).then(() => handleInningsStartSocketRef.current?.(scoreBefore));
+      }
+    } else if (
+      preview?.unsupported &&
+      item.action === MATCH_ACTION.UNDO_LAST_BALL &&
+      !socketRef.current?.connected
+    ) {
+      showAlert({
+        title: "Undo saved",
+        message:
+          "That ball is already on the server, so it can't be removed while offline. The undo will be applied as soon as you're back online.",
+        confirmText: "OK",
+      });
+    }
+
+    return storeQueuedAction(item);
+  };
+
+  // Undo while actions are still queued. If the last ball never left this
+  // phone, it (and any batter/bowler picked after it) is simply taken out of
+  // the queue. If it may have reached the server, an undo is queued behind it
+  // instead, so the server removes it.
+  const undoQueuedBall = (undoItem) => {
+    const queue = queueRef.current;
+    const ballIndexes = [];
+    queue.forEach((queued, index) => {
+      if (queued.action === MATCH_ACTION.MATCH_BALL) ballIndexes.push(index);
+      else if (queued.action === MATCH_ACTION.UNDO_LAST_BALL) ballIndexes.pop();
+    });
+    const lastBall = ballIndexes.pop();
+    if (lastBall === undefined) return queueAction(undoItem);
+
+    const tail = queue.slice(lastBall);
+    const mayBeOnServer = isFlushing(matchID) || tail.some((queued) => queued.attempted);
+    const nextQueue = mayBeOnServer ? [...queue, undoItem] : queue.slice(0, lastBall);
+    setQueue(nextQueue);
+    if (baseScoreRef.current) {
+      appliedLocallyRef.current = true;
+      showBaseWithQueue();
+    }
+
+    if (mayBeOnServer) return storeQueuedAction(undoItem);
+    const dropped = new Set(tail.map((queued) => queued.actionId));
+    return updatePendingActionQueue(matchID, (stored) =>
+      stored.filter((queued) => !dropped.has(queued.actionId))
+    ).catch((queueErr) => console.warn("[UPDATE-SCORE] Error removing undone ball:", queueErr));
+  };
+
   const updateScore = async (action, data = {}) => {
+    appliedLocallyRef.current = false;
     const effectiveUserId = userId || User.id;
     if (!matchID) {
       Alert.alert("Match not ready", "Please reopen this match and try again.");
@@ -1931,54 +2122,55 @@ export default function ScorerScreen() {
       ball_type: data?.ballType,
     });
 
-    // Generate a unique ID for this action so it can be tracked in the queue
-    const actionId = generateActionId();
-    const payload = {
+    // A unique id per action: the server uses it to skip an action it is sent
+    // twice (a retry of one whose confirmation never arrived).
+    const item = {
+      actionId: generateActionId(),
       userId: effectiveUserId,
-      matchId: matchID,
       action,
       data,
-      actionId,
+      createdAt: Date.now(),
     };
     console.log("[UPDATE-SCORE] action:", action, "matchId:", matchID);
 
-    // 1. If connected and not flushing, send directly over the socket
-    if (!isFlushingQueueRef.current && socketRef.current?.connected) {
-      try {
-        const response = await emitWithAck("update-score", payload, 5000);
-        if (response?.success) {
-          // Successfully acknowledged and recorded by server! No disk write needed.
-          return;
-        }
-        if (!isRetryableAck(response)) {
-          // The server looked at it and said no; queueing it would only
-          // block later actions. Tell the scorer instead.
-          showAlert({
-            title: "Couldn't record that",
-            message: response?.message || "The server rejected this action.",
-            type: "warning",
-            confirmText: "OK",
-          });
-          return;
-        }
-      } catch (err) {
-        console.warn("[UPDATE-SCORE] Online emit failed, will queue offline:", err);
-      }
+    if (action === MATCH_ACTION.UNDO_LAST_BALL && queueRef.current.length) {
+      return undoQueuedBall(item);
     }
 
-    // 2. Offline or ack failed/timed out: persist to offline queue in AsyncStorage
-    console.log("[UPDATE-SCORE] Queueing action offline:", action, actionId);
-    try {
-      const queue = await enqueuePendingAction(matchID, {
-        actionId,
-        userId: effectiveUserId,
-        action,
-        data,
+    // 1. Offline, or other actions are waiting ahead of this one: queue it.
+    if (!canSendDirectly()) return queueAction(item);
+
+    // 2. Connected: send it and wait for the server to confirm.
+    const sentAt = Date.now();
+    const response = await emitWithAck(
+      "update-score",
+      { userId: effectiveUserId, matchId: matchID, action, data, actionId: item.actionId },
+      5000
+    );
+    if (response?.success) return;
+
+    if (!isRetryableAck(response)) {
+      // The server looked at it and said no; queueing it would only block
+      // later actions. Tell the scorer instead.
+      refuseAction(action, response?.message, {
+        overComplete: /over finished/i.test(String(response?.message || "")),
       });
-      setPendingActionCount(queue.length);
-    } catch (queueErr) {
-      console.warn("[UPDATE-SCORE] Error queueing pending action:", queueErr);
+      return;
     }
+
+    // 3. No confirmation. Queue it; the server recognises it by id if it did
+    //    get through. If the server's score has arrived since it was sent, it
+    //    was applied and only the confirmation was lost — don't count it again.
+    if (isLoggedOutAck(response)) {
+      setSyncProblem("loggedOut");
+      reconnectWithCurrentLogin();
+    }
+    const timedOut = !response || Boolean(response.timedOut);
+    return queueAction({
+      ...item,
+      attempted: timedOut,
+      localSkip: timedOut && lastServerScoreAtRef.current > sentAt,
+    });
   };
 
 
@@ -2233,7 +2425,18 @@ export default function ScorerScreen() {
 
     console.log("[CHANGE-STRIKE] Switching strike to:", nextStrikerName, nextStrikerId);
 
-    // 1. Optimistic UI update so scorer immediately sees the bat icon move
+    // 1. Send MATCH_ACTION.CHANGE_STRIKE with target striker
+    const payloadData = nextStrikerId
+      ? { striker: nextStrikerId }
+      : nextStrikerName
+      ? { striker: nextStrikerName }
+      : {};
+    const sendingDirectly = canSendDirectly();
+    updateScore(MATCH_ACTION.CHANGE_STRIKE, payloadData);
+    // Queued: updateScore has already moved the strike on screen.
+    if (appliedLocallyRef.current) return;
+
+    // 2. Optimistic UI update so scorer immediately sees the bat icon move
     setScore((prevScore) => {
       if (!prevScore || !Array.isArray(prevScore?.batsman)) return prevScore;
       const updatedBatsman = prevScore.batsman.map((b) => {
@@ -2260,16 +2463,10 @@ export default function ScorerScreen() {
       return newScore;
     });
 
-    // 2. Send MATCH_ACTION.CHANGE_STRIKE with target striker
-    const payloadData = nextStrikerId
-      ? { striker: nextStrikerId }
-      : nextStrikerName
-      ? { striker: nextStrikerName }
-      : {};
-    updateScore(MATCH_ACTION.CHANGE_STRIKE, payloadData);
-
-    // 3. Also send dedicated 'set-striker' socket event to ensure DB sync
-    if (nextStrikerId) {
+    // 3. Also send dedicated 'set-striker' socket event to ensure DB sync.
+    //    Only when sending directly: emitted while offline it would be
+    //    delivered on reconnect ahead of the queued balls it belongs after.
+    if (nextStrikerId && sendingDirectly) {
       emit("set-striker", {
         userId: userId || User?.id,
         matchId: matchID,
@@ -2427,12 +2624,19 @@ export default function ScorerScreen() {
             <View className="bg-amber-500 py-1.5 px-4 flex-row items-center justify-center">
               <ThemedText className="text-xs text-black font-semibold">
                 {pendingActionCount > 0
-                  ? `Offline — ${pendingActionCount} action${pendingActionCount === 1 ? "" : "s"} will sync automatically`
-                  : "Connecting to live scoring server..."}
+                  ? `Offline — ${pendingActionCount} action${pendingActionCount === 1 ? "" : "s"} saved on this phone, will sync automatically`
+                  : "Offline — keep scoring, it will sync when you're back online"}
               </ThemedText>
             </View>
           )}
-          {isConnected && pendingActionCount > 0 && (
+          {isConnected && pendingActionCount > 0 && syncProblem === "loggedOut" && (
+            <View className="bg-red-600 py-1.5 px-4 flex-row items-center justify-center">
+              <ThemedText className="text-xs text-white font-semibold">
+                Can't sync {pendingActionCount} action{pendingActionCount === 1 ? "" : "s"} — please log in again. They stay saved on this phone.
+              </ThemedText>
+            </View>
+          )}
+          {isConnected && pendingActionCount > 0 && syncProblem !== "loggedOut" && (
             <View className="bg-blue-500 py-1.5 px-4 flex-row items-center justify-center">
               <ThemedText className="text-xs text-white font-semibold">
                 Syncing {pendingActionCount} pending action{pendingActionCount === 1 ? "" : "s"}...

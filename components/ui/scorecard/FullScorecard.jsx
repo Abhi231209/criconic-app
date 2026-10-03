@@ -556,7 +556,7 @@ export default function FullScoreCard({
                   className="w-6 items-center justify-center"
                 >
                   <Ionicons
-                    name="sparkles"
+                    name="id-card"
                     size={14}
                     color={isDark ? "#4DD6C7" : "#0D9488"}
                   />
@@ -673,7 +673,7 @@ export default function FullScoreCard({
                   className="w-6 items-center justify-center"
                 >
                   <Ionicons
-                    name="sparkles"
+                    name="id-card"
                     size={14}
                     color={isDark ? "#4DD6C7" : "#0D9488"}
                   />

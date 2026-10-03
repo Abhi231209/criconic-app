@@ -14,8 +14,9 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { request } from '@/utils/api';
-import { ChevronLeft, Check, Sparkles, Sliders } from 'lucide-react-native';
+import { ChevronLeft, Check, Sliders } from 'lucide-react-native';
 import DesktopOverlayPreview, { THEME_STRIP_PREVIEWS } from './DesktopOverlayPreview';
+import BroadcastThemeStrip, { getBroadcastPreview } from './BroadcastThemeStrip';
 
 const { width } = Dimensions.get('window');
 
@@ -409,11 +410,29 @@ export default function ThemeConfig() {
                   nestedScrollEnabled={true}
                   contentContainerStyle={themeStyles.previewContent}
                 >
-                  <Image
-                    source={isIplTheme ? THEME_STRIP_PREVIEWS.ipl : THEME_STRIP_PREVIEWS.fox}
-                    style={themeStyles.stripImage}
-                    resizeMode="cover"
-                  />
+                  {theme.previewImage ? (
+                    <Image
+                      source={{ uri: theme.previewImage }}
+                      style={themeStyles.stripImage}
+                      resizeMode="cover"
+                    />
+                  ) : getBroadcastPreview(theme) ? (
+                    <View style={[themeStyles.stripImage, { overflow: "hidden" }]}>
+                      <BroadcastThemeStrip
+                        theme={theme}
+                        teamAColor={isSelected ? teamAColor : null}
+                        teamBColor={isSelected ? teamBColor : null}
+                        teamAName={teamAName}
+                        teamBName={teamBName}
+                      />
+                    </View>
+                  ) : (
+                    <Image
+                      source={isIplTheme ? THEME_STRIP_PREVIEWS.ipl : THEME_STRIP_PREVIEWS.fox}
+                      style={themeStyles.stripImage}
+                      resizeMode="cover"
+                    />
+                  )}
                 </ScrollView>
               </View>
             </TouchableOpacity>

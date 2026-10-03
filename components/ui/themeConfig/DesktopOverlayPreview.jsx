@@ -12,9 +12,11 @@ import {
   Maximize2,
   X,
   Tv,
-  Sparkles,
+  Palette,
   CheckCircle2,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import BroadcastThemeStrip, { getBroadcastPreview } from './BroadcastThemeStrip';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -43,8 +45,36 @@ export default function DesktopOverlayPreview({
   const isIpl = themeKey.includes('ipl');
   const activeBroadcastImage = isIpl ? BROADCAST_PREVIEWS.ipl : BROADCAST_PREVIEWS.fox;
 
-  const primaryA = teamAColor?.config?.primaryColor || (isIpl ? '#004BA0' : '#2563EB');
-  const primaryB = teamBColor?.config?.primaryColor || (isIpl ? '#D32F2F' : '#DC2626');
+  const broadcast = getBroadcastPreview(theme);
+  const themeLabel = broadcast ? theme?.title : isIpl ? 'IPL 2025' : 'Fox Cricket';
+  const labelColor = broadcast ? broadcast.accent : isIpl ? '#00FF78' : '#FDB913';
+
+  const primaryA =
+    teamAColor?.config?.primaryColor || broadcast?.teamA || (isIpl ? '#004BA0' : '#2563EB');
+  const primaryB =
+    teamBColor?.config?.primaryColor || broadcast?.teamB || (isIpl ? '#D32F2F' : '#DC2626');
+
+  // Broadcast themes have no bundled screenshot: draw the strip over a pitch.
+  const renderScreen = (imageStyle, resizeMode) =>
+    broadcast ? (
+      <LinearGradient
+        colors={['#2E6B2E', '#1D4A20', '#123316']}
+        style={[imageStyle, { height: undefined, aspectRatio: 16 / 9 }]}
+      >
+        <View style={monitorStyles.stripDock}>
+          <BroadcastThemeStrip
+            theme={theme}
+            teamAColor={teamAColor}
+            teamBColor={teamBColor}
+            teamAName={teamAName}
+            teamBName={teamBName}
+            height={40}
+          />
+        </View>
+      </LinearGradient>
+    ) : (
+      <Image source={activeBroadcastImage} style={imageStyle} resizeMode={resizeMode} />
+    );
 
   return (
     <View style={monitorStyles.container}>
@@ -81,11 +111,7 @@ export default function DesktopOverlayPreview({
 
       {/* Main 16:9 Broadcast Monitor Screen Frame */}
       <View style={monitorStyles.screenFrame}>
-        <Image
-          source={activeBroadcastImage}
-          style={monitorStyles.broadcastImage}
-          resizeMode="cover"
-        />
+        {renderScreen(monitorStyles.broadcastImage, 'cover')}
 
         {/* Subtle Top Overlay Bar within Monitor */}
         <View style={monitorStyles.monitorOverlayHeader}>
@@ -94,9 +120,9 @@ export default function DesktopOverlayPreview({
             <Text style={monitorStyles.channelText}>OBS LIVE</Text>
           </View>
           <View style={monitorStyles.themeNameBadge}>
-            <Sparkles size={11} color={isIpl ? '#00FF78' : '#FDB913'} />
-            <Text style={[monitorStyles.themeNameText, { color: isIpl ? '#00FF78' : '#FDB913' }]}>
-              {isIpl ? 'IPL 2025 Graphics' : 'Fox Cricket Graphics'}
+            <Palette size={11} color={labelColor} />
+            <Text style={[monitorStyles.themeNameText, { color: labelColor }]}>
+              {themeLabel} Graphics
             </Text>
           </View>
         </View>
@@ -125,7 +151,7 @@ export default function DesktopOverlayPreview({
             <View style={modalStyles.modalHeaderTitleRow}>
               <Tv size={18} color="#3B82F6" />
               <Text style={modalStyles.modalTitle}>
-                {isIpl ? 'IPL 2025 Broadcast Overlay' : 'Fox Cricket Broadcast Overlay'}
+                {themeLabel} Broadcast Overlay
               </Text>
               <View style={modalStyles.badge1080}>
                 <Text style={modalStyles.badge1080Text}>1080p Stream</Text>
@@ -141,11 +167,7 @@ export default function DesktopOverlayPreview({
 
           {/* Center Image Container */}
           <View style={modalStyles.imageCenterContainer}>
-            <Image
-              source={activeBroadcastImage}
-              style={modalStyles.fullscreenImage}
-              resizeMode="contain"
-            />
+            {renderScreen(modalStyles.fullscreenImage, 'contain')}
           </View>
 
           {/* Modal Footer */}
@@ -257,6 +279,12 @@ const monitorStyles = StyleSheet.create({
   broadcastImage: {
     width: '100%',
     height: '100%',
+  },
+  stripDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 6,
   },
   monitorOverlayHeader: {
     position: 'absolute',

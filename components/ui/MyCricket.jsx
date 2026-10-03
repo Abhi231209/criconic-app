@@ -21,7 +21,18 @@ import AnimatedFooter from "./AnimatedFooter";
 import { matchesApi, tournamentsApi, teamsApi, request } from "@/utils/api";
 import { getImageFullUrl, formatIndianCurrencyWords } from "@/utils";
 import { useSelector } from "react-redux";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import User from "@/utils/User";
+import { useSocket } from "@/contexts/SocketContext";
+import { listPendingMatches, listScoredMatchIds } from "@/utils/offlineActionQueue";
+import { slimMatch } from "@/utils/savedLists";
+
+// A request that got an answer. A failed one (no connection, server error)
+// comes back from `request` as an error response instead of throwing, and
+// must not be read as "the user has nothing".
+const isOk = (res) => Boolean(res && res.status >= 200 && res.status < 300);
+
+const cacheKey = (userId) => `@criconic_my_cricket_${userId || "guest"}`;
 
 export default function MyCricket({ route: propRoute }) {
   const navigation = useNavigation();
@@ -53,7 +64,22 @@ export default function MyCricket({ route: propRoute }) {
   const [activeTab, setActiveTab] = useState(incomingTab || "matches");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  // The last load didn't get through; what's shown is the saved copy (if any).
+  const [loadFailed, setLoadFailed] = useState(false);
   const lastFetchRef = useRef(0);
+  const { isConnected } = useSocket();
+
+  // Scoring recorded offline that hasn't been uploaded yet: [{ matchId, count }].
+  const [pendingScoring, setPendingScoring] = useState([]);
+  // Matches scored on this phone — their card offers scoring even when the
+  // server can't be asked whether this user may score them.
+  const [scoredHere, setScoredHere] = useState(() => new Set());
+
+  const loadOfflineScoringState = useCallback(async () => {
+    const [pending, scored] = await Promise.all([listPendingMatches(), listScoredMatchIds()]);
+    setPendingScoring(pending);
+    setScoredHere(new Set(scored.map(String)));
+  }, []);
 
   const [recentMatches, setRecentMatches] = useState([]);
   const [tournaments, setTournaments] = useState([]);
@@ -106,10 +132,17 @@ export default function MyCricket({ route: propRoute }) {
       fetchData(false);
     });
 
+    const subSynced = DeviceEventEmitter.addListener("OFFLINE_SCORES_SYNCED", () => {
+      loadOfflineScoringState();
+      lastFetchRef.current = 0;
+      fetchData(false);
+    });
+
     return () => {
       subMatch.remove();
       subTourn.remove();
       subTeam.remove();
+      subSynced.remove();
     };
   }, [userId, isAdmin]);
 
@@ -208,8 +241,16 @@ export default function MyCricket({ route: propRoute }) {
         request(teamEndpoint, { method: "GET", errorAlert: false }).catch(() => null),
       ]);
 
+      // A list is only replaced by what a request that got through returned;
+      // if none did, what's on screen (or the saved copy) stays.
+      const matchesLoaded = matchesResList.some(isOk);
+      const tournamentsLoaded = tourResList.some(isOk);
+      const teamsLoaded = isOk(teamRes);
+      setLoadFailed(!(matchesLoaded && tournamentsLoaded && teamsLoaded));
+      const saved = {};
+
       // Process user matches
-      const rawMatchesCombined = matchesResList.flatMap(extractArray);
+      const rawMatchesCombined = matchesResList.filter(isOk).flatMap(extractArray);
       const seenMatchIds = new Set();
       const uniqueMatches = [];
       for (const m of rawMatchesCombined) {
@@ -220,11 +261,14 @@ export default function MyCricket({ route: propRoute }) {
         }
       }
 
-      setRecentMatches(uniqueMatches.map(mapMatchItem));
-      setHasMoreMatches(uniqueMatches.length >= 6);
+      if (matchesLoaded) {
+        setRecentMatches(uniqueMatches.map(mapMatchItem));
+        setHasMoreMatches(uniqueMatches.length >= 6);
+        saved.matches = uniqueMatches.map(slimMatch);
+      }
 
       // Process user tournaments
-      const rawTourList = tourResList.flatMap(extractArray);
+      const rawTourList = tourResList.filter(isOk).flatMap(extractArray);
       const seenTourIds = new Set();
       const uniqueTournaments = [];
       for (const item of rawTourList) {
@@ -236,8 +280,7 @@ export default function MyCricket({ route: propRoute }) {
         }
       }
 
-      setTournaments(
-        uniqueTournaments.map((t) => {
+      const tournamentList = uniqueTournaments.map((t) => {
           const rawEntryFee = t?.entryFee;
           const entryFee = (rawEntryFee !== undefined && rawEntryFee !== null && rawEntryFee !== "" && Number(rawEntryFee) !== 0 && rawEntryFee !== "0")
             ? formatIndianCurrencyWords(rawEntryFee)
@@ -253,11 +296,14 @@ export default function MyCricket({ route: propRoute }) {
             entryFee,
             raw: t,
           };
-        })
-      );
+        });
+      if (tournamentsLoaded) {
+        setTournaments(tournamentList);
+        saved.tournaments = tournamentList;
+      }
 
       // Process user teams (read stats directly from backend without N+1 calls)
-      const rawTeamList = extractArray(teamRes);
+      const rawTeamList = teamsLoaded ? extractArray(teamRes) : [];
       const seenTeamIds = new Set();
       const uniqueTeams = [];
       for (const tm of rawTeamList) {
@@ -285,9 +331,25 @@ export default function MyCricket({ route: propRoute }) {
           });
         }
       }
-      setTeams(uniqueTeams);
+      if (teamsLoaded) {
+        setTeams(uniqueTeams);
+        saved.teams = uniqueTeams;
+      }
+
+      // Keep a copy for the next time this screen opens without a connection.
+      if (Object.keys(saved).length) {
+        AsyncStorage.getItem(cacheKey(userId))
+          .then((raw) =>
+            AsyncStorage.setItem(
+              cacheKey(userId),
+              JSON.stringify({ ...(raw ? JSON.parse(raw) : {}), ...saved })
+            )
+          )
+          .catch(() => {});
+      }
     } catch (error) {
       console.warn("[MyCricket] Failed to fetch data:", error);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -306,7 +368,8 @@ export default function MyCricket({ route: propRoute }) {
         matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
         request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
       ]);
-      const rawCombined = resList.flatMap(extractArray);
+      if (!resList.some(isOk)) return; // not loaded: try this page again later
+      const rawCombined = resList.filter(isOk).flatMap(extractArray);
       if (rawCombined.length > 0) {
         setRecentMatches((prev) => {
           const seen = new Set();
@@ -348,10 +411,50 @@ export default function MyCricket({ route: propRoute }) {
     }
   }, [route?.params?.initialTab, route?.params?.tab]);
 
+  // Opens with the saved copy of the lists (so they show without a
+  // connection too), then loads the current ones. Runs again once the logged
+  // in user is known, if it wasn't when the screen opened.
   useEffect(() => {
+    let cancelled = false;
+    // Marked before the saved copy is read, so the focus handler below
+    // doesn't start a second load of its own.
     lastFetchRef.current = Date.now();
-    fetchData();
-  }, []);
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(cacheKey(userId));
+        const saved = raw ? JSON.parse(raw) : null;
+        if (saved && !cancelled) {
+          if (Array.isArray(saved.matches)) {
+            setRecentMatches((prev) => (prev.length ? prev : saved.matches.map(mapMatchItem)));
+          }
+          if (Array.isArray(saved.tournaments)) {
+            setTournaments((prev) => (prev.length ? prev : saved.tournaments));
+          }
+          if (Array.isArray(saved.teams)) {
+            setTeams((prev) => (prev.length ? prev : saved.teams));
+          }
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn("[MyCricket] Failed to read saved lists:", e);
+      }
+      if (cancelled) return;
+      lastFetchRef.current = Date.now();
+      fetchData();
+    })();
+    loadOfflineScoringState();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // The connection is back after a load that didn't get through: load again.
+  useEffect(() => {
+    if (isConnected && loadFailed) {
+      lastFetchRef.current = Date.now();
+      fetchData(false);
+    }
+  }, [isConnected]);
 
   useFocusEffect(
     useCallback(() => {
@@ -359,13 +462,14 @@ export default function MyCricket({ route: propRoute }) {
       if (tab) {
         setActiveTab(tab);
       }
+      loadOfflineScoringState();
       const hasRefreshParam = Boolean(route?.params?.refresh);
       // Throttle tab focus fetch to 15s unless refresh requested or never fetched
       if (hasRefreshParam || Date.now() - lastFetchRef.current > 15000) {
         lastFetchRef.current = Date.now();
         fetchData(false);
       }
-    }, [userId, route?.params?.initialTab, route?.params?.tab, route?.params?.refresh])
+    }, [userId, route?.params?.initialTab, route?.params?.tab, route?.params?.refresh, loadOfflineScoringState])
   );
 
   const onRefresh = () => {
@@ -406,6 +510,32 @@ export default function MyCricket({ route: propRoute }) {
     </TouchableOpacity>
   );
 
+  // Shown on every tab when the last load didn't get through, instead of
+  // letting an empty list read as "you have none".
+  const renderLoadFailedNotice = () =>
+    loadFailed && !loading ? (
+      <View
+        className={`flex-row items-center px-3 py-2.5 rounded-xl mt-2 border ${
+          isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        }`}
+      >
+        <Ionicons name="cloud-offline-outline" size={20} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+        <ThemedText
+          className={`flex-1 text-xs ml-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}
+        >
+          Couldn't load the latest from the server. Check your internet connection
+          {recentMatches.length || tournaments.length || teams.length ? " — showing what was saved on this phone." : "."}
+        </ThemedText>
+        <TouchableOpacity
+          onPress={onRefresh}
+          className="bg-blue-600 px-3 py-1.5 rounded-full ml-2"
+          activeOpacity={0.8}
+        >
+          <ThemedText className="text-white text-xs font-bold">Retry</ThemedText>
+        </TouchableOpacity>
+      </View>
+    ) : null;
+
   const renderMatchesTab = () => (
     <FlatList
       data={recentMatches}
@@ -416,26 +546,55 @@ export default function MyCricket({ route: propRoute }) {
         <View className="mb-2">
           <ScoreCard
             matchId={item.id}
-            match={item.raw || item}
+            match={
+              scoredHere.has(String(item.id))
+                ? { ...(item.raw || item), accessToUpdate: true }
+                : item.raw || item
+            }
             fullWidth={true}
           />
         </View>
       )}
       ListHeaderComponent={
-        <View className="flex-row justify-between items-center mb-3 mt-2">
-          <ThemedText
-            className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
-          >
-            My Matches
-          </ThemedText>
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.CreateMatch)}
-            className="flex-row items-center bg-blue-600 px-3.5 py-1.5 rounded-full shadow-sm"
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={16} color="#FFFFFF" />
-            <ThemedText className="text-white text-xs font-bold ml-1">Create Match</ThemedText>
-          </TouchableOpacity>
+        <View>
+          {renderLoadFailedNotice()}
+          {pendingScoring.map(({ matchId, count }) => {
+            const match = recentMatches.find((m) => String(m.id) === String(matchId));
+            return (
+              <TouchableOpacity
+                key={matchId}
+                onPress={() => navigation.navigate(SCREENS.ScorerScreen, { matchId })}
+                className="flex-row items-center bg-amber-500 px-3 py-2.5 rounded-xl mt-2"
+                activeOpacity={0.85}
+              >
+                <Ionicons name="cloud-offline-outline" size={20} color="#000000" />
+                <View className="flex-1 ml-2">
+                  <ThemedText className="text-sm font-bold text-black" numberOfLines={1}>
+                    {match ? `${match.team1} vs ${match.team2}` : "Match scored offline"}
+                  </ThemedText>
+                  <ThemedText className="text-xs text-black">
+                    {count} scoring action{count === 1 ? "" : "s"} not uploaded yet — saved on this phone. Tap to continue scoring.
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#000000" />
+              </TouchableOpacity>
+            );
+          })}
+          <View className="flex-row justify-between items-center mb-3 mt-2">
+            <ThemedText
+              className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
+            >
+              My Matches
+            </ThemedText>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+              className="flex-row items-center bg-blue-600 px-3.5 py-1.5 rounded-full shadow-sm"
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={16} color="#FFFFFF" />
+              <ThemedText className="text-white text-xs font-bold ml-1">Create Match</ThemedText>
+            </TouchableOpacity>
+          </View>
         </View>
       }
       ListEmptyComponent={
@@ -443,6 +602,10 @@ export default function MyCricket({ route: propRoute }) {
           <View className="items-center py-16">
             <ActivityIndicator size="large" color="#3B82F6" />
           </View>
+        ) : loadFailed ? (
+          // The notice above already says the load failed; "No matches
+          // found" here would be wrong.
+          null
         ) : (
           <View className="items-center py-8">
             <Ionicons
@@ -520,6 +683,7 @@ export default function MyCricket({ route: propRoute }) {
         />
       }
     >
+      {renderLoadFailedNotice()}
       {/* Header row with Create Tournament action */}
       <View className="flex-row justify-between items-center mb-3 mt-2">
         <ThemedText
@@ -655,7 +819,7 @@ export default function MyCricket({ route: propRoute }) {
         <View className="items-center py-16 w-full">
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
-      ) : tournaments.length === 0 ? (
+      ) : tournaments.length === 0 && !loadFailed ? (
         <View className="items-center py-8 w-full">
           <Ionicons
             name="trophy-outline"
@@ -704,6 +868,7 @@ export default function MyCricket({ route: propRoute }) {
         />
       }
     >
+      {renderLoadFailedNotice()}
       {/* Header row with Create Team action */}
       <View className="flex-row justify-between items-center mb-3 mt-2">
         <ThemedText
@@ -825,7 +990,7 @@ export default function MyCricket({ route: propRoute }) {
         <View className="items-center py-16 w-full">
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
-      ) : teams.length === 0 ? (
+      ) : teams.length === 0 && !loadFailed ? (
         <View className="items-center py-8 w-full">
           <Ionicons
             name="people-outline"

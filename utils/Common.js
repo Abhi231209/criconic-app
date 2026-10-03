@@ -262,6 +262,7 @@ export const MatchSettingEnum = {
   SHOW_MATCH_PREVIEW: "showMatchPreview",
   SHOW_PARTNERSHIP: "showPartnership",
   SHOW_TOSS: "showToss",
+  AUTO_HIGHLIGHT_SHOW: "autoHighlightShow",
   RECORD_WAGON_WHEEL: "recordWagonWheel",
   RECORD_PITCH_MAP: "recordPitchMap",
   DLS: "dls",
@@ -286,6 +287,7 @@ export const LiveSettings = {
   [MatchSettingEnum.GO_LIVE]: "Go Live",
   [MatchSettingEnum.OVERLAY_SETUP]: "Overlay Setup",
 
+  [MatchSettingEnum.AUTO_HIGHLIGHT_SHOW]: "Auto Highlight Show",
   [MatchSettingEnum.SHOW_MATCH_PREVIEW]: "Show Match Preview",
   [MatchSettingEnum.SHOW_TOSS]: "Show Toss Decision",
   [MatchSettingEnum.SHOW_BATSMEN_STATS]: "Show batsmen Score",
