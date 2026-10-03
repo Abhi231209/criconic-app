@@ -31,6 +31,7 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { saveTrackingDefault } from "@/utils/trackingDefaults";
 import { useNavigation } from "@react-navigation/native";
 import { useSelector } from "react-redux";
 import ThemedText from "../custom/ThemedText";
@@ -330,9 +331,11 @@ export default function MatchSetting({ matchId, onInningsComplete, onClose, scor
     // Sync tracking toggles with AsyncStorage and MongoDB match config
     if (action === MatchSettingEnum.RECORD_WAGON_WHEEL) {
       AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(value)).catch(() => {});
+      saveTrackingDefault("wagonWheel", value);
       matchesApi.updateMatch(matchId, { config: { recordWagonWheel: value } }).catch(() => {});
     } else if (action === MatchSettingEnum.RECORD_PITCH_MAP) {
       AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(value)).catch(() => {});
+      saveTrackingDefault("pitchMap", value);
       matchesApi.updateMatch(matchId, { config: { recordPitchMap: value } }).catch(() => {});
     } else if (action === MatchSettingEnum.DLS) {
       matchesApi.updateMatch(matchId, { config: { dls: value } }).catch(() => {});

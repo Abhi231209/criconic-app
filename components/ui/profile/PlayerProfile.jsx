@@ -10,7 +10,7 @@ import {
   RefreshControl,
   BackHandler,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -22,6 +22,7 @@ import { useSelector } from "react-redux";
 import request, { matchesApi, userApi, rankingsApi } from "@/utils/api";
 import PlayerAvatar from "@/components/ui/custom/PlayerAvatar";
 import { toShortBattingStyle, toShortBowlingStyle } from "@/utils";
+import AnimatedFooter from "@/components/ui/AnimatedFooter";
 
 const isCricketRole = (r) => {
   if (!r || typeof r !== "string") return false;
@@ -50,6 +51,7 @@ const normalizeCricketRole = (r) => {
 };
 
 export default function PlayerProfile({ navigation, route = { params: {} } }) {
+  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const [activeTab, setActiveTab] = useState("overview");
@@ -533,6 +535,10 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     (String(targetId) === String(authUser?._id || authUser?.id) || (!routePlayer && !routePlayerId))
   );
 
+  // Opened from the footer's Profile tab: keep the footer, like the other tabs.
+  const showTabBar = isSelf && Boolean(route?.params?.asTab);
+  const listBottomPad = showTabBar ? 120 + insets.bottom : 20;
+
   const target = {
     ...(sanitizedRoutePlayer || {}),
     ...(fetchedPlayer || {}),
@@ -924,7 +930,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     <ScrollView 
       className="flex-1" 
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomPad }}
       refreshControl={
         <RefreshControl
           refreshing={loadingRankings}
@@ -1364,7 +1370,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       <ScrollView 
         className="flex-1" 
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomPad }}
       >
         {activeStatsTab === "batting" && (
           <View
@@ -1467,7 +1473,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           </View>
         );
       }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomPad + 4 }}
       showsVerticalScrollIndicator={false}
       onEndReached={hasMoreMatches ? loadMoreMatches : null}
       onEndReachedThreshold={0.3}
@@ -1617,7 +1623,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           </View>
         </TouchableOpacity>
       )}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomPad + 4 }}
       showsVerticalScrollIndicator={false}
       onEndReached={hasMoreTeams ? loadMoreTeams : null}
       onEndReachedThreshold={0.3}
@@ -1666,7 +1672,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: listBottomPad }}
     >
       <View className="flex-row items-center justify-between mb-4">
         <ThemedText
@@ -1765,12 +1771,24 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             Player Profile
           </ThemedText>
           {isSelf ? (
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.EditPlayerProfile, { player })}
-              className="w-10 h-10 rounded-full items-center justify-center bg-black/20"
-            >
-              <Ionicons name="create-outline" size={20} color="white" />
-            </TouchableOpacity>
+            <View className="flex-row" style={{ gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.Settings)}
+                className="w-10 h-10 rounded-full items-center justify-center bg-black/20"
+                accessibilityRole="button"
+                accessibilityLabel="Settings"
+              >
+                <Ionicons name="settings-outline" size={20} color="white" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.EditPlayerProfile, { player })}
+                className="w-10 h-10 rounded-full items-center justify-center bg-black/20"
+                accessibilityRole="button"
+                accessibilityLabel="Edit profile"
+              >
+                <Ionicons name="create-outline" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
           ) : (
             <View className="w-10 h-10" />
           )}
@@ -1841,6 +1859,8 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         {activeTab === "teams" && renderTeams()}
         {activeTab === "achievements" && renderAchievements()}
       </View>
+
+      {showTabBar && <AnimatedFooter currentTab="Profile" />}
     </SafeAreaView>
   );
 }

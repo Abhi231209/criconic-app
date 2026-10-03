@@ -17,8 +17,8 @@ const FEATURES = [
   },
   {
     key: "tournaments",
-    title: "Tournament Engine",
-    description: "Fixtures, groups & knockouts with auto net run-rate calculation.",
+    title: "Tournaments",
+    description: "Points table, net run rate and leaderboards that update after every match.",
     icon: "trophy",
     iconSet: "ion",
     colors: ["#D97706", "#B45309"],
@@ -33,8 +33,8 @@ const FEATURES = [
   },
   {
     key: "broadcast",
-    title: "Live Broadcast",
-    description: "Stream to YouTube or Facebook with real-time score overlays.",
+    title: "Stream Overlays",
+    description: "Put a live scoreboard on your YouTube or Facebook stream with one link.",
     icon: "tv",
     iconSet: "ion",
     colors: ["#059669", "#047857"],

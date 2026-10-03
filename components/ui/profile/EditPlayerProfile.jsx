@@ -16,7 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { useSelector, useDispatch } from "react-redux";
-import { request, upload, userApi, teamsApi } from "@/utils/api";
+import { request, upload, uploadedImageUrl, userApi, teamsApi } from "@/utils/api";
 import { updateUser, login } from "@/redux/authSlice";
 import { setUser } from "@/redux/userSlice";
 import User from "@/utils/User";
@@ -56,6 +56,61 @@ const normalizeCricketRole = (r) => {
   if (clean.includes("bat")) return "Batsman";
   return r;
 };
+
+// Defined at module scope: a component declared inside EditPlayerProfile is a new
+// type on every render, which remounts the TextInput and drops keyboard focus.
+const InputField = ({ isDarkMode, label, value, onChange, placeholder, keyboardType = "default" }) => (
+  <View className="mb-4">
+    <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+      {label}
+    </ThemedText>
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor={isDarkMode ? "#6B7280" : "#9CA3AF"}
+      keyboardType={keyboardType}
+      className={`p-3 rounded-lg ${
+        isDarkMode ? "bg-gray-800 text-white" : "bg-white text-gray-900"
+      } border ${isDarkMode ? "border-gray-700" : "border-gray-300"}`}
+    />
+  </View>
+);
+
+const SelectField = ({ isDarkMode, label, value, onChange, options }) => (
+  <View className="mb-4">
+    <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+      {label}
+    </ThemedText>
+    <View className={`flex-row flex-wrap ${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg p-2 border ${isDarkMode ? "border-gray-700" : "border-gray-300"}`}>
+      {options.map((option) => (
+        <TouchableOpacity
+          key={option.value}
+          onPress={() => onChange(option.value)}
+          className={`px-4 py-2 rounded-full mr-2 mb-2 ${
+            value === option.value
+              ? "bg-blue-600"
+              : isDarkMode
+              ? "bg-gray-700"
+              : "bg-gray-200"
+          }`}
+        >
+          <ThemedText
+            className={
+              value === option.value
+                ? "text-white"
+                : isDarkMode
+                ? "text-gray-300"
+                : "text-gray-700"
+            }
+          >
+            {option.label}
+          </ThemedText>
+        </TouchableOpacity>
+      ))}
+    </View>
+  </View>
+);
 
 export default function EditPlayerProfile() {
   const navigation = useNavigation();
@@ -330,7 +385,9 @@ export default function EditPlayerProfile() {
     }
   };
 
-  const handleSave = async () => {
+  // withoutNewPhoto: save the rest after a photo upload failed, keeping the
+  // photo the profile already had.
+  const handleSave = async ({ withoutNewPhoto = false } = {}) => {
     if (!formData.name?.trim()) {
       showGlobalAlert({
         title: "Error",
@@ -361,15 +418,19 @@ export default function EditPlayerProfile() {
 
       let uploadedPhoto = formData.photo;
       if (formData.photo && !formData.photo.startsWith("http")) {
-        try {
-          const uploadRes = await upload(formData.photo, "profile");
-          uploadedPhoto =
-            uploadRes?.url ||
-            uploadRes?.data?.url ||
-            uploadRes?.data ||
-            (typeof uploadRes === "string" ? uploadRes : formData.photo);
-        } catch (uploadErr) {
-          console.warn("[EditPlayerProfile] Photo upload warning, keeping original:", uploadErr);
+        uploadedPhoto = withoutNewPhoto
+          ? player.photo
+          : uploadedImageUrl(await upload(formData.photo, "profile"));
+        if (!uploadedPhoto && !withoutNewPhoto) {
+          showGlobalAlert({
+            title: "Photo didn't upload",
+            message: "Check your connection and try again, or save your other changes without the new photo.",
+            type: "warning",
+            confirmText: "Save without photo",
+            cancelText: "Try again",
+            onConfirm: () => handleSave({ withoutNewPhoto: true }),
+          });
+          return;
         }
       }
 
@@ -380,7 +441,6 @@ export default function EditPlayerProfile() {
         username: formData.name.trim(),
         name: formData.name.trim(),
         shortName: formData.shortName ? formData.shortName.trim() : formData.name.trim(),
-        role: formData.role,
         playerRole: formData.role,
         playingRole: formData.role,
         location: locationVal,
@@ -405,6 +465,15 @@ export default function EditPlayerProfile() {
           method: "POST",
           data: { dataToChange: updatePayload },
         });
+        if (!res?.data?.success) {
+          showGlobalAlert({
+            title: "Couldn't save your profile",
+            message: res?.data?.message || "Check your connection and try again.",
+            type: "error",
+            confirmText: "OK",
+          });
+          return;
+        }
         apiResponseUser = res?.data?.user || res?.data?.data || null;
       }
 
@@ -460,59 +529,6 @@ export default function EditPlayerProfile() {
     setFormData({ ...player });
     navigation.goBack();
   };
-
-  const InputField = ({ label, value, onChange, placeholder, keyboardType = "default" }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-        {label}
-      </ThemedText>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={isDarkMode ? "#6B7280" : "#9CA3AF"}
-        keyboardType={keyboardType}
-        className={`p-3 rounded-lg ${
-          isDarkMode ? "bg-gray-800 text-white" : "bg-white text-gray-900"
-        } border ${isDarkMode ? "border-gray-700" : "border-gray-300"}`}
-      />
-    </View>
-  );
-
-  const SelectField = ({ label, value, onChange, options }) => (
-    <View className="mb-4">
-      <ThemedText className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-        {label}
-      </ThemedText>
-      <View className={`flex-row flex-wrap ${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg p-2 border ${isDarkMode ? "border-gray-700" : "border-gray-300"}`}>
-        {options.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            onPress={() => onChange(option.value)}
-            className={`px-4 py-2 rounded-full mr-2 mb-2 ${
-              value === option.value
-                ? "bg-blue-600"
-                : isDarkMode
-                ? "bg-gray-700"
-                : "bg-gray-200"
-            }`}
-          >
-            <ThemedText
-              className={
-                value === option.value
-                  ? "text-white"
-                  : isDarkMode
-                  ? "text-gray-300"
-                  : "text-gray-700"
-              }
-            >
-              {option.label}
-            </ThemedText>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
 
   return (
     <SafeAreaView
@@ -624,6 +640,7 @@ export default function EditPlayerProfile() {
           </ThemedText>
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Full Name"
             value={formData.name}
             onChange={(value) => handleInputChange("name", value)}
@@ -631,6 +648,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Short Name"
             value={formData.shortName}
             onChange={(value) => handleInputChange("shortName", value)}
@@ -700,6 +718,7 @@ export default function EditPlayerProfile() {
           </View>
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Age"
             value={formData.age}
             onChange={(value) => handleInputChange("age", value)}
@@ -708,6 +727,7 @@ export default function EditPlayerProfile() {
           />
 
           <SelectField
+            isDarkMode={isDarkMode}
             label="Role"
             value={formData.role}
             onChange={(value) => handleInputChange("role", value)}
@@ -720,6 +740,7 @@ export default function EditPlayerProfile() {
           />
 
           <SelectField
+            isDarkMode={isDarkMode}
             label="Batting Style"
             value={toShortBattingStyle(formData.battingStyle)}
             onChange={(value) => handleInputChange("battingStyle", toShortBattingStyle(value))}
@@ -727,6 +748,7 @@ export default function EditPlayerProfile() {
           />
 
           <SelectField
+            isDarkMode={isDarkMode}
             label="Bowling Style"
             value={toShortBowlingStyle(formData.bowlingStyle)}
             onChange={(value) => handleInputChange("bowlingStyle", toShortBowlingStyle(value))}
@@ -749,6 +771,7 @@ export default function EditPlayerProfile() {
           </ThemedText>
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Debut Date"
             value={formData.debut}
             onChange={(value) => handleInputChange("debut", value)}
@@ -756,6 +779,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Matches"
             value={formData.matches}
             onChange={(value) => handleInputChange("matches", value)}
@@ -764,6 +788,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Runs"
             value={formData.runs}
             onChange={(value) => handleInputChange("runs", value)}
@@ -772,6 +797,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Wickets"
             value={formData.wickets}
             onChange={(value) => handleInputChange("wickets", value)}
@@ -780,6 +806,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Highest Score"
             value={formData.highestScore}
             onChange={(value) => handleInputChange("highestScore", value)}
@@ -788,6 +815,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Best Bowling"
             value={formData.bestBowling}
             onChange={(value) => handleInputChange("bestBowling", value)}
@@ -795,6 +823,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Batting Average"
             value={formData.average}
             onChange={(value) => handleInputChange("average", value)}
@@ -803,6 +832,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Strike Rate"
             value={formData.strikeRate}
             onChange={(value) => handleInputChange("strikeRate", value)}
@@ -811,6 +841,7 @@ export default function EditPlayerProfile() {
           />
 
           <InputField
+            isDarkMode={isDarkMode}
             label="Economy Rate"
             value={formData.economy}
             onChange={(value) => handleInputChange("economy", value)}

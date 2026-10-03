@@ -33,6 +33,7 @@ import { getImageFullUrl, toShortBattingStyle, toShortBowlingStyle } from "@/uti
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
+import { webLinks } from "@/navigation/linking";
 
 const isCricketRole = (r) => {
   if (!r || typeof r !== "string") return false;
@@ -636,7 +637,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const handleShareTeam = async () => {
     try {
       await Share.share({
-        message: `Join ${team?.name || "Team"} on Criconic!\nTeam ID: ${team?.id || teamId}`,
+        message: `${team?.name || "Our team"} on Criconic: ${webLinks.team(team?.id || teamId)}`,
         title: team?.name || "Team QR",
       });
     } catch (e) {

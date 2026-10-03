@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   ScrollView,
@@ -17,15 +17,30 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import { useSelector, useDispatch } from "react-redux";
-import { logout as logoutAction } from "@/redux/authSlice";
+import { logout as logoutAction, updateUser } from "@/redux/authSlice";
 import { clearUser } from "@/redux/userSlice";
-import { authApi, getAuthToken } from "@/utils/api";
+import { authApi, getAuthToken, userApi } from "@/utils/api";
+import { DEFAULT_OVERS_CHOICES, getPreference, setPreference } from "@/utils/appPreferences";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import useAppTheme from "@/hooks/useAppTheme";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import { resetToAuth } from "@/navigation/navigationRef";
 import analytics from "@/utils/analytics";
+import Constants from "expo-constants";
+
+const SUPPORT_EMAIL = "support@criconic.com";
+// Set to the numeric App Store id once the iOS app is listed; until then the
+// "Rate App" row is hidden on iOS rather than opening a broken link.
+const APP_STORE_ID = null;
+const APP_VERSION = Constants.expoConfig?.version || "";
+
+// Push notification types a user can turn off (server: notificationPreferences).
+const NOTIFICATION_TYPES = [
+  { key: "matchUpdates", title: "Match start, innings break & result", icon: "notifications-outline", color: "#2563EB" },
+  { key: "teamUpdates", title: "Added to a team", icon: "people-outline", color: "#10B981" },
+  { key: "liveStream", title: "Match goes live on stream", icon: "videocam-outline", color: "#EF4444" },
+];
 
 export default function Settings() {
   const navigation = useNavigation();
@@ -34,6 +49,7 @@ export default function Settings() {
   const isDarkMode = isDark;
 
   const authUser = useSelector((state) => state.auth?.user);
+  const isLoggedIn = Boolean(authUser?._id || authUser?.id || User.isLogin?.());
 
   // Check admin role (Role 1 = SUPER_ADMIN, Role 2 = ADMIN)
   const isAdmin =
@@ -75,18 +91,48 @@ export default function Settings() {
 
   // User data
   const user = {
-    name:
-      authUser?.username ||
-      authUser?.name ||
-      authUser?.fullName ||
-      User?.name ||
-      "User",
-    email: userSubtitle,
+    name: !isLoggedIn
+      ? "Guest"
+      : authUser?.username ||
+        authUser?.name ||
+        authUser?.fullName ||
+        User?.name ||
+        "User",
+    email: isLoggedIn ? userSubtitle : "Not signed in",
     profileImage: profileImageUrl,
   };
 
   // Settings states
   const [darkModeEnabled, setDarkModeEnabled] = useState(isDarkMode);
+
+  const savedNotifyPrefs = authUser?.notificationPreferences || {};
+  const [notifyPrefs, setNotifyPrefs] = useState(() =>
+    Object.fromEntries(NOTIFICATION_TYPES.map(({ key }) => [key, savedNotifyPrefs[key] !== false]))
+  );
+  const [scorerHaptics, setScorerHaptics] = useState(true);
+  const [defaultOvers, setDefaultOvers] = useState(20);
+
+  useEffect(() => {
+    getPreference("scorerHaptics").then(setScorerHaptics);
+    getPreference("defaultOvers").then(setDefaultOvers);
+  }, []);
+
+  // Switches flip at once; if the server doesn't take the change, they flip back.
+  const toggleNotification = async (key, value) => {
+    setNotifyPrefs((prev) => ({ ...prev, [key]: value }));
+    const res = await userApi.updateNotificationPreferences({ [key]: value });
+    if (res?.data?.success) {
+      dispatch(updateUser({ notificationPreferences: { ...savedNotifyPrefs, ...notifyPrefs, [key]: value } }));
+    } else {
+      setNotifyPrefs((prev) => ({ ...prev, [key]: !value }));
+      showGlobalAlert({
+        title: "Couldn't save",
+        message: "Check your connection and try again.",
+        type: "error",
+        confirmText: "OK",
+      });
+    }
+  };
 
   const handleLogout = () => {
     showGlobalAlert({
@@ -136,6 +182,10 @@ export default function Settings() {
     navigation.navigate(SCREENS.ChangePassword);
   };
 
+  const handleDeleteAccount = () => {
+    navigation.navigate(SCREENS.DeleteAccount);
+  };
+
   const handleSetupAds = () => {
     navigation.navigate(SCREENS.SetupAds);
   };
@@ -149,13 +199,21 @@ export default function Settings() {
   };
 
   const handleContactSupport = () => {
-    Linking.openURL("mailto:support@cricketapp.com");
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Criconic app help")}`).catch(() => {
+      // No mail app set up on this phone: show the address instead.
+      showGlobalAlert({
+        title: "Help & Support",
+        message: `Email us at ${SUPPORT_EMAIL} and we'll get back to you.`,
+        type: "info",
+        confirmText: "OK",
+      });
+    });
   };
 
   const handleRateApp = () => {
     const playStoreUrl = "market://details?id=com.criconic.app";
     const playStoreWebUrl = "https://play.google.com/store/apps/details?id=com.criconic.app";
-    const appStoreUrl = "https://apps.apple.com/app/criconic/id6470000000";
+    const appStoreUrl = `https://apps.apple.com/app/id${APP_STORE_ID}?action=write-review`;
 
     showGlobalAlert({
       title: "Rate Criconic",
@@ -173,12 +231,7 @@ export default function Settings() {
               await Linking.openURL(playStoreWebUrl);
             }
           } else if (Platform.OS === "ios") {
-            const canOpen = await Linking.canOpenURL(appStoreUrl).catch(() => false);
-            if (canOpen) {
-              await Linking.openURL(appStoreUrl);
-            } else {
-              await Linking.openURL(playStoreWebUrl);
-            }
+            await Linking.openURL(appStoreUrl);
           } else {
             await Linking.openURL(playStoreWebUrl);
           }
@@ -318,27 +371,38 @@ export default function Settings() {
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Section */}
-        <SettingsSection title="PROFILE">
-          <SettingsItem
-            icon="person-outline"
-            title="Profile"
-            onPress={handleProfile}
-            color="#3B82F6"
-          />
-          <SettingsItem
-            icon="qr-code-outline"
-            title="My QR"
-            onPress={handleMyQR}
-            color="#10B981"
-          />
-          <SettingsItem
-            icon="create-outline"
-            title="Edit Profile"
-            onPress={handleEditProfile}
-            color="#8B5CF6"
-          />
-        </SettingsSection>
+        {/* Profile Section (guests get a way to sign in instead) */}
+        {!isLoggedIn ? (
+          <SettingsSection title="PROFILE">
+            <SettingsItem
+              icon="log-in-outline"
+              title="Sign In / Create Account"
+              onPress={() => navigation.navigate(SCREENS.LoginScreen)}
+              color="#3B82F6"
+            />
+          </SettingsSection>
+        ) : (
+          <SettingsSection title="PROFILE">
+            <SettingsItem
+              icon="person-outline"
+              title="Profile"
+              onPress={handleProfile}
+              color="#3B82F6"
+            />
+            <SettingsItem
+              icon="qr-code-outline"
+              title="My QR"
+              onPress={handleMyQR}
+              color="#10B981"
+            />
+            <SettingsItem
+              icon="create-outline"
+              title="Edit Profile"
+              onPress={handleEditProfile}
+              color="#8B5CF6"
+            />
+          </SettingsSection>
+        )}
 
         {/* Admin Management Section - Gated by isAdmin */}
         {isAdmin && (
@@ -391,7 +455,7 @@ export default function Settings() {
                 </View>
                 <ThemedText
                   style={[
-                    styles.itemTitle,
+                    styles.settingsItemText,
                     isDarkMode ? styles.textWhite : styles.textBlack,
                   ]}
                 >
@@ -487,47 +551,137 @@ export default function Settings() {
           </View>
         </SettingsSection>
 
+        {isLoggedIn && (
+          <SettingsSection title="NOTIFICATIONS">
+            {NOTIFICATION_TYPES.map(({ key, title, icon, color }) => (
+              <SettingsItem
+                key={key}
+                icon={icon}
+                title={title}
+                isSwitch
+                value={notifyPrefs[key]}
+                onValueChange={(value) => toggleNotification(key, value)}
+                color={color}
+              />
+            ))}
+          </SettingsSection>
+        )}
+
+        {isLoggedIn && (
+          <SettingsSection title="SCORING">
+            <SettingsItem
+              icon="phone-portrait-outline"
+              title="Vibrate on scoring taps"
+              isSwitch
+              value={scorerHaptics}
+              onValueChange={(value) => {
+                setScorerHaptics(value);
+                setPreference("scorerHaptics", value);
+              }}
+              color="#F59E0B"
+            />
+            <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+              <ThemedText
+                style={[styles.settingsItemText, isDarkMode ? styles.textWhite : styles.textBlack, { marginBottom: 10 }]}
+              >
+                Default overs for new matches
+              </ThemedText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {DEFAULT_OVERS_CHOICES.map((overs) => {
+                  const isSelected = defaultOvers === overs;
+                  return (
+                    <TouchableOpacity
+                      key={overs}
+                      onPress={() => {
+                        setDefaultOvers(overs);
+                        setPreference("defaultOvers", overs);
+                      }}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      accessibilityLabel={`${overs} overs`}
+                      style={{
+                        minWidth: 48,
+                        minHeight: 40,
+                        paddingHorizontal: 12,
+                        borderRadius: 8,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: isSelected ? "#2563EB" : isDarkMode ? "#111827" : "#F1F5F9",
+                      }}
+                    >
+                      <ThemedText
+                        style={{
+                          fontSize: 14,
+                          fontWeight: "700",
+                          color: isSelected ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#475569",
+                        }}
+                      >
+                        {overs}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </SettingsSection>
+        )}
+
         {/* Account Settings */}
         <SettingsSection title="ACCOUNT">
-          <SettingsItem
-            icon="key-outline"
-            title="Change Password"
-            onPress={handleChangePassword}
-            color="#06B6D4"
-          />
+          {isLoggedIn && (
+            <SettingsItem
+              icon="key-outline"
+              title="Change Password"
+              onPress={handleChangePassword}
+              color="#06B6D4"
+            />
+          )}
           <SettingsItem
             icon="help-buoy-outline"
             title="Help & Support"
             onPress={handleContactSupport}
             color="#8B5CF6"
           />
-          <SettingsItem
-            icon="star-outline"
-            title="Rate App"
-            onPress={handleRateApp}
-            color="#F59E0B"
-          />
+          {(Platform.OS !== "ios" || APP_STORE_ID) && (
+            <SettingsItem
+              icon="star-outline"
+              title="Rate App"
+              onPress={handleRateApp}
+              color="#F59E0B"
+            />
+          )}
+          {isLoggedIn && (
+            <SettingsItem
+              icon="trash-outline"
+              title="Delete Account"
+              onPress={handleDeleteAccount}
+              color="#EF4444"
+            />
+          )}
         </SettingsSection>
 
         {/* Logout Button */}
-        <TouchableOpacity
-          onPress={handleLogout}
-          style={[
-            styles.logoutButton,
-            isDarkMode ? styles.logoutButtonDark : styles.logoutButtonLight,
-          ]}
-          activeOpacity={0.7}
-        >
-          <View style={styles.logoutButtonContent}>
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color="#EF4444"
-              style={styles.logoutIcon}
-            />
-            <ThemedText style={styles.logoutText}>LOGOUT</ThemedText>
-          </View>
-        </TouchableOpacity>
+        {isLoggedIn && (
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={[
+              styles.logoutButton,
+              isDarkMode ? styles.logoutButtonDark : styles.logoutButtonLight,
+            ]}
+            activeOpacity={0.7}
+          >
+            <View style={styles.logoutButtonContent}>
+              <Ionicons
+                name="log-out-outline"
+                size={20}
+                color="#EF4444"
+                style={styles.logoutIcon}
+              />
+              <ThemedText style={styles.logoutText}>LOGOUT</ThemedText>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* App Version */}
         <ThemedText
@@ -536,7 +690,7 @@ export default function Settings() {
             isDarkMode ? styles.versionTextDark : styles.versionTextLight,
           ]}
         >
-          Cricket App v1.2.0
+          Criconic{APP_VERSION ? ` v${APP_VERSION}` : ""}
         </ThemedText>
       </ScrollView>
     </SafeAreaView>

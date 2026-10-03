@@ -20,6 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import PlayerAvatar from "@/components/ui/PlayerAvatar";
+import { ListRowSkeleton, PodiumSkeleton } from "@/components/ui/skeleton";
 import SCREENS from "@/screens";
 import { rankingsApi } from "@/utils/api";
 import useAppTheme from "@/hooks/useAppTheme";
@@ -1077,22 +1078,32 @@ export default function PlayerRankings() {
       {/* Main Content: Podium & Ranked Contenders */}
       {loadingPlayers ? (
         <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          accessibilityLabel={`Loading rankings for ${getActiveScopeSummary()}`}
+          accessibilityRole="progressbar"
+          style={{ flex: 1, overflow: "hidden" }}
         >
-          <ActivityIndicator size="large" color="#3B82F6" />
-          <ThemedText
-            style={{
-              fontSize: 13,
-              marginTop: 12,
-              color: isDarkMode ? "#9CA3AF" : "#64748B",
-            }}
-          >
-            Loading rankings for {getActiveScopeSummary()}...
-          </ThemedText>
+          <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14 }}>
+            <PodiumSkeleton />
+          </View>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <ListRowSkeleton
+              key={i}
+              rank
+              avatarSize={42}
+              badge
+              style={{
+                width: "auto",
+                marginHorizontal: 16,
+                marginBottom: 8,
+                padding: 12,
+                borderRadius: 14,
+                backgroundColor: isDarkMode ? "#111827" : "#FFFFFF",
+                borderColor: isDarkMode
+                  ? "rgba(31, 41, 55, 0.7)"
+                  : "rgba(229, 231, 235, 0.7)",
+              }}
+            />
+          ))}
         </View>
       ) : players.length === 0 ? (
         <View

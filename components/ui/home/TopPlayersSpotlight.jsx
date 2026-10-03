@@ -199,6 +199,8 @@ export default function TopPlayersSpotlight() {
                     isDarkMode ? "text-gray-400" : "text-gray-500"
                   }`}
                 >
+                  {/* Ordered by ranking points, so show those first. */}
+                  {player.rating != null ? `${player.rating} pts · ` : ""}
                   {runs} runs
                 </ThemedText>
               </TouchableOpacity>

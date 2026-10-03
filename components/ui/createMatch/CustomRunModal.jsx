@@ -25,44 +25,59 @@ export default function CustomRunModal({
   const defaultRuns = (type === "bye" || type === "lb") ? 1 : 0;
   const runsValue = runsEnter === "" ? defaultRuns : (parseInt(runsEnter, 10) || 0);
 
-  let description = "";
-  let prams = {};
+  const paramsFor = (runs) => {
+    switch (type) {
+      case "nb":
+        return { runs, ballType: "no-ball", runType: runsType };
+      case "bye":
+        return { runs, runType: "bye" };
+      case "wd":
+        return { runs, ballType: "wide" };
+      case "lb":
+        return { runs, runType: "leg-bye" };
+      case "bowler":
+        return { bowler: runs };
+      case "cr":
+        return { runs, runType: runsType, ballType: "ball" };
+      default:
+        return {};
+    }
+  };
 
+  let description = "";
   switch (type) {
     case "nb":
       description = `No Ball 1 + ${runsValue} = ${1 + runsValue} Run(s)`;
-      prams = { runs: runsValue, ballType: "no-ball", runType: runsType };
-      break;
-    case "bye":
-      description = `${runsValue} Run(s)`;
-      prams = { runs: runsValue, runType: "bye" };
       break;
     case "wd":
       description = `Wide 1 + ${runsValue} = ${1 + runsValue} Run(s)`;
-      prams = { runs: runsValue, ballType: "wide" };
       break;
+    case "bye":
     case "lb":
+    case "cr":
       description = `${runsValue} Run(s)`;
-      prams = { runs: runsValue, runType: "leg-bye" };
       break;
     case "bowler":
       description = `${runsValue}`;
-      prams = { bowler: runsValue };
-      break;
-    case "cr":
-      description = `${runsValue} Run(s)`;
-      prams = { runs: runsValue, runType: runsType, ballType: "ball" };
       break;
     default:
       description = "";
   }
 
-  const handleConfirm = () => {
-    action(prams);
+  const submit = (runs) => {
+    action(paramsFor(runs));
     setRunsEnter("");
     setRunsType("bat");
     onClose();
   };
+
+  const handleConfirm = () => submit(runsValue);
+
+  // A run chip saves straight away when there's nothing else to choose:
+  // wides, byes, leg byes, and a no-ball with no runs added. A no-ball with
+  // runs (off the bat or byes?) and custom runs still need Confirm.
+  const savesOnTap = (runs) =>
+    type === "wd" || type === "bye" || type === "lb" || (type === "nb" && runs === 0);
 
   const handleCancel = () => {
     setRunsEnter("");
@@ -167,7 +182,9 @@ export default function CustomRunModal({
                             : "#e5e7eb",
                         },
                       ]}
-                      onPress={() => setRunsEnter(num.toString())}
+                      onPress={() =>
+                        savesOnTap(num) ? submit(num) : setRunsEnter(num.toString())
+                      }
                     >
                       <Text
                         style={[

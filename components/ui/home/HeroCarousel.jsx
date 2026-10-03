@@ -54,7 +54,7 @@ const DEFAULT_SLIDES = [
     art: "tournaments",
     tag: "Tournaments",
     heading: "Tournaments & Leagues",
-    description: "Featured tournaments, team standings and fixtures",
+    description: "Featured tournaments, points tables and results",
     buttonText: "Explore",
     isMatch: false,
     callToAction: "AllTournaments",

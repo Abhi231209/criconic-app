@@ -18,6 +18,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import AnimatedFooter from "./AnimatedFooter";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { tournamentsApi } from "@/utils/api";
 import { getImageFullUrl, formatIndianCurrencyWords } from "@/utils";
 
@@ -816,15 +817,22 @@ export default function AllTournaments() {
         }
         ListEmptyComponent={
           loading ? (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#4DD6C7" />
-              <ThemedText
-                className={`text-xs mt-3 ${
-                  isDarkMode ? "text-slate-400" : "text-slate-500"
-                }`}
-              >
-                Loading tournaments...
-              </ThemedText>
+            <View accessibilityLabel="Loading" accessibilityRole="progressbar">
+              {[0, 1, 2].map((i) => (
+                <ListRowSkeleton
+                  key={i}
+                  bannerHeight={144}
+                  avatarSize={0}
+                  lines={2}
+                  style={{
+                    marginBottom: 16,
+                    backgroundColor: isDarkMode ? "#111A2E" : "#FFFFFF",
+                    borderColor: isDarkMode
+                      ? "rgba(30, 41, 59, 0.8)"
+                      : "rgba(226, 232, 240, 0.9)",
+                  }}
+                />
+              ))}
             </View>
           ) : (
             <View className="items-center justify-center py-16 px-6">

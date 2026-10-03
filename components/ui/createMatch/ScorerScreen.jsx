@@ -54,6 +54,10 @@ import {
 } from "@/utils/offlineActionQueue";
 import { applyAction, replayQueue, prepareServerScore } from "@/utils/offlineScoreEngine";
 import useWatchMatch from "@/hooks/useWatchMatch";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { getTrackingDefaults, saveTrackingDefault } from "@/utils/trackingDefaults";
+import * as Haptics from "expo-haptics";
+import { getPreference } from "@/utils/appPreferences";
 
 // A response from the match API that really is a match (a failed request
 // comes back as `{ success: false, message }`).
@@ -75,6 +79,25 @@ const isTestMatchData = (scoreObj, matchObj) =>
 // every over — the server starts each new over with the same bowler.
 const isSingleWicketData = (scoreObj, matchObj) =>
   String(scoreObj?.matchType || matchObj?.type || "").toLowerCase() === "single_wicket";
+
+// A buzz confirming a pad tap registered: scorers at a ground often can't see
+// the screen well in sunlight. Not every device or browser supports it. Can be
+// turned off in Settings → Scoring (read when the scorer opens).
+let padHapticsOn = true;
+const padFeedback = (kind) => {
+  if (!padHapticsOn) return;
+  try {
+    const result =
+      kind === "undo"
+        ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+        : kind === "menu"
+        ? Haptics.selectionAsync()
+        : Haptics.impactAsync(
+            kind === "big" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light
+          );
+    result?.catch?.(() => {});
+  } catch {}
+};
 
 export default function ScorerScreen() {
   const { openSheet, closeSheet } = useBottomSheet();
@@ -156,6 +179,16 @@ export default function ScorerScreen() {
   const lastServerScoreAtRef = useRef(0);
   // Why the queue can't be sent even though we're connected ("loggedOut").
   const [syncProblem, setSyncProblem] = useState(null);
+  // A ball or undo sent to the server and not yet confirmed. Pad taps are
+  // ignored meanwhile, so a scorer who taps again because nothing seemed to
+  // happen doesn't record a second ball. The pad dims only if the server is
+  // slow to answer, so it doesn't flicker on every ball.
+  const ballInFlightRef = useRef(false);
+  const [isSendingSlowly, setIsSendingSlowly] = useState(false);
+  // "Last ball undone (4)": UNDO takes effect at once, so say what it removed.
+  const [undoNotice, setUndoNotice] = useState(null);
+  const undoNoticeTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(undoNoticeTimerRef.current), []);
   // Set by updateScore when it has already put the action on screen itself.
   const appliedLocallyRef = useRef(false);
   // The score just before and after the last wicket ball applied on this
@@ -289,6 +322,22 @@ export default function ScorerScreen() {
   // While this screen is open it is the one sending this match's queue.
   useEffect(() => (matchID ? markScorerOpen(matchID) : undefined), [matchID]);
 
+  useEffect(() => {
+    getPreference("scorerHaptics").then((on) => {
+      padHapticsOn = on;
+    });
+  }, []);
+
+  // Keep the screen on while scoring, so it doesn't lock between overs. A
+  // browser can refuse a wake lock (e.g. a hidden tab); scoring works without it.
+  useEffect(() => {
+    const tag = "scorer-screen";
+    activateKeepAwakeAsync(tag).catch(() => {});
+    return () => {
+      deactivateKeepAwake(tag).catch(() => {});
+    };
+  }, []);
+
   // The stored queue changed (an action was saved, sent or undone — from this
   // screen or elsewhere): refresh the copy held here.
   useEffect(() => {
@@ -393,10 +442,10 @@ export default function ScorerScreen() {
 
   // Check-based Wagon Wheel & Pitch Map Tracking States
   const [isWagonWheelChecked, setIsWagonWheelChecked] = useState(
-    route.params?.isWagonWheelEnabled !== undefined ? Boolean(route.params.isWagonWheelEnabled) : true
+    route.params?.isWagonWheelEnabled !== undefined ? Boolean(route.params.isWagonWheelEnabled) : false
   );
   const [isPitchMapChecked, setIsPitchMapChecked] = useState(
-    route.params?.isPitchMapEnabled !== undefined ? Boolean(route.params.isPitchMapEnabled) : true
+    route.params?.isPitchMapEnabled !== undefined ? Boolean(route.params.isPitchMapEnabled) : false
   );
   const [showBallTrackerModal, setShowBallTrackerModal] = useState(false);
   const [pendingBallParams, setPendingBallParams] = useState(null);
@@ -411,6 +460,7 @@ export default function ScorerScreen() {
       try {
         const storedWagon = await AsyncStorage.getItem(`@criconic_ww_${matchID}`);
         const storedPitch = await AsyncStorage.getItem(`@criconic_pm_${matchID}`);
+        const defaults = await getTrackingDefaults();
         if (storedWagon !== null) {
           setIsWagonWheelChecked(storedWagon === "true");
         } else if (route.params?.isWagonWheelEnabled !== undefined) {
@@ -418,6 +468,8 @@ export default function ScorerScreen() {
         } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
           const ww = matchDetails.config.recordWagonWheel;
           setIsWagonWheelChecked(typeof ww === "boolean" ? ww : !!ww?.active);
+        } else {
+          setIsWagonWheelChecked(defaults.wagonWheel);
         }
         if (storedPitch !== null) {
           setIsPitchMapChecked(storedPitch === "true");
@@ -426,6 +478,8 @@ export default function ScorerScreen() {
         } else if (matchDetails?.config?.recordPitchMap !== undefined) {
           const pm = matchDetails.config.recordPitchMap;
           setIsPitchMapChecked(typeof pm === "boolean" ? pm : !!pm?.active);
+        } else {
+          setIsPitchMapChecked(defaults.pitchMap);
         }
       } catch (e) {
         console.warn("[CHECK-BASE] Error hydrating checks:", e);
@@ -436,6 +490,7 @@ export default function ScorerScreen() {
   const toggleWagonWheelCheck = async () => {
     const nextVal = !isWagonWheelChecked;
     setIsWagonWheelChecked(nextVal);
+    saveTrackingDefault("wagonWheel", nextVal);
     try {
       await AsyncStorage.setItem(`@criconic_ww_${matchID}`, String(nextVal));
       request(`api/matches/${matchID}/settings`, {
@@ -448,6 +503,7 @@ export default function ScorerScreen() {
   const togglePitchMapCheck = async () => {
     const nextVal = !isPitchMapChecked;
     setIsPitchMapChecked(nextVal);
+    saveTrackingDefault("pitchMap", nextVal);
     try {
       await AsyncStorage.setItem(`@criconic_pm_${matchID}`, String(nextVal));
       request(`api/matches/${matchID}/settings`, {
@@ -2144,11 +2200,26 @@ export default function ScorerScreen() {
 
     // 2. Connected: send it and wait for the server to confirm.
     const sentAt = Date.now();
-    const response = await emitWithAck(
-      "update-score",
-      { userId: effectiveUserId, matchId: matchID, action, data, actionId: item.actionId },
-      5000
-    );
+    const blocksPad = action === MATCH_ACTION.MATCH_BALL || action === MATCH_ACTION.UNDO_LAST_BALL;
+    let slowTimer = null;
+    if (blocksPad) {
+      ballInFlightRef.current = true;
+      slowTimer = setTimeout(() => setIsSendingSlowly(true), 400);
+    }
+    let response;
+    try {
+      response = await emitWithAck(
+        "update-score",
+        { userId: effectiveUserId, matchId: matchID, action, data, actionId: item.actionId },
+        5000
+      );
+    } finally {
+      if (blocksPad) {
+        clearTimeout(slowTimer);
+        ballInFlightRef.current = false;
+        setIsSendingSlowly(false);
+      }
+    }
     if (response?.success) return;
 
     if (!isRetryableAck(response)) {
@@ -2820,6 +2891,7 @@ export default function ScorerScreen() {
                     key={action.label}
                     onPress={action.onPress}
                     activeOpacity={0.75}
+                    hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
@@ -2868,6 +2940,7 @@ export default function ScorerScreen() {
               onPress={() => handleChangeStrike()}
               className="px-3 py-1 bg-blue-600 rounded-full flex-row items-center"
               activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
             >
               <ThemedText className="text-white text-xs font-semibold">
                 🔄 Change Strike
@@ -2944,6 +3017,7 @@ export default function ScorerScreen() {
                             backgroundColor: isDarkMode ? "#374151" : "#e5e7eb",
                           }}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                         >
                           <ThemedText style={{ fontSize: 11, color: "#3b82f6", fontWeight: "600" }}>
                             Replace
@@ -3030,6 +3104,7 @@ export default function ScorerScreen() {
                     backgroundColor: isDarkMode ? "#374151" : "#e5e7eb",
                   }}
                   activeOpacity={0.7}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                 >
                   <ThemedText style={{ fontSize: 11, color: "#3b82f6", fontWeight: "600" }}>
                     Change
@@ -3334,6 +3409,14 @@ export default function ScorerScreen() {
                   <View key={rowIndex} style={styles.row}>
                     {row.map((label, colIndex) => {
                       const onPress = () => {
+                        if (ballInFlightRef.current) return;
+                        padFeedback(
+                          ["WD", "NB", "BYE"].includes(label)
+                            ? "menu"
+                            : label.startsWith("4") || label.startsWith("6")
+                            ? "big"
+                            : "tap"
+                        );
                         switch (label) {
                           case "0":
                           case "1":
@@ -3367,8 +3450,10 @@ export default function ScorerScreen() {
                           style={[
                             styles.button,
                             isDarkMode ? styles.buttonDark : styles.buttonLight,
+                            isSendingSlowly && { opacity: 0.5 },
                           ]}
                           onPress={onPress}
+                          accessibilityState={{ busy: isSendingSlowly }}
                         >
                           <ThemedText
                             style={[
@@ -3395,17 +3480,31 @@ export default function ScorerScreen() {
                 const onPress = () => {
                   if (isDisabled) return;
                   switch (label) {
-                    case "UNDO":
+                    case "UNDO": {
+                      if (ballInFlightRef.current) return;
+                      padFeedback("undo");
+                      const lastBall = score?.currentOver?.[score.currentOver.length - 1];
                       handleUndo();
+                      clearTimeout(undoNoticeTimerRef.current);
+                      setUndoNotice(
+                        lastBall != null && String(lastBall).trim()
+                          ? `Last ball undone (${String(lastBall).replace(/\s+/g, " ").trim()})`
+                          : "Last ball undone"
+                      );
+                      undoNoticeTimerRef.current = setTimeout(() => setUndoNotice(null), 2500);
                       break;
+                    }
                     case "5,7":
+                      padFeedback("menu");
                       handleShowCustomRunsModal("Custom Runs", "cr");
                       break;
                     case "OUT":
+                      padFeedback("big");
                       console.log("[SCORER-SCREEN] Tapped OUT keypad button! Opening dismissal options...");
                       setShowOutModal(true);
                       break;
                     case "LB":
+                      padFeedback("menu");
                       handleShowCustomRunsModal("Leg Bye Run", "lb");
                       break;
                     default:
@@ -3424,6 +3523,7 @@ export default function ScorerScreen() {
                         borderColor: "#1d4ed8",
                       },
                       isDisabled && { opacity: 0.25 },
+                      !isDisabled && isUndo && isSendingSlowly && { opacity: 0.5 },
                     ]}
                     onPress={onPress}
                     disabled={isDisabled}
@@ -3461,6 +3561,17 @@ export default function ScorerScreen() {
             cb={() => emit("score", { matchId: matchID })}
           />
         </ScrollView>
+
+      {undoNotice && (
+        <View
+          pointerEvents="none"
+          accessibilityLiveRegion="polite"
+          style={styles.undoNotice}
+        >
+          <Ionicons name="arrow-undo" size={14} color="#FFFFFF" />
+          <ThemedText style={styles.undoNoticeText}>{undoNotice}</ThemedText>
+        </View>
+      )}
 
       {/* Next Batter Selection Sheet */}
       {nextBatterModalVisible && isFocused && (
@@ -4762,6 +4873,23 @@ export default function ScorerScreen() {
 }
 
 const styles = StyleSheet.create({
+  undoNotice: {
+    position: "absolute",
+    alignSelf: "center",
+    bottom: 96,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(17, 24, 39, 0.92)",
+  },
+  undoNoticeText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
   vizTagRow: {
     flexDirection: "row",
     justifyContent: "center",

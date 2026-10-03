@@ -10,23 +10,33 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard, { MATCH_CACHE } from "@/components/ui/ScoreCard";
+import { ScoreCardSkeleton } from "@/components/ui/skeleton";
 import { matchesApi, request } from "@/utils/api";
 import { MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
 
 const FILTERS = [
   { id: "all", label: "All" },
-  { id: "stream", label: "Live Stream 📹" },
   { id: "live", label: "Live" },
+  { id: "stream", label: "Streaming 📹" },
   { id: "upcoming", label: "Upcoming" },
   { id: "completed", label: "Completed" },
 ];
 
+// Filters the server applies (?status=), so they cover every match rather
+// than only the pages already loaded.
+const SERVER_STATUS_FILTERS = ["live", "upcoming", "completed"];
+
 export default function AllMatches() {
   const navigation = useNavigation();
+  const route = useRoute();
+  // Links such as Home's "Live now" open the list on a given filter.
+  const initialFilter = FILTERS.some((f) => f.id === route.params?.initialFilter)
+    ? route.params.initialFilter
+    : "all";
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -34,7 +44,7 @@ export default function AllMatches() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter, setActiveFilter] = useState(initialFilter);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -79,6 +89,12 @@ export default function AllMatches() {
             streamRes?.data?.content ||
             streamRes?.content ||
             [];
+          fetchedList = Array.isArray(rawList) ? rawList : [];
+        } else if (SERVER_STATUS_FILTERS.includes(filter)) {
+          const res = await matchesApi
+            .getMatches({ page: pageNum, limit: 12, status: filter }, { errorAlert: false })
+            .catch(() => null);
+          const rawList = res?.data?.matches;
           fetchedList = Array.isArray(rawList) ? rawList : [];
         } else {
           const [idsRes, listRes] = await Promise.all([
@@ -383,15 +399,16 @@ export default function AllMatches() {
 
       {/* Match Cards List */}
       {loading ? (
-        <View className="flex-1 items-center justify-center py-20">
-          <ActivityIndicator size="large" color="#2563EB" />
-          <ThemedText
-            className={`mt-3 text-sm ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            Loading matches...
-          </ThemedText>
+        <View
+          accessibilityLabel="Loading"
+          accessibilityRole="progressbar"
+          style={{ flex: 1, overflow: "hidden", paddingHorizontal: 12, paddingTop: 8 }}
+        >
+          {[0, 1, 2, 3, 4].map((i) => (
+            <View key={i} className="mb-2">
+              <ScoreCardSkeleton fullWidth />
+            </View>
+          ))}
         </View>
       ) : (
         <FlatList

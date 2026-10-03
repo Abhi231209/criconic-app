@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -18,6 +18,9 @@ import SCREENS from "@/screens";
 import { searchApi } from "@/utils/api";
 import analytics from "@/utils/analytics";
 import ScoreCard from "@/components/ui/ScoreCard";
+import { loadRecentSearches, addRecentSearch, clearRecentSearches } from "@/utils/recentSearches";
+
+const EMPTY_RESULTS = { teams: [], players: [], tournaments: [], matches: [] };
 
 export default function SearchScreen() {
   const navigation = useNavigation();
@@ -154,54 +157,116 @@ export default function SearchScreen() {
   ];
   */
 
-  const [searchResults, setSearchResults] = useState({
-    teams: [],
-    players: [],
-    tournaments: [],
-    matches: [],
-  });
+  const [searchResults, setSearchResults] = useState(EMPTY_RESULTS);
+  // The query the shown results belong to; tab counts only make sense for it.
+  const [resultsQuery, setResultsQuery] = useState("");
+  const [recentSearches, setRecentSearches] = useState([]);
 
-  const performSearch = async (text = searchQuery) => {
+  // Only the newest request may apply its response, so a slow older one
+  // can't overwrite fresher results.
+  const requestIdRef = useRef(0);
+  const lastSearchedRef = useRef("");
+  // What search-as-you-type last saved to recents in this run of typing.
+  const autoSavedRef = useRef(null);
+
+  useEffect(() => {
+    loadRecentSearches().then(setRecentSearches);
+  }, []);
+
+  const rememberSearch = (q, { auto = false } = {}) => {
+    const prev = autoSavedRef.current;
+    // A query typed further (or trimmed back) replaces the one saved moments ago.
+    const replacing =
+      prev && (q.toLowerCase().startsWith(prev.toLowerCase()) || prev.toLowerCase().startsWith(q.toLowerCase()))
+        ? prev
+        : null;
+    autoSavedRef.current = auto ? q : null;
+    addRecentSearch(q, replacing).then(setRecentSearches);
+  };
+
+  // Called when a result is opened, which marks the query as one worth keeping.
+  const rememberResultQuery = () => {
+    if (resultsQuery) rememberSearch(resultsQuery);
+  };
+
+  const resetResults = () => {
+    requestIdRef.current += 1;
+    lastSearchedRef.current = "";
+    setSearchResults(EMPTY_RESULTS);
+    setResultsQuery("");
+    setIsSearching(false);
+  };
+
+  const performSearch = async (text = searchQuery, { submitted = false } = {}) => {
     const q = text.trim();
     if (!q) {
-      setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+      resetResults();
       return;
     }
 
+    const requestId = ++requestIdRef.current;
+    lastSearchedRef.current = q;
     analytics.logSearch(q);
     setIsSearching(true);
     try {
       const res = await searchApi.search(q);
+      if (requestId !== requestIdRef.current) return;
       const list = Array.isArray(res?.data) ? res.data : [];
       const teams = list.find((item) => item.key?.toLowerCase() === "team")?.data || [];
       const players = list.find((item) => item.key?.toLowerCase() === "player")?.data || [];
       const tournaments = list.find((item) => item.key?.toLowerCase() === "tournament")?.data || [];
       const matches = list.find((item) => item.key?.toLowerCase() === "match")?.data || [];
 
-      setSearchResults({
+      const next = {
         teams: Array.isArray(teams) ? teams : [],
         players: Array.isArray(players) ? players : [],
         tournaments: Array.isArray(tournaments) ? tournaments : [],
         matches: Array.isArray(matches) ? matches : [],
-      });
+      };
+      setSearchResults(next);
+      setResultsQuery(q);
+
+      // Queries that found nothing aren't worth offering again.
+      if (Object.values(next).some((items) => items.length > 0)) {
+        rememberSearch(q, { auto: !submitted });
+      }
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       console.error("Search error:", err);
-      setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+      setSearchResults(EMPTY_RESULTS);
+      setResultsQuery(q);
     } finally {
-      setIsSearching(false);
+      if (requestId === requestIdRef.current) setIsSearching(false);
     }
   };
 
   useEffect(() => {
+    const q = searchQuery.trim();
+    // Clearing the box drops any in-flight request straight away.
+    if (!q) {
+      resetResults();
+      return;
+    }
     const timer = setTimeout(() => {
-      if (searchQuery.trim().length >= 2) {
-        performSearch(searchQuery);
-      } else if (!searchQuery.trim()) {
-        setSearchResults({ teams: [], players: [], tournaments: [], matches: [] });
+      // Skip when results for this exact query are already shown or loading
+      // (e.g. a recent-search chip ran it immediately).
+      if (q.length >= 2 && q !== lastSearchedRef.current) {
+        performSearch(q);
       }
     }, 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  const runRecentSearch = (q) => {
+    setSearchQuery(q);
+    performSearch(q, { submitted: true });
+  };
+
+  const handleClearRecent = () => {
+    autoSavedRef.current = null;
+    setRecentSearches([]);
+    clearRecentSearches();
+  };
 
   const tabs = [
     { id: "teams", label: "Teams", icon: "people-outline" },
@@ -210,12 +275,23 @@ export default function SearchScreen() {
     { id: "matches", label: "Matches", icon: "calendar-outline" },
   ];
 
+  const resultCounts = Object.fromEntries(
+    tabs.map((tab) => [tab.id, (searchResults[tab.id] || []).length])
+  );
+
+  const switchTab = (tabId) => {
+    analytics.logTabChange(tabId, "search_category");
+    setActiveTab(tabId);
+  };
+
   const TabButton = ({ tab }) => (
     <TouchableOpacity
-      onPress={() => {
-        analytics.logTabChange(tab.id, "search_category");
-        setActiveTab(tab.id);
-      }}
+      onPress={() => switchTab(tab.id)}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: activeTab === tab.id }}
+      accessibilityLabel={
+        resultsQuery ? `${tab.label}, ${resultCounts[tab.id]} results` : tab.label
+      }
       className={`flex-1 py-3 px-2 items-center rounded-lg mx-1 ${
         activeTab === tab.id
           ? "bg-blue-600"
@@ -224,13 +300,31 @@ export default function SearchScreen() {
           : "bg-gray-200"
       }`}
     >
-      <Ionicons
-        name={tab.icon}
-        size={18}
-        color={
-          activeTab === tab.id ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
-        }
-      />
+      {/* Count sits beside the icon; "Tournaments (12)" won't fit a quarter-width tab. */}
+      <View className="flex-row items-center">
+        <Ionicons
+          name={tab.icon}
+          size={18}
+          color={
+            activeTab === tab.id ? "#FFFFFF" : isDarkMode ? "#9CA3AF" : "#6B7280"
+          }
+        />
+        {resultsQuery ? (
+          <ThemedText
+            className={`text-xs ml-1 font-bold ${
+              activeTab === tab.id
+                ? "text-white"
+                : resultCounts[tab.id] > 0
+                ? "text-blue-600"
+                : isDarkMode
+                ? "text-gray-500"
+                : "text-gray-400"
+            }`}
+          >
+            {resultCounts[tab.id]}
+          </ThemedText>
+        ) : null}
+      </View>
       <ThemedText
         className={`text-xs mt-1 font-medium ${
           activeTab === tab.id
@@ -252,12 +346,13 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() =>
+        onPress={() => {
+          rememberResultQuery();
           navigation.navigate(SCREENS.TeamProfile, {
             team: item,
             teamId: String(item._id || item.id || ""),
-          })
-        }
+          });
+        }}
         className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
       >
         <View className="flex-row items-center">
@@ -290,7 +385,10 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() => navigation.navigate(SCREENS.PlayerProfile, { player: item, playerId: item._id || item.id || item.playerId })}
+        onPress={() => {
+          rememberResultQuery();
+          navigation.navigate(SCREENS.PlayerProfile, { player: item, playerId: item._id || item.id || item.playerId });
+        }}
         className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
       >
         <View className="flex-row items-center">
@@ -322,12 +420,13 @@ export default function SearchScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() =>
+        onPress={() => {
+          rememberResultQuery();
           navigation.navigate(SCREENS.TournamentProfile, {
             tournament: item,
             tournamentId: String(item._id || item.id || ""),
-          })
-        }
+          });
+        }}
         className={`p-4 rounded-xl mb-3 ${isDarkMode ? "bg-gray-800" : "bg-white"} shadow-sm`}
       >
         <View className="flex-row items-center justify-between mb-2">
@@ -368,21 +467,78 @@ export default function SearchScreen() {
     );
   };
 
-  const renderEmptyState = () => (
-    <View className="items-center justify-center py-10">
-      <Ionicons 
-        name={activeTab === "teams" ? "people-outline" : 
-              activeTab === "players" ? "person-outline" :
-              activeTab === "tournaments" ? "trophy-outline" : "calendar-outline"} 
-        size={48} 
-        color={isDarkMode ? "#4B5563" : "#9CA3AF"} 
-      />
-      <ThemedText className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-        {searchQuery ? "No results found" : "Search for " + tabs.find(t => t.id === activeTab)?.label.toLowerCase()}
-      </ThemedText>
-      <ThemedText className={`text-sm mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-        {searchQuery ? "Try different keywords" : "Type to start searching"}
-      </ThemedText>
+  const SINGULAR = { teams: "team", players: "player", tournaments: "tournament", matches: "match" };
+
+  const renderEmptyState = () => {
+    // Search returns every type at once, so point to a tab that did match
+    // instead of a bare "No results found".
+    const otherTab = resultsQuery && tabs.find((t) => t.id !== activeTab && resultCounts[t.id] > 0);
+    if (otherTab) {
+      const count = resultCounts[otherTab.id];
+      const noun = count === 1 ? SINGULAR[otherTab.id] : otherTab.id;
+      return (
+        <View className="items-center justify-center py-10">
+          <Ionicons name={otherTab.icon} size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-lg mt-4 text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No {activeTab} match — {count} {noun} found
+          </ThemedText>
+          <TouchableOpacity
+            onPress={() => switchTab(otherTab.id)}
+            className="mt-4 px-5 py-2 rounded-full bg-blue-600"
+          >
+            <ThemedText className="text-white font-medium">
+              Show {otherTab.label.toLowerCase()}
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View className="items-center justify-center py-10">
+        <Ionicons 
+          name={activeTab === "teams" ? "people-outline" : 
+                activeTab === "players" ? "person-outline" :
+                activeTab === "tournaments" ? "trophy-outline" : "calendar-outline"} 
+          size={48} 
+          color={isDarkMode ? "#4B5563" : "#9CA3AF"} 
+        />
+        <ThemedText className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+          {searchQuery ? "No results found" : "Search for " + tabs.find(t => t.id === activeTab)?.label.toLowerCase()}
+        </ThemedText>
+        <ThemedText className={`text-sm mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+          {searchQuery ? "Try different keywords" : "Type to start searching"}
+        </ThemedText>
+      </View>
+    );
+  };
+
+  const renderRecentSearches = () => (
+    <View className="mb-2">
+      <View className="flex-row items-center justify-between mb-2">
+        <ThemedText className={`text-sm font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+          Recent searches
+        </ThemedText>
+        <TouchableOpacity onPress={handleClearRecent} className="py-1 pl-3">
+          <ThemedText className="text-sm text-blue-600">Clear</ThemedText>
+        </TouchableOpacity>
+      </View>
+      <View className="flex-row flex-wrap">
+        {recentSearches.map((q) => (
+          <TouchableOpacity
+            key={q}
+            onPress={() => runRecentSearch(q)}
+            className={`flex-row items-center px-3 py-2 mr-2 mb-2 rounded-full ${
+              isDarkMode ? "bg-gray-800" : "bg-white border border-gray-200"
+            }`}
+          >
+            <Ionicons name="time-outline" size={14} color={isDarkMode ? "#9CA3AF" : "#6B7280"} />
+            <ThemedText className={`text-sm ml-1 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+              {q}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
@@ -418,9 +574,10 @@ export default function SearchScreen() {
             placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onSubmitEditing={() => performSearch()}
+            onSubmitEditing={() => performSearch(searchQuery, { submitted: true })}
             className={`flex-1 ml-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}
             returnKeyType="search"
+            autoFocus
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
@@ -459,7 +616,11 @@ export default function SearchScreen() {
               renderMatchItem
             }
             contentContainerStyle={{ paddingVertical: 16 }}
+            ListHeaderComponent={
+              !searchQuery.trim() && recentSearches.length > 0 ? renderRecentSearches : null
+            }
             ListEmptyComponent={renderEmptyState}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           />
         )}

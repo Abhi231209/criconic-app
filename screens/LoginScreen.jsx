@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   TextInput,
@@ -24,7 +24,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
-import { useNavigation, useIsFocused } from "@react-navigation/native";
+import { useNavigation, useIsFocused, useRoute } from "@react-navigation/native";
+import { takePendingAuthAction } from "@/hooks/useRequireAuth";
 import { useDispatch, useSelector } from "react-redux";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import useAppTheme from "@/hooks/useAppTheme";
@@ -34,6 +35,7 @@ import SCREENS from ".";
 import { login as loginAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
 import User from "@/utils/User";
+import { shouldAskToCompleteProfile } from "@/utils/profileSetup";
 import analytics from "@/utils/analytics";
 
 const sanitizeMobileNumber = (val) => {
@@ -55,6 +57,7 @@ const { height } = Dimensions.get("window");
 const LoginScreen = () => {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
+  const route = useRoute();
   const dispatch = useDispatch();
 
   const authUser = useSelector((state) => state?.auth?.user);
@@ -69,24 +72,36 @@ const LoginScreen = () => {
   const colorScheme = useColorScheme();
   const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
+  // Leaves this screen once logged in. Both a successful sign-in and the
+  // already-logged-in check below call it, so it only acts once.
+  const leftRef = useRef(false);
+  const leaveLoggedIn = async (user) => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    // Opened from a "Sign in required" prompt: back to that screen, then do
+    // what the user was trying to do.
+    if (route.params?.returnTo && navigation.canGoBack()) {
+      const pendingAction = takePendingAuthAction();
+      navigation.goBack();
+      if (pendingAction) setTimeout(pendingAction, 300);
+      return;
+    }
+    if (await shouldAskToCompleteProfile(user)) {
+      navigation.replace(SCREENS.CompleteProfile, { user });
+    } else {
+      navigation.replace(SCREENS.Home);
+    }
+  };
+
   // Auto-redirect if already logged in AND LoginScreen is the active focused screen
   useEffect(() => {
     if (!isFocused) return;
     if (User.isLogin() || authUser?._id || authUser?.id) {
-      const user = authUser || User.user;
-      const isProfileIncomplete =
-        !user?.role ||
-        user.role === "Player" ||
-        user.role === "player" ||
-        (!user?.batStyle && !user?.battingStyle);
-
-      if (isProfileIncomplete) {
-        navigation.replace(SCREENS.CompleteProfile, { user });
-      } else {
-        navigation.replace(SCREENS.Home);
-      }
+      leaveLoggedIn(authUser || User.user);
     }
   }, [authUser, navigation, isFocused]);
+
+  const passwordInputRef = useRef(null);
 
   const handleLogin = async () => {
     const cleanedMobile = sanitizeMobileNumber(mobile);
@@ -166,18 +181,7 @@ const LoginScreen = () => {
 
         dispatch(loginAction(user));
         User.login(user);
-
-        const isProfileIncomplete =
-          !user?.role ||
-          user.role === "Player" ||
-          user.role === "player" ||
-          (!user?.batStyle && !user?.battingStyle);
-
-        if (isProfileIncomplete) {
-          navigation.replace(SCREENS.CompleteProfile, { user });
-        } else {
-          navigation.replace(SCREENS.Home);
-        }
+        await leaveLoggedIn(user);
       } else {
         const message =
           res?.data?.message ||
@@ -389,10 +393,15 @@ const LoginScreen = () => {
                 onBlur={() => setFocusedField(null)}
                 placeholder="Enter 10-digit mobile number"
                 placeholderTextColor={
-                  isDarkMode ? "#64748B" : "#94A3B8"
+                  "#64748B"
                 }
                 keyboardType="phone-pad"
                 maxLength={18}
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => passwordInputRef.current?.focus()}
               />
             </View>
           </View>
@@ -441,8 +450,14 @@ const LoginScreen = () => {
                 onBlur={() => setFocusedField(null)}
                 placeholder="Enter your password"
                 placeholderTextColor={
-                  isDarkMode ? "#64748B" : "#94A3B8"
+                  "#64748B"
                 }
+                ref={passwordInputRef}
+                autoCapitalize="none"
+                autoComplete="current-password"
+                textContentType="password"
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
               />
 
               <TouchableOpacity

@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getTrackingDefaults, saveTrackingDefault } from "@/utils/trackingDefaults";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import RightDrawer from "@/components/ui/custom/RightDrawer";
 import MatchSetting from "./MatchSetting";
@@ -193,8 +194,8 @@ export default function PlayerSelectionScreen() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Wagon Wheel & Pitch Map Check-based Tracking States
-  const [isWagonWheelEnabled, setIsWagonWheelEnabled] = useState(true);
-  const [isPitchMapEnabled, setIsPitchMapEnabled] = useState(true);
+  const [isWagonWheelEnabled, setIsWagonWheelEnabled] = useState(false);
+  const [isPitchMapEnabled, setIsPitchMapEnabled] = useState(false);
 
   // Hydrate tracking preferences from AsyncStorage and match config
   useEffect(() => {
@@ -204,6 +205,7 @@ export default function PlayerSelectionScreen() {
       try {
         const storedWW = await AsyncStorage.getItem(`@criconic_ww_${matchId}`);
         const storedPM = await AsyncStorage.getItem(`@criconic_pm_${matchId}`);
+        const defaults = await getTrackingDefaults();
 
         if (isMounted) {
           if (storedWW !== null) {
@@ -211,6 +213,8 @@ export default function PlayerSelectionScreen() {
           } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
             const ww = matchDetails.config.recordWagonWheel;
             setIsWagonWheelEnabled(typeof ww === "boolean" ? ww : !!ww?.active);
+          } else {
+            setIsWagonWheelEnabled(defaults.wagonWheel);
           }
 
           if (storedPM !== null) {
@@ -218,6 +222,8 @@ export default function PlayerSelectionScreen() {
           } else if (matchDetails?.config?.recordPitchMap !== undefined) {
             const pm = matchDetails.config.recordPitchMap;
             setIsPitchMapEnabled(typeof pm === "boolean" ? pm : !!pm?.active);
+          } else {
+            setIsPitchMapEnabled(defaults.pitchMap);
           }
         }
       } catch (err) {
@@ -231,6 +237,7 @@ export default function PlayerSelectionScreen() {
 
   const handleToggleWagonWheel = async (val) => {
     setIsWagonWheelEnabled(val);
+    saveTrackingDefault("wagonWheel", val);
     if (!matchId) return;
     try {
       await AsyncStorage.setItem(`@criconic_ww_${matchId}`, String(val));
@@ -246,6 +253,7 @@ export default function PlayerSelectionScreen() {
 
   const handleTogglePitchMap = async (val) => {
     setIsPitchMapEnabled(val);
+    saveTrackingDefault("pitchMap", val);
     if (!matchId) return;
     try {
       await AsyncStorage.setItem(`@criconic_pm_${matchId}`, String(val));

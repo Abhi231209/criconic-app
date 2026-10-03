@@ -73,6 +73,8 @@ export default function SignUpScreen() {
 
   const timerRef = useRef(null);
 
+  const confirmPasswordInputRef = useRef(null);
+
   const handleResetPhone = () => {
     setIsPhoneValidated(false);
     setIsOtpGenerated(false);
@@ -479,6 +481,8 @@ export default function SignUpScreen() {
                 value={username}
                 onChangeText={setUsername}
                 placeholder="Enter your full name"
+                autoComplete="name"
+                textContentType="name"
                 placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
                 autoCapitalize="words"
               />
@@ -522,6 +526,8 @@ export default function SignUpScreen() {
                 placeholder="10-digit mobile number"
                 placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
                 keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
                 maxLength={18}
                 editable={!isPhoneValidated}
               />
@@ -580,6 +586,8 @@ export default function SignUpScreen() {
                     placeholder="Enter OTP"
                     placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
                     keyboardType="number-pad"
+                    textContentType="oneTimeCode"
+                    autoComplete="sms-otp"
                     maxLength={6}
                   />
                 </View>
@@ -629,6 +637,12 @@ export default function SignUpScreen() {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="At least 6 characters"
+                autoCapitalize="none"
+                autoComplete="new-password"
+                textContentType="newPassword"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
                 placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="p-1">
@@ -658,6 +672,12 @@ export default function SignUpScreen() {
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 placeholder="Re-enter your password"
+                ref={confirmPasswordInputRef}
+                autoCapitalize="none"
+                autoComplete="new-password"
+                textContentType="newPassword"
+                returnKeyType="go"
+                onSubmitEditing={handleSignUp}
                 placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
               />
               <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} className="p-1">

@@ -55,6 +55,7 @@ import ResetPasswordScreen from "@/components/ui/auth/ResetPasswordScreen";
 import RegisterScreen from "@/components/ui/auth/RegisterScreen";
 import ChangePasswordScreen from "@/components/ui/auth/ChangePasswordScreen";
 import ChangePassword from "@/screens/ChangePassword";
+import DeleteAccount from "@/screens/DeleteAccount";
 import MyQR from "@/screens/MyQR";
 import HomeConfig from "@/screens/admin/HomeConfig";
 import SetupAds from "@/screens/admin/SetupAds";
@@ -166,6 +167,7 @@ function MainStack() {
         name={SCREENS.ChangePassword}
         component={ChangePassword}
       />
+      <Stack.Screen name={SCREENS.DeleteAccount} component={DeleteAccount} />
       <Stack.Screen name={SCREENS.MyQR} component={MyQR} />
       <Stack.Screen name={SCREENS.HomeConfig} component={HomeConfig} />
       <Stack.Screen name={SCREENS.SetupAds} component={SetupAds} />

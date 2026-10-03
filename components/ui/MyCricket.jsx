@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
+import { ScoreCardSkeleton, ListRowSkeleton } from "@/components/ui/skeleton";
 import SCREENS from "@/screens";
 import AnimatedFooter from "./AnimatedFooter";
 import { matchesApi, tournamentsApi, teamsApi, request } from "@/utils/api";
@@ -599,8 +600,12 @@ export default function MyCricket({ route: propRoute }) {
       }
       ListEmptyComponent={
         loading ? (
-          <View className="items-center py-16">
-            <ActivityIndicator size="large" color="#3B82F6" />
+          <View accessibilityLabel="Loading" accessibilityRole="progressbar">
+            {[0, 1, 2].map((i) => (
+              <View key={i} className="mb-2">
+                <ScoreCardSkeleton fullWidth />
+              </View>
+            ))}
           </View>
         ) : loadFailed ? (
           // The notice above already says the load failed; "No matches
@@ -816,9 +821,25 @@ export default function MyCricket({ route: propRoute }) {
       ))}
 
       {loading ? (
-        <View className="items-center py-16 w-full">
-          <ActivityIndicator size="large" color="#3B82F6" />
-        </View>
+        // Skeletons only for the first load; a refresh over a filled list
+        // keeps the existing spinner below it.
+        tournaments.length === 0 ? (
+          <View accessibilityLabel="Loading" accessibilityRole="progressbar">
+            {[0, 1, 2].map((i) => (
+              <ListRowSkeleton
+                key={i}
+                avatarSize={0}
+                badge
+                lines={3}
+                style={{ borderRadius: 12, marginBottom: 16, borderWidth: 0 }}
+              />
+            ))}
+          </View>
+        ) : (
+          <View className="items-center py-16 w-full">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        )
       ) : tournaments.length === 0 && !loadFailed ? (
         <View className="items-center py-8 w-full">
           <Ionicons
@@ -987,9 +1008,19 @@ export default function MyCricket({ route: propRoute }) {
       ))}
 
       {loading ? (
-        <View className="items-center py-16 w-full">
-          <ActivityIndicator size="large" color="#3B82F6" />
-        </View>
+        // Skeletons only for the first load; a refresh over a filled list
+        // keeps the existing spinner below it.
+        teams.length === 0 ? (
+          <View accessibilityLabel="Loading" accessibilityRole="progressbar">
+            {[0, 1, 2, 3].map((i) => (
+              <ListRowSkeleton key={i} avatarSize={48} lines={1} footer />
+            ))}
+          </View>
+        ) : (
+          <View className="items-center py-16 w-full">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        )
       ) : teams.length === 0 && !loadFailed ? (
         <View className="items-center py-8 w-full">
           <Ionicons

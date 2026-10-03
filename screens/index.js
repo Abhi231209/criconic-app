@@ -44,6 +44,7 @@ const SCREENS = {
   GoLiveSetup: "GoLiveSetup",
   AllMatches: "AllMatches",
   ChangePassword: "ChangePassword",
+  DeleteAccount: "DeleteAccount",
   HomeConfig: "HomeConfig",
   SetupAds: "SetupAds",
   BlogPosts: "BlogPosts",

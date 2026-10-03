@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   useColorScheme,
   Image,
   TextInput,
@@ -20,6 +21,7 @@ import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
 import SwipeableTabs from "../custom/SwipeableTab";
 import { teamsApi, searchApi, tournamentsApi } from "@/utils/api";
+import { getRecentTeams, rememberRecentTeam } from "@/utils/recentTeams";
 import { getImageFullUrl } from "@/utils";
 import User from "@/utils/User";
 import debounce from "lodash/debounce";
@@ -367,6 +369,7 @@ export default function SelectTeamScreen() {
     tournamentId ? "tournamentTeams" : teamType === "teamB" ? "opponentTeams" : "myTeams"
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [recentTeams, setRecentTeams] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [tournamentSearchQuery, setTournamentSearchQuery] = useState("");
@@ -474,6 +477,11 @@ export default function SelectTeamScreen() {
     }
   };
 
+  // Tournament matches can only use the tournament's teams, so no shortcuts.
+  useEffect(() => {
+    if (!tournamentId) getRecentTeams(currentUserId).then(setRecentTeams);
+  }, [currentUserId, tournamentId]);
+
   const handleTeamSelect = (team) => {
     const selectedId = team?._id || team?.id || team?.teamId;
     if (
@@ -489,11 +497,20 @@ export default function SelectTeamScreen() {
       return;
     }
 
+    rememberRecentTeam(currentUserId, team);
     navigation.navigate(SCREENS.SelectSquadScreen, {
       team,
       teamType,
     });
   };
+
+  // Prefer the freshly loaded copy (it has the squad); fall back to the saved one.
+  const selectRecentTeam = (recent) =>
+    handleTeamSelect(teams.find((t) => String(t._id || t.id) === recent._id) || recent);
+
+  const visibleRecentTeams = recentTeams.filter(
+    (t) => !blockedTeamId || t._id !== String(blockedTeamId)
+  );
 
   const handleCreateTeam = () => {
     navigation.navigate(SCREENS.CreateTeam, {
@@ -665,6 +682,46 @@ export default function SelectTeamScreen() {
           ) : null}
         </View>
       </View>
+
+      {visibleRecentTeams.length > 0 && (
+        <View className={`pt-3 pb-2 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+          <ThemedText
+            className={`px-4 mb-2 text-xs font-semibold uppercase tracking-wide ${
+              isDarkMode ? "text-gray-400" : "text-gray-500"
+            }`}
+          >
+            Recent
+          </ThemedText>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {visibleRecentTeams.map((team) => (
+              <TouchableOpacity
+                key={team._id}
+                onPress={() => selectRecentTeam(team)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Select ${team.name}`}
+                className={`px-4 py-2.5 rounded-full border flex-row items-center ${
+                  isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                }`}
+              >
+                <Ionicons name="shield-outline" size={14} color="#2563EB" style={{ marginRight: 6 }} />
+                <ThemedText
+                  numberOfLines={1}
+                  className={`text-sm font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-800"}`}
+                  style={{ maxWidth: 160 }}
+                >
+                  {team.name}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Tabs */}
       <View

@@ -19,7 +19,8 @@ import * as ImagePicker from "expo-image-picker";
 import { useDispatch, useSelector } from "react-redux";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import SCREENS from "@/screens";
-import { request, upload } from "@/utils/api";
+import { request, upload, uploadedImageUrl } from "@/utils/api";
+import { rememberProfileSetupSkipped } from "@/utils/profileSetup";
 import { login as loginAction } from "@/redux/authSlice";
 import User from "@/utils/User";
 import { showGlobalAlert } from "@/contexts/AlertContext";
@@ -60,7 +61,11 @@ export default function CompleteProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   // Form State
-  const [role, setRole] = useState(currentUser?.role || "All-rounder");
+  // Playing role, saved as playingRole: the account's `role` field is its
+  // permission level (a number).
+  const [role, setRole] = useState(
+    ROLES.some((r) => r.id === currentUser?.playingRole) ? currentUser.playingRole : "All-rounder"
+  );
   const [battingStyle, setBattingStyle] = useState(
     toShortBattingStyle(currentUser?.batStyle || currentUser?.battingStyle || "RHB")
   );
@@ -123,6 +128,7 @@ export default function CompleteProfileScreen() {
   };
 
   const handleSkip = () => {
+    rememberProfileSetupSkipped(userId);
     navigation.replace(SCREENS.Home);
   };
 
@@ -156,20 +162,26 @@ export default function CompleteProfileScreen() {
     }
   };
 
-  const handleCompleteProfile = async () => {
+  // Saves the profile. Stays on this screen if anything fails, so what the user
+  // entered isn't lost and they aren't told it was saved when it wasn't.
+  const handleCompleteProfile = async ({ withoutPhoto = false } = {}) => {
     setIsSaving(true);
     try {
-      let uploadedUrl = avatarUri;
-      if (avatarUri && !avatarUri.startsWith("http")) {
-        try {
-          const uploadRes = await upload(avatarUri, "profile");
-          uploadedUrl =
-            uploadRes?.url ||
-            uploadRes?.data?.url ||
-            uploadRes?.data ||
-            (typeof uploadRes === "string" ? uploadRes : avatarUri);
-        } catch (uploadErr) {
-          console.log("[CompleteProfile] Avatar upload warning:", uploadErr);
+      let profileImg = null;
+      if (avatarUri && !withoutPhoto) {
+        profileImg = /^https?:\/\//.test(avatarUri)
+          ? avatarUri
+          : uploadedImageUrl(await upload(avatarUri, "profile"));
+        if (!profileImg) {
+          showGlobalAlert({
+            title: "Photo didn't upload",
+            message: "Check your connection and try again, or save your profile without the photo for now.",
+            type: "warning",
+            confirmText: "Save without photo",
+            cancelText: "Try again",
+            onConfirm: () => handleCompleteProfile({ withoutPhoto: true }),
+          });
+          return;
         }
       }
 
@@ -177,7 +189,7 @@ export default function CompleteProfileScreen() {
       const cleanBallStyle = toShortBowlingStyle(bowlingStyle);
 
       const payload = {
-        role,
+        playingRole: role,
         batStyle: cleanBatStyle,
         battingStyle: cleanBatStyle,
         ballStyle: cleanBallStyle,
@@ -186,33 +198,38 @@ export default function CompleteProfileScreen() {
         location: city.trim(),
         ...(locationId ? { locationId } : {}),
         bio: bio.trim(),
-        ...(uploadedUrl ? { profileImg: uploadedUrl, profileImage: uploadedUrl } : {}),
+        ...(profileImg ? { profileImg, profileImage: profileImg } : {}),
       };
 
-      if (userId) {
-        await request(`api/users/edit/${userId}`, {
-          method: "POST",
-          data: { dataToChange: payload },
-          errorAlert: false,
-        }).catch((e) => console.log("[CompleteProfile] Edit user warning:", e));
+      const res = userId
+        ? await request(`api/users/edit/${userId}`, {
+            method: "POST",
+            data: { dataToChange: payload },
+            errorAlert: false,
+          })
+        : null;
+      if (!res?.data?.success) {
+        showGlobalAlert({
+          title: "Couldn't save your profile",
+          message: res?.data?.message || "Check your connection and try again.",
+          type: "error",
+          confirmText: "OK",
+        });
+        return;
       }
 
-      // Update Redux and User Session
-      const updatedUser = {
-        ...currentUser,
-        ...payload,
-        profileImg: uploadedUrl || currentUser?.profileImg,
-        profileImage: uploadedUrl || currentUser?.profileImage,
-      };
-
+      const updatedUser = { ...currentUser, ...payload };
       dispatch(loginAction(updatedUser));
       User.login(updatedUser);
-
-      // Direct navigation to Home - no popup modal
       navigation.replace(SCREENS.Home);
     } catch (err) {
       console.error("[CompleteProfile] Error completing profile:", err);
-      navigation.replace(SCREENS.Home);
+      showGlobalAlert({
+        title: "Couldn't save your profile",
+        message: "Something went wrong. Please try again.",
+        type: "error",
+        confirmText: "OK",
+      });
     } finally {
       setIsSaving(false);
     }

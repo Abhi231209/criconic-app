@@ -27,6 +27,7 @@ import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareS
 import debounce from "lodash/debounce";
 import { useSelector } from "react-redux";
 import User from "@/utils/User";
+import { getPreference } from "@/utils/appPreferences";
 
 const isValidLocation = (loc) => {
   if (!loc || typeof loc !== "string") return false;
@@ -159,6 +160,18 @@ export default function MatchDetailsScreen() {
   const locationSectionYRef = useRef(0);
   const isLocationFocusedRef = useRef(false);
   const isLeavingRef = useRef(false);
+  // Set once the overs come from somewhere more specific than the user's
+  // default (the saved match, or the user picking them here).
+  const oversChosenRef = useRef(Boolean(route.params?.overs));
+
+  // New limited-overs match: start from the default in Settings → Scoring.
+  useEffect(() => {
+    if (route.params?.overs || route.params?.matchType === "single_wicket") return;
+    getPreference("defaultOvers").then((overs) => {
+      if (oversChosenRef.current) return;
+      setMatchDetails((prev) => ({ ...prev, overs }));
+    });
+  }, []);
 
   useEffect(() => {
     if (matchId) {
@@ -270,7 +283,7 @@ export default function MatchDetailsScreen() {
   const oversPresets = isSingleWicket ? [1, 2, 3, 4, 5, 6, 8, 10] : [6, 8, 10, 12, 15, 20, 25, 30];
   const maxCustomOvers = isSingleWicket ? 10 : 50;
 
-  const handleProceedToStep2 = () => {
+  const hasValidOvers = () => {
     const oversNum = Number(matchDetails.overs);
     if (!isTestMatch && (!oversNum || oversNum <= 0)) {
       showGlobalAlert({
@@ -278,8 +291,13 @@ export default function MatchDetailsScreen() {
         message: "Please select or enter the number of overs.",
         type: "warning",
       });
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handleProceedToStep2 = () => {
+    if (!hasValidOvers()) return;
     setCurrentStep(2);
     setTimeout(() => {
       scrollViewRef.current?.scrollTo?.({ y: 0, animated: false });
@@ -402,6 +420,7 @@ export default function MatchDetailsScreen() {
   }, [initialLocation]);
 
   const handleInputChange = (field, value) => {
+    if (field === "overs") oversChosenRef.current = true;
     setMatchDetails((prev) => {
       const updated = {
         ...prev,
@@ -477,7 +496,7 @@ export default function MatchDetailsScreen() {
     if (!isValidLocation(matchDetails.location)) {
       showGlobalAlert({
         title: "Location Required",
-        message: "Please enter and select a ground or location from Google Places before proceeding.",
+        message: "Enter the ground or town where the match is played.",
         type: "warning",
       });
       return null;
@@ -1586,7 +1605,40 @@ export default function MatchDetailsScreen() {
           elevation: 5,
         }}
       >
-        {currentStep === 1 ? (
+        {currentStep === 1 && isValidLocation(matchDetails.location) ? (
+          // Step 2 already has a venue (the user's city) and defaults for the
+          // rest, so the match can start from here; step 2 is optional.
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity
+              onPress={handleProceedToStep2}
+              disabled={isSubmitting}
+              className={`flex-1 py-3.5 px-4 rounded-xl items-center justify-center border ${
+                isDarkMode ? "border-blue-500/40 bg-gray-800" : "border-blue-400 bg-white"
+              }`}
+              activeOpacity={0.85}
+            >
+              <ThemedText
+                className={`text-base font-bold ${isDarkMode ? "text-blue-400" : "text-blue-600"}`}
+              >
+                Venue & more
+              </ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => hasValidOvers() && handleStartMatch()}
+              disabled={isSubmitting}
+              className={`flex-1 py-3.5 px-4 rounded-xl items-center justify-center bg-blue-600 ${
+                isSubmitting ? "bg-blue-400" : ""
+              }`}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <ThemedText className="text-white text-base font-bold">Start Match</ThemedText>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : currentStep === 1 ? (
           <TouchableOpacity
             onPress={handleProceedToStep2}
             className="w-full py-3.5 px-4 rounded-xl items-center justify-center bg-blue-600 flex-row shadow-sm"

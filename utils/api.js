@@ -323,6 +323,14 @@ export const upload = async (fileInput, folderName = "general") => {
   }
 };
 
+// The remote URL of an image sent with upload(), or null if the
+// upload failed. A failed upload must not fall back to the local file:// path,
+// which would be saved to the profile and break on every other device.
+export const uploadedImageUrl = (uploadRes) => {
+  const url = uploadRes?.url || uploadRes?.secure_url || uploadRes?.data?.url;
+  return typeof url === "string" && /^https?:\/\//.test(url) ? url : null;
+};
+
 // ============================================
 // Grouped API Services matching sports-arena
 // ============================================
@@ -644,6 +652,8 @@ export const userApi = {
       method: "GET",
       errorAlert: false,
     }),
+  deleteAccount: (password) =>
+    request("api/users/delete-account", { method: "POST", data: { password }, errorAlert: false }),
   registerPushToken: (token) =>
     request("api/users/push-token", { method: "POST", data: { token }, errorAlert: false }),
   removePushToken: (token) =>

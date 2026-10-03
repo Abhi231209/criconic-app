@@ -122,10 +122,6 @@ const CreateMenuItemCard = ({ item, index, showCreateMenu, colors }) => {
 };
 
 const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false }) => {
-  if (visible === false || hidden === true) {
-    return null;
-  }
-
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -153,17 +149,22 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
 
   const colors = theme;
 
-  const navigateToScreen = (screenName, params) => {
+  const TAB_ROOT = { pop: true };
+
+  // Tab roots pass TAB_ROOT ({ pop: true }): if the tab is already in the stack, go back
+  // to it instead of pushing another copy, so switching tabs doesn't pile up
+  // screens behind the Android back button or reload the tab from scratch.
+  const navigateToScreen = (screenName, params, options) => {
     const currentRoutes = navigation.getState?.()?.routeNames || [];
     if (currentRoutes.includes(screenName)) {
-      navigation.navigate(screenName, params);
+      navigation.navigate(screenName, params, options);
       return;
     }
 
     const parentNavigation = navigation.getParent?.();
     const parentRoutes = parentNavigation?.getState?.()?.routeNames || [];
     if (parentRoutes.includes(screenName)) {
-      parentNavigation.navigate(screenName, params);
+      parentNavigation.navigate(screenName, params, options);
       return;
     }
 
@@ -188,7 +189,7 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
   const createMenuItems = [
     {
       title: "Create Tournament",
-      subtitle: "Organize a cricket tournament with teams and fixtures.",
+      subtitle: "Organize a cricket tournament with teams and matches.",
       icon: Trophy,
       color: colors.primary,
       onPress: () => {
@@ -253,19 +254,19 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
       }
       if (tabName === "Home") {
         setActiveTab(tabName);
-        navigateToScreen(SCREENS.Home);
+        navigateToScreen(SCREENS.Home, undefined, TAB_ROOT);
       } else if (tabName === "Tournament") {
         setActiveTab(tabName);
-        navigateToScreen(SCREENS.AllTournaments);
+        navigateToScreen(SCREENS.AllTournaments, undefined, TAB_ROOT);
       } else if (tabName === "My Cricket") {
         requireAuth(() => {
           setActiveTab(tabName);
-          navigateToScreen(SCREENS.MyCricket);
+          navigateToScreen(SCREENS.MyCricket, undefined, TAB_ROOT);
         });
       } else if (tabName === "Profile") {
         requireAuth(() => {
           setActiveTab(tabName);
-          navigateToScreen(SCREENS.PlayerProfile);
+          navigateToScreen(SCREENS.PlayerProfile, { asTab: true });
         });
       }
     }
@@ -374,6 +375,11 @@ const AnimatedFooter = ({ onNavigate, currentTab, visible = true, hidden = false
       </TouchableOpacity>
     );
   };
+
+  // Checked here rather than at the top: hooks must run on every render.
+  if (visible === false || hidden === true) {
+    return null;
+  }
 
   return (
     <>

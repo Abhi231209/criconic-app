@@ -26,6 +26,7 @@ import { tournamentsApi, matchesApi, request } from "@/utils/api";
 import { getImageFullUrl, MATCH_STATUS, getMatchStatusDisplay, formatIndianCurrencyWords } from "@/utils";
 import { SCANNER_TYPE_ACTION } from "@/utils/Common";
 import User from "@/utils/User";
+import { webLinks } from "@/navigation/linking";
 
 const calculateTournamentStatus = (t) => {
   if (!t) return "upcoming";
@@ -522,7 +523,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
   const handleShareTournament = async () => {
     try {
       await Share.share({
-        message: `Join ${tournament?.name || "Tournament"} on Criconic!\nTournament ID: ${tournamentId}`,
+        message: `${tournament?.name || "Tournament"} on Criconic: ${webLinks.tournament(tournamentData?.slug || tournamentId)}`,
         title: tournament?.name || "Tournament QR",
       });
     } catch (e) {

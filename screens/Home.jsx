@@ -17,6 +17,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import { useAxiosGet } from "@/hooks/useApi";
 import ScoreCard from "@/components/ui/ScoreCard";
+import { ScoreCardSkeleton } from "@/components/ui/skeleton";
 import { matchesApi } from "@/utils/api";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -31,6 +32,8 @@ import CricketPulse from "@/components/ui/home/CricketPulse";
 import FeatureHighlights from "@/components/ui/home/FeatureHighlights";
 import TopPlayersSpotlight from "@/components/ui/home/TopPlayersSpotlight";
 import CtaBanner from "@/components/ui/home/CtaBanner";
+import LiveNowStrip from "@/components/ui/home/LiveNowStrip";
+import { askForPushPermission } from "@/utils/notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSocket } from "@/contexts/SocketContext";
@@ -47,12 +50,21 @@ export default function Home({}) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
-  const { requireAuth } = useRequireAuth(navigation);
+  const { requireAuth, isLoggedIn } = useRequireAuth(navigation);
 
   const [homeConfig, setHomeConfig] = useState({});
   const [tournaments, setTournaments] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [matchDetailsMap, setMatchDetailsMap] = useState({});
+  const [liveRefreshKey, setLiveRefreshKey] = useState(0);
+
+  // Offer match alerts once Home has settled, not in the middle of logging in.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const timer = setTimeout(askForPushPermission, 2500);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn]);
+  const refreshLive = useCallback(() => setLiveRefreshKey((k) => k + 1), []);
   const lastFocusFetch = React.useRef(Date.now());
 
   const {
@@ -140,6 +152,7 @@ export default function Home({}) {
       lastFocusFetch.current = Date.now();
       refreshMatches?.();
       fetchMatchDetails();
+      refreshLive();
     }
   }, [isConnected]);
 
@@ -210,12 +223,13 @@ export default function Home({}) {
       if (Date.now() - lastFocusFetch.current > 15000) {
         lastFocusFetch.current = Date.now();
         refreshMatches?.();
+        refreshLive();
       }
 
       return () => {
         backSubscription.remove();
       };
-    }, [navigation, refreshMatches])
+    }, [navigation, refreshMatches, refreshLive])
   );
 
   const {
@@ -241,6 +255,7 @@ export default function Home({}) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     lastFocusFetch.current = Date.now();
+    refreshLive();
     try {
       await Promise.all([
         refreshMatches ? Promise.resolve(refreshMatches()) : Promise.resolve(),
@@ -252,7 +267,7 @@ export default function Home({}) {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshMatches, fetchMatchDetails]);
+  }, [refreshMatches, fetchMatchDetails, refreshLive]);
 
   useEffect(() => {
     getConfig();
@@ -299,7 +314,7 @@ export default function Home({}) {
   const handleBannerPress = useCallback(
     (item) => {
       if (!item?.callToAction) {
-        if (item?.isMatch) navigation.navigate(SCREENS.AllMatches);
+        if (item?.isMatch) navigation.navigate(SCREENS.AllMatches, { initialFilter: "live" });
         return;
       }
       const target = item.callToAction.trim();
@@ -312,6 +327,8 @@ export default function Home({}) {
           target === SCREENS.CreateTeam
         ) {
           requireAuth(() => navigation.navigate(SCREENS[target]));
+        } else if (target === SCREENS.AllMatches && item?.isMatch) {
+          navigation.navigate(SCREENS.AllMatches, { initialFilter: "live" });
         } else {
           navigation.navigate(SCREENS[target]);
         }
@@ -463,6 +480,9 @@ export default function Home({}) {
             </ScrollView>
           </View>
 
+          {/* Matches being played right now (hidden when none are) */}
+          <LiveNowStrip refreshKey={liveRefreshKey} />
+
           {/* Hero Highlights Carousel */}
           <HeroCarousel
             banners={homeConfig?.holding}
@@ -527,10 +547,16 @@ export default function Home({}) {
               </TouchableOpacity>
             </View>
           ) : matchesLoading || !matchesLoadedAt ? (
-            <View className="py-6 px-4 items-center justify-center">
-              <ThemedText className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Loading matches…
-              </ThemedText>
+            <View
+              accessibilityLabel="Loading"
+              accessibilityRole="progressbar"
+              style={{ flexDirection: "row", overflow: "hidden", paddingVertical: 4 }}
+            >
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={{ marginRight: i !== 2 ? 12 : 0 }}>
+                  <ScoreCardSkeleton />
+                </View>
+              ))}
             </View>
           ) : (
             <View className="py-6 px-4 items-center justify-center">
@@ -553,7 +579,7 @@ export default function Home({}) {
           <SectionHeader title="Live Cricket Arena" />
           <TouchableOpacity
             activeOpacity={0.88}
-            onPress={() => navigation.navigate(SCREENS.AllMatches)}
+            onPress={() => navigation.navigate(SCREENS.AllMatches, { initialFilter: "live" })}
             className="rounded-2xl overflow-hidden border border-slate-700/30 mb-5"
             style={{
               shadowColor: "#000",
@@ -578,7 +604,7 @@ export default function Home({}) {
                 </View>
                 <View className="bg-blue-500/20 px-3 py-1 rounded-full border border-blue-400/30">
                   <ThemedText className="text-blue-300 text-xs font-semibold">
-                    HD Commentary
+                    Ball by ball
                   </ThemedText>
                 </View>
               </View>

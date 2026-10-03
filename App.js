@@ -39,6 +39,7 @@ import { login as loginAction } from "./redux/authSlice";
 import User from "./utils/User";
 import analytics from "./utils/analytics";
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from "./utils/notifications";
+import { linking } from "./navigation/linking";
 import usePendingScoreSync from "./hooks/usePendingScoreSync";
 import OfflineBanner from "./components/ui/OfflineBanner";
 import AppSplash from "./components/ui/AppSplash";
@@ -98,7 +99,8 @@ function AppContent() {
 
   // Register (or re-register) this device for push once we have an
   // authenticated session — covers both a fresh login and session restore
-  // on app start, since both dispatch the same redux auth state.
+  // on app start, since both dispatch the same redux auth state. This never
+  // shows the permission prompt; Home offers alerts with an explanation.
   useEffect(() => {
     if (isLoggedIn) {
       registerForPushNotificationsAsync();
@@ -110,6 +112,7 @@ function AppContent() {
   return (
     <NavigationContainer
       ref={navigationRef}
+      linking={linking}
       theme={isDark ? DarkTheme : DefaultTheme}
       onReady={() => {
         const currentRoute = navigationRef.getCurrentRoute();
