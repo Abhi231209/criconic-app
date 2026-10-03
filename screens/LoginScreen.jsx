@@ -223,7 +223,7 @@ const LoginScreen = () => {
           Every stat.
         </ThemedText>
         <ThemedText className="text-base font-medium mt-3 leading-5" style={{ color: BRAND.slate }}>
-          Score live, run tournaments and dig into your numbers. Your stats are always free to see.
+          Where every score tells a story. Score live, run tournaments and see your stats free, always.
         </ThemedText>
 
         {!isCompact && (
