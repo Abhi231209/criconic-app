@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -20,6 +20,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import QRCode from "react-native-qrcode-svg";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
+import MatchFilterChips, { matchFilterParams } from "@/components/ui/MatchFilterChips";
 import { useSelector } from "react-redux";
 import SCREENS from "@/screens";
 import { tournamentsApi, matchesApi, request } from "@/utils/api";
@@ -325,6 +326,12 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
     passedTournament?.raw || passedTournament
   );
   const [matchesList, setMatchesList] = useState([]);
+  // A filter other than "All" shows the server's filtered list instead of the
+  // sections below, which only cover the matches loaded with the tournament.
+  const [matchFilter, setMatchFilter] = useState("all");
+  const [filteredMatches, setFilteredMatches] = useState([]);
+  const [loadingFilteredMatches, setLoadingFilteredMatches] = useState(false);
+  const filterRequestRef = useRef(0);
   const [teamsList, setTeamsList] = useState(
     passedTournament?.teams || passedTournament?.raw?.teams || []
   );
@@ -1499,6 +1506,60 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
     </ScrollView>
   );
 
+  const changeMatchFilter = async (filterId) => {
+    if (filterId === matchFilter) return;
+    setMatchFilter(filterId);
+    const requestId = ++filterRequestRef.current;
+    setFilteredMatches([]);
+    if (filterId === "all") {
+      setLoadingFilteredMatches(false);
+      return;
+    }
+    setLoadingFilteredMatches(true);
+    try {
+      const res = await tournamentsApi
+        .getMatchesByTournament(tournamentData?._id || tournamentId, {
+          params: { limit: 100, ...matchFilterParams(filterId) },
+        })
+        .catch(() => null);
+      if (requestId !== filterRequestRef.current) return;
+      const list = res?.data?.content || res?.content || res?.data?.matches || res?.data;
+      setFilteredMatches(Array.isArray(list) ? list : []);
+    } finally {
+      if (requestId === filterRequestRef.current) setLoadingFilteredMatches(false);
+    }
+  };
+
+  const renderFilteredMatches = () => {
+    if (loadingFilteredMatches) {
+      return (
+        <View className="py-12 items-center justify-center">
+          <ActivityIndicator size="small" color="#3B82F6" />
+        </View>
+      );
+    }
+    if (filteredMatches.length === 0) {
+      return (
+        <View className="py-12 items-center justify-center">
+          <Ionicons name="baseball-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
+          <ThemedText className={`text-center mt-3 font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            No matches for this filter
+          </ThemedText>
+        </View>
+      );
+    }
+    return filteredMatches.map((match) => (
+      <View key={match._id || match.id} className="mb-4 w-full max-w-md">
+        <ScoreCard
+          match={match}
+          matchId={match._id || match.id}
+          fullWidth
+          navigation={navigation}
+        />
+      </View>
+    ));
+  };
+
   const renderMatches = () => (
     <ScrollView
       className="flex-1"
@@ -1520,6 +1581,13 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
         </TouchableOpacity>
       )}
 
+      <MatchFilterChips
+        value={matchFilter}
+        onChange={changeMatchFilter}
+        style={{ width: "100%", maxWidth: 448, marginBottom: 16 }}
+      />
+
+      {matchFilter !== "all" ? renderFilteredMatches() : <>
       {/* Live Matches */}
       {liveMatches.length > 0 && (
         <>
@@ -1637,6 +1705,7 @@ export default function TournamentProfile({ navigation, route = { params: {} } }
           )}
         </View>
       )}
+      </>}
     </ScrollView>
   );
 

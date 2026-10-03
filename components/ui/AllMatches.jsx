@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   TouchableOpacity,
@@ -15,16 +15,10 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard, { MATCH_CACHE } from "@/components/ui/ScoreCard";
 import { ScoreCardSkeleton } from "@/components/ui/skeleton";
+import MatchFilterChips, { MATCH_FILTERS } from "@/components/ui/MatchFilterChips";
 import { matchesApi, request } from "@/utils/api";
 import { MATCH_STATUS, getMatchStatusDisplay } from "@/utils";
 
-const FILTERS = [
-  { id: "all", label: "All" },
-  { id: "live", label: "Live" },
-  { id: "stream", label: "Streaming 📹" },
-  { id: "upcoming", label: "Upcoming" },
-  { id: "completed", label: "Completed" },
-];
 
 // Filters the server applies (?status=), so they cover every match rather
 // than only the pages already loaded.
@@ -34,7 +28,7 @@ export default function AllMatches() {
   const navigation = useNavigation();
   const route = useRoute();
   // Links such as Home's "Live now" open the list on a given filter.
-  const initialFilter = FILTERS.some((f) => f.id === route.params?.initialFilter)
+  const initialFilter = MATCH_FILTERS.some((f) => f.id === route.params?.initialFilter)
     ? route.params.initialFilter
     : "all";
   const colorScheme = useColorScheme();
@@ -66,8 +60,14 @@ export default function AllMatches() {
     return () => sub.remove();
   }, []);
 
+  // Only the latest request may fill the list: switching filters while the
+  // previous one loads mustn't show the old filter's matches.
+  const latestRequestRef = useRef(0);
+
   const fetchMatches = useCallback(
     async (pageNum = 1, shouldAppend = false, filter = activeFilter) => {
+      const requestId = ++latestRequestRef.current;
+      const isStale = () => requestId !== latestRequestRef.current;
       try {
         if (pageNum === 1 && !shouldAppend) {
           setLoading(true);
@@ -136,6 +136,7 @@ export default function AllMatches() {
           fetchedList = Array.from(matchMap.values());
         }
 
+        if (isStale()) return;
         if (shouldAppend) {
           setMatches((prev) => {
             const prevMap = new Map(prev.map((item) => [String(item._id || item.id || item.matchId || item), item]));
@@ -156,9 +157,11 @@ export default function AllMatches() {
       } catch (err) {
         console.warn("[AllMatches] Fetch error:", err);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (!isStale()) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [activeFilter]
@@ -360,42 +363,11 @@ export default function AllMatches() {
       </View>
 
       {/* Filter Tabs */}
-      <View className="px-4 py-2">
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={FILTERS}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const isActive = activeFilter === item.id;
-            return (
-              <TouchableOpacity
-                onPress={() => handleFilterChange(item.id)}
-                activeOpacity={0.8}
-                className={`px-4 py-1.5 rounded-full mr-2 border ${
-                  isActive
-                    ? "bg-blue-600 border-blue-500"
-                    : isDarkMode
-                    ? "bg-gray-800 border-gray-700"
-                    : "bg-white border-gray-200"
-                }`}
-              >
-                <ThemedText
-                  className={`text-xs font-semibold ${
-                    isActive
-                      ? "text-white"
-                      : isDarkMode
-                      ? "text-gray-300"
-                      : "text-gray-700"
-                  }`}
-                >
-                  {item.label}
-                </ThemedText>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
+      <MatchFilterChips
+        value={activeFilter}
+        onChange={handleFilterChange}
+        style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+      />
 
       {/* Match Cards List */}
       {loading ? (

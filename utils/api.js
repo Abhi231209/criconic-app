@@ -3,7 +3,7 @@ import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDeviceId } from "./index";
 import { store, authTokenReady, selectAuthToken } from "@/redux/store";
-import { logout as logoutAction } from "@/redux/authSlice";
+import { logout as logoutAction, setToken } from "@/redux/authSlice";
 import { getSecureItem, setSecureItem, deleteSecureItem } from "./secureStorage";
 import { showGlobalAlert } from "@/contexts/AlertContext";
 import User from "./User";
@@ -423,6 +423,9 @@ export const authApi = {
     });
     if (res?.data?.success && res?.data?.user) {
       User.login(res.data.user);
+      // Logged in by the session, but our token had stopped working: the
+      // server sends a new one (the scoring socket only accepts the token).
+      if (res.data.access_token) store.dispatch(setToken(res.data.access_token));
     }
     return res;
   },
@@ -536,8 +539,9 @@ export const tournamentsApi = {
     request(`api/tournaments/${tournamentId}/teams`, { method: "POST", data, ...options }),
   getPointsTable: (id, options = {}) =>
     request(`api/tournaments/getPointsTable/${id}`, { method: "GET", errorAlert: false, ...options }),
-  getMatchesByTournament: (id, options = {}) => {
-    const params = { limit: 10, page: 1, ...(options?.params || {}) };
+  getMatchesByTournament: (id, { params: extraParams, ...options } = {}) => {
+    // The params go in the path only: also passing them on would send each twice.
+    const params = { limit: 10, page: 1, ...(extraParams || {}) };
     const query = new URLSearchParams(params).toString();
     return request(`api/matches/tournament/${id}${query ? `?${query}` : ""}`, {
       method: "GET",

@@ -27,6 +27,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 import QRCode from "react-native-qrcode-svg";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
+import MatchFilterChips, { withMatchFilter } from "@/components/ui/MatchFilterChips";
 import SCREENS from "@/screens";
 import { request } from "@/utils/api";
 import { getImageFullUrl, toShortBattingStyle, toShortBowlingStyle } from "@/utils";
@@ -214,6 +215,11 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
   const [refreshingMatches, setRefreshingMatches] = useState(false);
   const isFetchingMatchesRef = useRef(false);
+  const [matchFilter, setMatchFilter] = useState("all");
+  const matchFilterRef = useRef("all");
+  // Bumped by every page-1 load, so a load for a filter no longer selected
+  // doesn't fill the list.
+  const matchesRequestRef = useRef(0);
   const [battingLeaderboard, setBattingLeaderboard] = useState([]);
   const [bowlingLeaderboard, setBowlingLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -393,8 +399,12 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
   const fetchMatchesPage = useCallback(
     async (pageToFetch, isRefresh = false) => {
       if (!teamId) return;
-      if (isFetchingMatchesRef.current) return;
+      // A first page replaces whatever is loading; a next page waits its turn.
+      if (pageToFetch !== 1 && isFetchingMatchesRef.current) return;
       isFetchingMatchesRef.current = true;
+      const requestId = pageToFetch === 1 ? ++matchesRequestRef.current : matchesRequestRef.current;
+      const isStale = () => requestId !== matchesRequestRef.current;
+      const filter = matchFilterRef.current;
 
       if (isRefresh) {
         setRefreshingMatches(true);
@@ -406,9 +416,10 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
 
       try {
         const res = await request(
-          `api/matches/ids?page=${pageToFetch}&items=${MATCHES_PER_PAGE}&teamId=${teamId}`,
+          withMatchFilter(`api/matches/ids?page=${pageToFetch}&items=${MATCHES_PER_PAGE}&teamId=${teamId}`, filter),
           { method: "GET", errorAlert: false }
         );
+        if (isStale()) return;
         const content = res?.data?.content || [];
 
         if (Array.isArray(content) && content.length > 0) {
@@ -429,6 +440,13 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
             return [...prev, ...filtered];
           });
           setMatchesPage(pageToFetch);
+        } else if (filter !== "all") {
+          // Nothing (more) for this filter. The fallback below is unfiltered.
+          if (pageToFetch === 1) {
+            setPaginatedMatches([]);
+            setMatchesPage(1);
+          }
+          setHasMoreMatches(false);
         } else {
           // Fallback: slice from allTeamMatches if API returns empty
           const source = allTeamMatches;
@@ -448,17 +466,20 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
           }
         }
       } catch (err) {
-        if (pageToFetch === 1 && allTeamMatches.length > 0) {
+        if (isStale()) return;
+        if (pageToFetch === 1 && filter === "all" && allTeamMatches.length > 0) {
           setPaginatedMatches(allTeamMatches.slice(0, MATCHES_PER_PAGE));
           setHasMoreMatches(allTeamMatches.length > MATCHES_PER_PAGE);
         } else {
           setHasMoreMatches(false);
         }
       } finally {
-        isFetchingMatchesRef.current = false;
-        setLoadingMatches(false);
-        setLoadingMoreMatches(false);
-        setRefreshingMatches(false);
+        if (!isStale()) {
+          isFetchingMatchesRef.current = false;
+          setLoadingMatches(false);
+          setLoadingMoreMatches(false);
+          setRefreshingMatches(false);
+        }
       }
     },
     [teamId, allTeamMatches]
@@ -486,6 +507,18 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     setHasMoreMatches(true);
     fetchMatchesPage(1, true);
   }, [fetchMatchesPage]);
+
+  const changeMatchFilter = useCallback(
+    (filterId) => {
+      if (filterId === matchFilterRef.current) return;
+      matchFilterRef.current = filterId;
+      setMatchFilter(filterId);
+      setPaginatedMatches([]);
+      setHasMoreMatches(true);
+      fetchMatchesPage(1, false);
+    },
+    [fetchMatchesPage]
+  );
 
   // Derived team object with robust stats resolution
   const team = useMemo(() => {
@@ -1535,6 +1568,11 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
     <Animated.View
       style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], flex: 1 }}
     >
+      <MatchFilterChips
+        value={matchFilter}
+        onChange={changeMatchFilter}
+        style={{ paddingHorizontal: 16, paddingTop: 12 }}
+      />
       {loadingMatches && paginatedMatches.length === 0 ? (
         <View className="py-16 items-center justify-center">
           <ActivityIndicator size="small" color="#2563EB" />
@@ -1582,7 +1620,7 @@ export default function TeamProfile({ navigation, route = { params: {} } }) {
                   isDarkMode ? "text-gray-400" : "text-gray-500"
                 }`}
               >
-                No matches found
+                {matchFilter === "all" ? "No matches found" : "No matches for this filter"}
               </ThemedText>
             </View>
           }

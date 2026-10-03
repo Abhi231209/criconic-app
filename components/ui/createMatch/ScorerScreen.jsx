@@ -21,7 +21,7 @@ import { matchRedirectBasedOnStatus, calculateOversLeft, calculateProjectedResul
 import MatchHeader from "./MatchHeader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSelector } from "react-redux";
-import { matchesApi, teamsApi, request, apiUrl, getAuthToken } from "@/utils/api";
+import { matchesApi, teamsApi, authApi, request, apiUrl, getAuthToken } from "@/utils/api";
 import { SOCKET_URL } from "@/config";
 import { io } from "socket.io-client";
 import BallPreview from "./BallPreview";
@@ -271,13 +271,17 @@ export default function ScorerScreen() {
   );
 
   // The server said this socket has no logged-in user. The login token is
-  // read when the socket connects, so reconnect to send the current one.
+  // read when the socket connects, so reconnect to send the current one —
+  // after asking the server for a new token, in case ours has expired while
+  // the login itself (the session) is still good.
   const lastReloginAtRef = useRef(0);
-  const reconnectWithCurrentLogin = useCallback(() => {
-    const socketConn = socketRef.current;
-    if (!socketConn || !getAuthToken()) return;
+  const reconnectWithCurrentLogin = useCallback(async () => {
+    if (!socketRef.current) return;
     if (Date.now() - lastReloginAtRef.current < 30000) return;
     lastReloginAtRef.current = Date.now();
+    await authApi.checkStatus().catch(() => null);
+    const socketConn = socketRef.current;
+    if (!socketConn || !getAuthToken()) return;
     socketConn.disconnect();
     socketConn.connect();
   }, []);
@@ -1987,7 +1991,16 @@ export default function ScorerScreen() {
     };
     handleInningsStartSocketRef.current = handleInningsStartSocket;
 
-    const stableOverComplete = (...args) => handleOverCompleteRef.current?.(...args);
+    // While queued actions are being sent, the server announces the end of
+    // each over it replays — overs this phone already ended (and usually
+    // already picked the next bowler for) when the ball was scored offline.
+    const stableOverComplete = (...args) => {
+      if (isFlushing(matchID) || queueRef.current.length || unsavedActionsRef.current.length) {
+        console.log("[OVER-COMPLETE] Ignoring server event for a queued ball");
+        return;
+      }
+      handleOverCompleteRef.current?.(...args);
+    };
     const stableInningsComplete = () => {
       matchStatusHandler("isInningCompleted", true);
       handleInningsCompleteRef.current?.({ fromServer: true });

@@ -17,6 +17,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
+import MatchFilterChips, { matchFilterParams, withMatchFilter } from "@/components/ui/MatchFilterChips";
 import SCREENS from "@/screens";
 import { useSelector } from "react-redux";
 import request, { matchesApi, userApi, rankingsApi } from "@/utils/api";
@@ -119,6 +120,11 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const [refreshingMatches, setRefreshingMatches] = useState(false);
   const isFetchingMatchesRef = useRef(false);
   const hasMoreMatchesRef = useRef(true);
+  const [matchFilter, setMatchFilter] = useState("all");
+  const matchFilterRef = useRef("all");
+  // Bumped by every page-1 load, so a load for a filter no longer selected
+  // doesn't fill the list.
+  const matchesRequestRef = useRef(0);
 
   // Teams pagination state
   const [rawFetchedTeams, setRawFetchedTeams] = useState([]);
@@ -291,9 +297,13 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
   const fetchMatchesPage = useCallback(
     async (pageToFetch = 1, isRefresh = false) => {
       if (!targetId || String(targetId) === "1") return;
-      if (isFetchingMatchesRef.current) return;
-      if (!isRefresh && !hasMoreMatchesRef.current) return;
+      // A first page replaces whatever is loading; a next page waits its turn.
+      if (pageToFetch !== 1 && isFetchingMatchesRef.current) return;
+      if (!isRefresh && pageToFetch !== 1 && !hasMoreMatchesRef.current) return;
       isFetchingMatchesRef.current = true;
+      const requestId = pageToFetch === 1 ? ++matchesRequestRef.current : matchesRequestRef.current;
+      const isStale = () => requestId !== matchesRequestRef.current;
+      const filter = matchFilterRef.current;
 
       if (isRefresh) {
         setRefreshingMatches(true);
@@ -319,7 +329,10 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
 
         // Query player matches using player-scoped pagination (backend limits to 10 items per page)
         let idsRes = await request(
-          `api/matches/ids?playerId=${targetId}&page=${pageToFetch}&items=${MATCHES_PER_PAGE}&limit=${MATCHES_PER_PAGE}`,
+          withMatchFilter(
+            `api/matches/ids?playerId=${targetId}&page=${pageToFetch}&items=${MATCHES_PER_PAGE}&limit=${MATCHES_PER_PAGE}`,
+            filter
+          ),
           { method: "GET", errorAlert: false }
         ).catch(() => null);
 
@@ -328,19 +341,29 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         // Fallback to general matches endpoint if ids endpoint returned nothing on initial page
         if (extracted.length === 0 && pageToFetch === 1) {
           const matchesRes = await matchesApi.getMatches(
-            { playerId: targetId, page: 1, limit: MATCHES_PER_PAGE, items: MATCHES_PER_PAGE },
+            {
+              playerId: targetId,
+              page: 1,
+              limit: MATCHES_PER_PAGE,
+              items: MATCHES_PER_PAGE,
+              ...matchFilterParams(filter),
+            },
             { errorAlert: false }
           ).catch(() => null);
           extracted = extractMatches(matchesRes);
         }
+        if (isStale()) return;
 
-        const routeMatches = (pageToFetch === 1 && Array.isArray(route?.params?.matches)) ? route.params.matches : [];
+        // Matches handed over by the previous screen aren't filtered: only
+        // added to the unfiltered list.
+        const withRouteMatches = pageToFetch === 1 && filter === "all";
+        const routeMatches = (withRouteMatches && Array.isArray(route?.params?.matches)) ? route.params.matches : [];
         const rawList = [
           ...extracted,
           ...routeMatches,
         ];
 
-        if (pageToFetch === 1 && route?.params?.match) {
+        if (withRouteMatches && route?.params?.match) {
           rawList.unshift(route.params.match);
         }
 
@@ -442,10 +465,12 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
       } catch (err) {
         console.log("[PlayerProfile] Matches fetch error:", err);
       } finally {
-        isFetchingMatchesRef.current = false;
-        setLoadingMatches(false);
-        setLoadingMoreMatches(false);
-        setRefreshingMatches(false);
+        if (!isStale()) {
+          isFetchingMatchesRef.current = false;
+          setLoadingMatches(false);
+          setLoadingMoreMatches(false);
+          setRefreshingMatches(false);
+        }
       }
     },
     [targetId, route?.params?.matches, route?.params?.match]
@@ -463,6 +488,19 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
     setHasMoreMatches(true);
     fetchMatchesPage(1, true);
   }, [fetchMatchesPage]);
+
+  const changeMatchFilter = useCallback(
+    (filterId) => {
+      if (filterId === matchFilterRef.current) return;
+      matchFilterRef.current = filterId;
+      setMatchFilter(filterId);
+      setPlayerMatches([]);
+      hasMoreMatchesRef.current = true;
+      setHasMoreMatches(true);
+      fetchMatchesPage(1, false);
+    },
+    [fetchMatchesPage]
+  );
 
   // 3. Fetch Teams with Infinite Scroll
   const fetchTeamsPage = useCallback(
@@ -1058,7 +1096,9 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
             key: "district",
             label: "District",
             emoji: "🏙️",
-            defaultName: hierarchy.district || "Hisar",
+            // Hisar only when nothing is known: a player in another state
+            // without a district has no district rank.
+            defaultName: hierarchy.district || (hierarchy.state ? "" : "Hisar"),
           },
           {
             key: "state",
@@ -1186,9 +1226,9 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
                     activeOpacity={0.75}
                     onPress={() =>
                       navigation.navigate(SCREENS.PlayerRankings, {
-                        initialRegion: tier.name,
+                        initialRegion: tier.name || hierarchy.state,
                         discipline: standingDiscipline,
-                        scope: tier.key,
+                        scope: tier.name ? tier.key : "state",
                       })
                     }
                     className={`w-[31.5%] p-2.5 rounded-xl mb-2 border ${
@@ -1224,7 +1264,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
                         isDarkMode ? "text-gray-400" : "text-gray-600"
                       }`}
                     >
-                      {tier.label} ({tier.name})
+                      {tier.label} ({tier.name || "—"})
                     </ThemedText>
 
                     <View className="flex-row items-baseline mt-1">
@@ -1486,13 +1526,16 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
         />
       }
       ListHeaderComponent={
-        <ThemedText
-          className={`text-lg font-bold mb-4 ${
-            isDarkMode ? "text-white" : "text-gray-900"
-          }`}
-        >
-          Matches
-        </ThemedText>
+        <>
+          <ThemedText
+            className={`text-lg font-bold mb-3 ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            Matches
+          </ThemedText>
+          <MatchFilterChips value={matchFilter} onChange={changeMatchFilter} style={{ marginBottom: 16 }} />
+        </>
       }
       ListFooterComponent={
         loadingMoreMatches ? (
@@ -1510,7 +1553,7 @@ export default function PlayerProfile({ navigation, route = { params: {} } }) {
           <View className="items-center justify-center py-12">
             <Ionicons name="calendar-outline" size={48} color={isDarkMode ? "#4B5563" : "#9CA3AF"} />
             <ThemedText className={`text-base mt-3 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              No match records found
+              {matchFilter === "all" ? "No match records found" : "No matches for this filter"}
             </ThemedText>
           </View>
         )

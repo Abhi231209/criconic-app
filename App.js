@@ -35,7 +35,7 @@ import { BottomSheetProvider } from "./components/ui/custom/CustomBottomSheet";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { AlertProvider, showGlobalAlert } from "./contexts/AlertContext";
 import { initSessionCookie, authApi } from "./utils/api";
-import { login as loginAction } from "./redux/authSlice";
+import { login as loginAction, setToken } from "./redux/authSlice";
 import User from "./utils/User";
 import analytics from "./utils/analytics";
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from "./utils/notifications";
@@ -205,6 +205,9 @@ export default function App() {
         if (res?.data?.success && res?.data?.user) {
           console.log("🔐 [App] Session active on backend:", res.data.user.username);
           store.dispatch(loginAction(res.data.user));
+          // A new token the server sent (ours had stopped working): set again,
+          // as login() keeps the old one only for the same user.
+          if (res.data.access_token) store.dispatch(setToken(res.data.access_token));
           User.login(res.data.user);
           const uid = res.data.user._id || res.data.user.id || res.data.user.userId;
           if (uid) analytics.setUserId(uid);

@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import ThemedText from "@/components/ui/custom/ThemedText";
 import ScoreCard from "@/components/ui/ScoreCard";
+import MatchFilterChips, { matchFilterParams, withMatchFilter } from "@/components/ui/MatchFilterChips";
 import { ScoreCardSkeleton, ListRowSkeleton } from "@/components/ui/skeleton";
 import SCREENS from "@/screens";
 import AnimatedFooter from "./AnimatedFooter";
@@ -88,6 +89,12 @@ export default function MyCricket({ route: propRoute }) {
   const [matchPage, setMatchPage] = useState(1);
   const [hasMoreMatches, setHasMoreMatches] = useState(true);
   const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
+  const [matchFilter, setMatchFilter] = useState("all");
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const matchFilterRef = useRef("all");
+  // Bumped by every first-page load of matches, so a load for a filter no
+  // longer selected doesn't fill the list.
+  const matchesRequestRef = useRef(0);
 
   useEffect(() => {
     const subMatch = DeviceEventEmitter.addListener(
@@ -200,6 +207,58 @@ export default function MyCricket({ route: propRoute }) {
     return [];
   };
 
+  // The user's matches (ones they run and ones they play in), one page, for
+  // the selected filter.
+  const matchListRequests = (page, filter) => {
+    const filterParams = matchFilterParams(filter);
+    if (!userId) {
+      return [
+        matchesApi.getMatches({ self: 1, page, limit: 12, ...filterParams }, { errorAlert: false }).catch(() => null),
+      ];
+    }
+    return [
+      matchesApi.getMatches({ self: 1, userId, page, limit: 12, ...filterParams }, { errorAlert: false }).catch(() => null),
+      request(withMatchFilter(`api/matches/ids?playerId=${userId}&page=${page}&items=12`, filter), {
+        method: "GET",
+        errorAlert: false,
+      }).catch(() => null),
+    ];
+  };
+
+  const uniqueMatchesOf = (resList) => {
+    const seenMatchIds = new Set();
+    const uniqueMatches = [];
+    for (const m of resList.filter(isOk).flatMap(extractArray)) {
+      const id = String(m?._id || m?.id || m?.matchId || "");
+      if (id && !seenMatchIds.has(id)) {
+        seenMatchIds.add(id);
+        uniqueMatches.push(m);
+      }
+    }
+    return uniqueMatches;
+  };
+
+  const changeMatchFilter = async (filterId) => {
+    if (filterId === matchFilterRef.current) return;
+    matchFilterRef.current = filterId;
+    setMatchFilter(filterId);
+    const requestId = ++matchesRequestRef.current;
+    setRecentMatches([]);
+    setMatchPage(1);
+    setHasMoreMatches(true);
+    setLoadingMatches(true);
+    try {
+      const resList = await Promise.all(matchListRequests(1, filterId));
+      if (requestId !== matchesRequestRef.current) return;
+      setLoadFailed(!resList.some(isOk));
+      const uniqueMatches = uniqueMatchesOf(resList);
+      setRecentMatches(uniqueMatches.map(mapMatchItem));
+      setHasMoreMatches(uniqueMatches.length >= 6);
+    } finally {
+      if (requestId === matchesRequestRef.current) setLoadingMatches(false);
+    }
+  };
+
   const fetchData = async (isManual = false) => {
     if (isManual || (!recentMatches.length && !tournaments.length && !teams.length)) {
       setLoading(true);
@@ -209,19 +268,9 @@ export default function MyCricket({ route: propRoute }) {
       setHasMoreMatches(true);
 
       // Scoped user matches: matches where user is creator/organizer (self=1) or participating player
-      const matchPromises = [];
-      if (userId) {
-        matchPromises.push(
-          matchesApi.getMatches({ self: 1, userId, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
-        );
-        matchPromises.push(
-          request(`api/matches/ids?playerId=${userId}&page=1&items=12`, { method: "GET", errorAlert: false }).catch(() => null)
-        );
-      } else {
-        matchPromises.push(
-          matchesApi.getMatches({ self: 1, page: 1, limit: 12 }, { errorAlert: false }).catch(() => null)
-        );
-      }
+      const filter = matchFilterRef.current;
+      const matchesRequestId = ++matchesRequestRef.current;
+      const matchPromises = matchListRequests(1, filter);
 
       // Scoped tournaments: tournaments organized by user or where user's team participates
       const tourPromises = [
@@ -250,22 +299,15 @@ export default function MyCricket({ route: propRoute }) {
       setLoadFailed(!(matchesLoaded && tournamentsLoaded && teamsLoaded));
       const saved = {};
 
-      // Process user matches
-      const rawMatchesCombined = matchesResList.filter(isOk).flatMap(extractArray);
-      const seenMatchIds = new Set();
-      const uniqueMatches = [];
-      for (const m of rawMatchesCombined) {
-        const id = String(m?._id || m?.id || m?.matchId || "");
-        if (id && !seenMatchIds.has(id)) {
-          seenMatchIds.add(id);
-          uniqueMatches.push(m);
-        }
-      }
-
-      if (matchesLoaded) {
+      // Process user matches (unless the filter changed meanwhile, which
+      // loaded its own list)
+      const uniqueMatches = uniqueMatchesOf(matchesResList);
+      if (matchesRequestId === matchesRequestRef.current) setLoadingMatches(false);
+      if (matchesLoaded && matchesRequestId === matchesRequestRef.current) {
         setRecentMatches(uniqueMatches.map(mapMatchItem));
         setHasMoreMatches(uniqueMatches.length >= 6);
-        saved.matches = uniqueMatches.map(slimMatch);
+        // The saved copy is the unfiltered list.
+        if (filter === "all") saved.matches = uniqueMatches.map(slimMatch);
       }
 
       // Process user tournaments
@@ -363,12 +405,11 @@ export default function MyCricket({ route: propRoute }) {
     if (loading || loadingMoreMatches || loadingMoreRef.current || !hasMoreMatches || !userId) return;
     loadingMoreRef.current = true;
     setLoadingMoreMatches(true);
+    const requestId = matchesRequestRef.current;
     try {
       const nextPage = matchPage + 1;
-      const resList = await Promise.all([
-        matchesApi.getMatches({ self: 1, userId, page: nextPage, limit: 12 }, { errorAlert: false }).catch(() => null),
-        request(`api/matches/ids?playerId=${userId}&page=${nextPage}&items=12`, { method: "GET", errorAlert: false }).catch(() => null),
-      ]);
+      const resList = await Promise.all(matchListRequests(nextPage, matchFilterRef.current));
+      if (requestId !== matchesRequestRef.current) return; // the list was reloaded meanwhile
       if (!resList.some(isOk)) return; // not loaded: try this page again later
       const rawCombined = resList.filter(isOk).flatMap(extractArray);
       if (rawCombined.length > 0) {
@@ -596,10 +637,11 @@ export default function MyCricket({ route: propRoute }) {
               <ThemedText className="text-white text-xs font-bold ml-1">Create Match</ThemedText>
             </TouchableOpacity>
           </View>
+          <MatchFilterChips value={matchFilter} onChange={changeMatchFilter} style={{ marginBottom: 12 }} />
         </View>
       }
       ListEmptyComponent={
-        loading ? (
+        loading || loadingMatches ? (
           <View accessibilityLabel="Loading" accessibilityRole="progressbar">
             {[0, 1, 2].map((i) => (
               <View key={i} className="mb-2">
@@ -621,23 +663,27 @@ export default function MyCricket({ route: propRoute }) {
             <ThemedText
               className={`text-lg mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
             >
-              No matches found
+              {matchFilter === "all" ? "No matches found" : "No matches for this filter"}
             </ThemedText>
-            <ThemedText
-              className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}
-            >
-              Create your first match to get started
-            </ThemedText>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.CreateMatch)}
-              className="mt-4 flex-row items-center bg-blue-600 px-4 py-2 rounded-xl shadow-sm"
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
-              <ThemedText className="text-white text-sm font-semibold ml-1.5">
-                Create Match
-              </ThemedText>
-            </TouchableOpacity>
+            {matchFilter === "all" && (
+              <>
+                <ThemedText
+                  className={`text-sm ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}
+                >
+                  Create your first match to get started
+                </ThemedText>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate(SCREENS.CreateMatch)}
+                  className="mt-4 flex-row items-center bg-blue-600 px-4 py-2 rounded-xl shadow-sm"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                  <ThemedText className="text-white text-sm font-semibold ml-1.5">
+                    Create Match
+                  </ThemedText>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )
       }

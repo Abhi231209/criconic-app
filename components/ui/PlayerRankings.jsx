@@ -82,10 +82,18 @@ function parseLocationParam(locParam) {
     }
   }
 
+  // With a state but no district of it (just "Punjab", or a town such as
+  // "Gobindgarh, Punjab"), the whole state — not Hisar, which is in Haryana.
+  let district = detectedDistrict;
+  if (!district) {
+    if (detectedState) district = "All Districts";
+    else district = parts.length === 1 ? parts[0] : "Hisar";
+  }
+
   return {
     country: detectedCountry || "India",
     state: detectedState || "Haryana",
-    district: detectedDistrict || (parts.length === 1 && !detectedState ? parts[0] : "Hisar"),
+    district,
   };
 }
 
@@ -113,7 +121,7 @@ export default function PlayerRankings() {
     }
     if (route.params?.initialRegion) {
       const region = String(route.params.initialRegion).toLowerCase();
-      if (DISTRICTS_BY_STATE.Haryana?.some((d) => d.toLowerCase() === region)) {
+      if (Object.values(DISTRICTS_BY_STATE).some((list) => list.some((d) => d.toLowerCase() === region))) {
         return "district";
       }
       if (STATES_BY_COUNTRY.India?.some((s) => s.toLowerCase() === region)) {
@@ -122,9 +130,11 @@ export default function PlayerRankings() {
       if (COUNTRIES.some((c) => c.name.toLowerCase() === region)) {
         return "country";
       }
+      // A place in a known state but not a district of it: that state.
+      if (initialParsed.district === "All Districts") return "state";
     }
     return "district";
-  }, [route.params?.scope, route.params?.initialRegion]);
+  }, [route.params?.scope, route.params?.initialRegion, initialParsed]);
 
   const [selectedScope, setSelectedScope] = useState(initialScope);
   const [selectedCountry, setSelectedCountry] = useState(initialParsed.country);
@@ -156,6 +166,7 @@ export default function PlayerRankings() {
   const [backendCountries, setBackendCountries] = useState([]);
   const [backendStates, setBackendStates] = useState([]);
   const [backendDistricts, setBackendDistricts] = useState([]);
+  const [backendDistrictsByState, setBackendDistrictsByState] = useState(null);
 
   // Category & Players State
   const [players, setPlayers] = useState([]);
@@ -171,6 +182,7 @@ export default function PlayerRankings() {
         if (res?.data?.countries?.length) setBackendCountries(res.data.countries);
         if (res?.data?.states?.length) setBackendStates(res.data.states);
         if (res?.data?.districts?.length) setBackendDistricts(res.data.districts);
+        if (res?.data?.districtsByState) setBackendDistrictsByState(res.data.districtsByState);
       })
       .catch((err) => console.warn("[PlayerRankings] Failed to load scopes:", err));
   }, []);
@@ -191,10 +203,25 @@ export default function PlayerRankings() {
 
   const availableDistricts = useMemo(() => {
     const staticDistricts = getDistrictsForState(selectedState);
-    const set = new Set([...staticDistricts, ...backendDistricts]);
+    // Only this state's districts. The server says which state each ranked
+    // district is in; an older server sends a flat list, so drop the ones
+    // known to belong to another state (Hisar under Punjab).
+    let extraDistricts;
+    if (backendDistrictsByState) {
+      const key = Object.keys(backendDistrictsByState).find(
+        (st) => st.toLowerCase() === String(selectedState || "").toLowerCase()
+      );
+      extraDistricts = key ? backendDistrictsByState[key] : [];
+    } else {
+      const otherStates = Object.entries(DISTRICTS_BY_STATE).filter(([st]) => st !== selectedState);
+      extraDistricts = backendDistricts.filter(
+        (d) => !otherStates.some(([, list]) => list.some((x) => x.toLowerCase() === d.toLowerCase()))
+      );
+    }
+    const set = new Set([...staticDistricts, ...extraDistricts]);
     const sorted = Array.from(set).sort((a, b) => a.localeCompare(b));
     return ["All Districts", ...sorted];
-  }, [selectedState, backendDistricts]);
+  }, [selectedState, backendDistricts, backendDistrictsByState]);
 
   // Load rankings based on full multi-filter parameters
   const loadRankings = useCallback(async () => {
