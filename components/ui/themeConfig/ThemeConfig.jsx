@@ -16,7 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { request } from '@/utils/api';
 import { ChevronLeft, Check, Sliders } from 'lucide-react-native';
 import DesktopOverlayPreview, { THEME_STRIP_PREVIEWS } from './DesktopOverlayPreview';
-import BroadcastThemeStrip, { getBroadcastPreview } from './BroadcastThemeStrip';
+import { THEME_PREVIEW_IMAGES } from './themePreviewImages';
+import { ThemeStripPreview } from './LiveThemePreview';
 
 const { width } = Dimensions.get('window');
 
@@ -416,16 +417,16 @@ export default function ThemeConfig() {
                       style={themeStyles.stripImage}
                       resizeMode="cover"
                     />
-                  ) : getBroadcastPreview(theme) ? (
-                    <View style={[themeStyles.stripImage, { overflow: "hidden" }]}>
-                      <BroadcastThemeStrip
-                        theme={theme}
-                        teamAColor={isSelected ? teamAColor : null}
-                        teamBColor={isSelected ? teamBColor : null}
-                        teamAName={teamAName}
-                        teamBName={teamBName}
-                      />
-                    </View>
+                  ) : THEME_PREVIEW_IMAGES[theme.componentKey] ? (
+                    // The real ticker of the website theme.
+                    <ThemeStripPreview
+                      componentKey={theme.componentKey}
+                      live={isSelected}
+                      teamAColor={teamAColor}
+                      teamBColor={teamBColor}
+                      teamAName={teamAName}
+                      teamBName={teamBName}
+                    />
                   ) : (
                     <Image
                       source={isIplTheme ? THEME_STRIP_PREVIEWS.ipl : THEME_STRIP_PREVIEWS.fox}

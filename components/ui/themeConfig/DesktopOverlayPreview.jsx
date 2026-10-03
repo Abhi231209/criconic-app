@@ -15,8 +15,8 @@ import {
   Palette,
   CheckCircle2,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import BroadcastThemeStrip, { getBroadcastPreview } from './BroadcastThemeStrip';
+import LiveThemePreview from './LiveThemePreview';
+import { THEME_PREVIEW_IMAGES } from './themePreviewImages';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -45,33 +45,25 @@ export default function DesktopOverlayPreview({
   const isIpl = themeKey.includes('ipl');
   const activeBroadcastImage = isIpl ? BROADCAST_PREVIEWS.ipl : BROADCAST_PREVIEWS.fox;
 
-  const broadcast = getBroadcastPreview(theme);
-  const themeLabel = broadcast ? theme?.title : isIpl ? 'IPL 2025' : 'Fox Cricket';
-  const labelColor = broadcast ? broadcast.accent : isIpl ? '#00FF78' : '#FDB913';
+  // The website's broadcast themes: the real overlay (see LiveThemePreview).
+  const isBroadcast = Boolean(THEME_PREVIEW_IMAGES[theme?.componentKey]);
+  const themeLabel = isBroadcast ? theme?.title : isIpl ? 'IPL 2025' : 'Fox Cricket';
+  const labelColor = isBroadcast ? '#38BDF8' : isIpl ? '#00FF78' : '#FDB913';
 
-  const primaryA =
-    teamAColor?.config?.primaryColor || broadcast?.teamA || (isIpl ? '#004BA0' : '#2563EB');
-  const primaryB =
-    teamBColor?.config?.primaryColor || broadcast?.teamB || (isIpl ? '#D32F2F' : '#DC2626');
+  const primaryA = teamAColor?.config?.primaryColor || (isIpl ? '#004BA0' : '#2563EB');
+  const primaryB = teamBColor?.config?.primaryColor || (isIpl ? '#D32F2F' : '#DC2626');
 
-  // Broadcast themes have no bundled screenshot: draw the strip over a pitch.
   const renderScreen = (imageStyle, resizeMode) =>
-    broadcast ? (
-      <LinearGradient
-        colors={['#2E6B2E', '#1D4A20', '#123316']}
-        style={[imageStyle, { height: undefined, aspectRatio: 16 / 9 }]}
-      >
-        <View style={monitorStyles.stripDock}>
-          <BroadcastThemeStrip
-            theme={theme}
-            teamAColor={teamAColor}
-            teamBColor={teamBColor}
-            teamAName={teamAName}
-            teamBName={teamBName}
-            height={40}
-          />
-        </View>
-      </LinearGradient>
+    isBroadcast ? (
+      <View style={[imageStyle, { height: undefined, aspectRatio: 16 / 9 }]}>
+        <LiveThemePreview
+          componentKey={theme.componentKey}
+          teamAColor={teamAColor}
+          teamBColor={teamBColor}
+          teamAName={teamAName}
+          teamBName={teamBName}
+        />
+      </View>
     ) : (
       <Image source={activeBroadcastImage} style={imageStyle} resizeMode={resizeMode} />
     );
@@ -279,12 +271,6 @@ const monitorStyles = StyleSheet.create({
   broadcastImage: {
     width: '100%',
     height: '100%',
-  },
-  stripDock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 6,
   },
   monitorOverlayHeader: {
     position: 'absolute',

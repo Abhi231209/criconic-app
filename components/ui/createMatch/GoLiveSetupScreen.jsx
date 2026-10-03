@@ -35,11 +35,12 @@ import SCREENS from "@/screens";
 import { COLORS } from "@/theme/colors";
 import { WEB_URL } from "@/config";
 import { THEME_STRIP_PREVIEWS } from "../themeConfig/DesktopOverlayPreview";
-import BroadcastThemeStrip, { getBroadcastPreview } from "../themeConfig/BroadcastThemeStrip";
+import { ThemeStripPreview } from "../themeConfig/LiveThemePreview";
+import { THEME_PREVIEW_IMAGES } from "../themeConfig/themePreviewImages";
 import SponsorAdEditor from "./SponsorAdEditor";
 
 // ---- Authentic Broadcast Scorecard Preview Component ----
-function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
+function ScorecardPreview({ theme, teamAColor, teamBColor, teamAName, teamBName, live, isDark }) {
   const themeKey = (theme?.componentKey || theme?.id || '').toLowerCase();
   const isIpl = themeKey.includes('ipl');
   // Prefer the theme's own uploaded preview image from the DB; only fall
@@ -49,9 +50,9 @@ function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
     : isIpl
     ? THEME_STRIP_PREVIEWS.ipl
     : THEME_STRIP_PREVIEWS.fox;
-  // Broadcast themes without an uploaded image get a drawn preview in their
-  // own colors instead of the Fox screenshot.
-  const drawn = !theme?.previewImage && getBroadcastPreview(theme);
+  // Website broadcast themes: their real ticker (live for the selected one,
+  // so the chosen jersey colors show) instead of the Fox screenshot.
+  const broadcast = !theme?.previewImage && THEME_PREVIEW_IMAGES[theme?.componentKey];
 
   return (
     <View style={previewStyles.card}>
@@ -61,10 +62,15 @@ function ScorecardPreview({ theme, teamAColor, teamBColor, isDark }) {
         nestedScrollEnabled={true}
         contentContainerStyle={{ minWidth: '100%' }}
       >
-        {drawn ? (
-          <View style={[previewStyles.image, { overflow: "hidden" }]}>
-            <BroadcastThemeStrip theme={theme} teamAColor={teamAColor} teamBColor={teamBColor} />
-          </View>
+        {broadcast ? (
+          <ThemeStripPreview
+            componentKey={theme.componentKey}
+            live={live}
+            teamAColor={teamAColor}
+            teamBColor={teamBColor}
+            teamAName={teamAName}
+            teamBName={teamBName}
+          />
         ) : (
           <Image
             source={imageSource}
@@ -615,6 +621,9 @@ export default function GoLiveSetupScreen() {
               theme={theme}
               teamAColor={isSelected ? teamAColor : null}
               teamBColor={isSelected ? teamBColor : null}
+              teamAName={matchDetails?.teams?.[0]?.title}
+              teamBName={matchDetails?.teams?.[1]?.title}
+              live={isSelected}
               isDark={isDark}
             />
           </TouchableOpacity>
