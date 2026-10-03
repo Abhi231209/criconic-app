@@ -1,35 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  useColorScheme,
-  Alert,
-  ActivityIndicator,
-  Image,
-  ImageBackground,
-  Dimensions,
-  Platform,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Eye,
-  EyeOff,
-  Lock,
-  Phone,
-  UserPlus,
-  ArrowRight,
-  Compass,
-} from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { View, useWindowDimensions } from "react-native";
+import { Lock, Phone } from "lucide-react-native";
 import ThemedText from "@/components/ui/custom/ThemedText";
-import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import { useNavigation, useIsFocused, useRoute } from "@react-navigation/native";
 import { takePendingAuthAction } from "@/hooks/useRequireAuth";
 import { useDispatch, useSelector } from "react-redux";
 import { showGlobalAlert } from "@/contexts/AlertContext";
-import useAppTheme from "@/hooks/useAppTheme";
 import CriconicLogo from "@/components/ui/custom/CriconicLogo";
+import {
+  BRAND,
+  AuthScreen,
+  GuestPill,
+  AuthField,
+  AuthButton,
+  AuthFooterLink,
+  AuthTextLink,
+} from "@/components/ui/auth/AuthKit";
 
 import SCREENS from ".";
 import { login as loginAction } from "@/redux/authSlice";
@@ -52,8 +38,6 @@ const sanitizeMobileNumber = (val) => {
   return digits;
 };
 
-const { height } = Dimensions.get("window");
-
 const LoginScreen = () => {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -62,15 +46,13 @@ const LoginScreen = () => {
 
   const authUser = useSelector((state) => state?.auth?.user);
 
-  const [showPassword, setShowPassword] = useState(false);
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [focusedField, setFocusedField] = useState(null);
 
-  const { isDark } = useAppTheme();
-  const colorScheme = useColorScheme();
-  const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
+  // Short phones drop the feature chips so the form still fits without scrolling.
+  const { height: windowHeight } = useWindowDimensions();
+  const isCompact = windowHeight < 720;
 
   // Leaves this screen once logged in. Both a successful sign-in and the
   // already-logged-in check below call it, so it only acts once.
@@ -224,375 +206,87 @@ const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView
-      className={`flex-1 ${
-        isDarkMode ? "bg-slate-950" : "bg-slate-900"
-      }`}
+    <AuthScreen
+      topLeft={
+        // The PNG has side padding; pull it back onto the 24px gutter
+        <CriconicLogo variant="horizontal" theme="dark" width={128} style={{ marginLeft: -12 }} />
+      }
+      topRight={<GuestPill onPress={() => navigation.navigate(SCREENS.Home)} />}
     >
-      <AppKeyboardAwareScrollView
-        extraHeight={80}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Hero Section */}
-        <View
-          style={{
-            minHeight: Math.max(height * 0.35, 240),
-            width: "100%",
-          }}
-          className="relative overflow-hidden justify-center items-center"
-        >
-          <ImageBackground
-            source={require("../assets/stadium-background-image.jpg")}
-            style={{
-              width: "100%",
-              height: "100%",
-              position: "absolute",
-            }}
-            resizeMode="cover"
-          />
 
-          <LinearGradient
-            colors={
-              isDarkMode
-                ? [
-                    "rgba(15,23,42,0.70)",
-                    "rgba(30,27,75,0.88)",
-                    "rgba(15,23,42,0.98)",
-                  ]
-                : [
-                    "rgba(30,58,138,0.72)",
-                    "rgba(37,99,235,0.85)",
-                    "rgba(29,78,216,0.97)",
-                  ]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="absolute inset-0 items-center justify-center px-6 pt-6 pb-12"
-          >
-            {/* Ambient Background Glow Circles */}
-            <View className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-blue-400/10 blur-xl" />
-            <View className="absolute -left-10 -bottom-10 w-40 h-40 rounded-full bg-indigo-400/15 blur-xl" />
+      {/* Pitch */}
+      <View className={isCompact ? "mt-6" : "mt-10"}>
+        <ThemedText className="text-[40px] leading-[40px] font-black" style={{ color: BRAND.cream }}>
+          Every ball.
+        </ThemedText>
+        <ThemedText className="text-[40px] leading-[42px] font-black" style={{ color: BRAND.teal }}>
+          Every stat.
+        </ThemedText>
+        <ThemedText className="text-base font-medium mt-3 leading-5" style={{ color: BRAND.slate }}>
+          Score live, run tournaments and dig into your numbers. Your stats are always free to see.
+        </ThemedText>
 
-            {/* Logo and App Title */}
-            <View className="items-center z-10">
-              <View className="mb-2">
-                <CriconicLogo
-                  variant="stacked"
-                  theme="dark"
-                  width={150}
-                  height={98}
-                />
-              </View>
-
-              <View className="flex-row items-center mt-1 px-3 py-0.5 rounded-full bg-white/15 border border-white/20">
-                <ThemedText className="text-blue-100 text-[11px] font-medium tracking-wide">
-                  Live Cricket Scoring & Tournaments
-                </ThemedText>
-              </View>
-            </View>
-          </LinearGradient>
-        </View>
-
-        {/* Modern Form Card */}
-        <View
-          className={`flex-1 -mt-6 px-6 pt-7 pb-10 rounded-t-3xl border-t ${
-            isDarkMode
-              ? "bg-slate-900 border-slate-800"
-              : "bg-white border-slate-100"
-          }`}
-          style={[
-            Platform.OS === "ios"
-              ? {
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: -4 },
-                  shadowOpacity: isDarkMode ? 0.4 : 0.08,
-                  shadowRadius: 12,
-                }
-              : { elevation: 8 },
-          ]}
-        >
-          {/* Welcome Header */}
-          <View className="mb-6">
-            <ThemedText
-              className={`text-2xl font-black tracking-tight ${
-                isDarkMode ? "text-white" : "text-slate-900"
-              }`}
-            >
-              Welcome Back 👋
-            </ThemedText>
-
-            <ThemedText
-              className={`text-xs mt-1.5 leading-4 ${
-                isDarkMode ? "text-slate-400" : "text-slate-500"
-              }`}
-            >
-              Sign in to manage your matches, score live, and run tournaments
-            </ThemedText>
-          </View>
-
-          {/* Mobile Number Input with +91 Prefix */}
-          <View className="mb-4">
-            <ThemedText
-              className={`text-xs font-bold uppercase tracking-wider mb-2 ${
-                isDarkMode ? "text-slate-300" : "text-slate-600"
-              }`}
-            >
-              Mobile Number
-            </ThemedText>
-
-            <View
-              className={`flex-row items-center rounded-2xl border transition-colors ${
-                focusedField === "mobile"
-                  ? isDarkMode
-                    ? "border-blue-500 bg-slate-800/90"
-                    : "border-blue-600 bg-blue-50/20"
-                  : isDarkMode
-                  ? "bg-slate-800/60 border-slate-700/80"
-                  : "bg-slate-50 border-slate-200"
-              }`}
-              style={{ minHeight: 52 }}
-            >
-              {/* +91 Country Code Badge */}
+        {!isCompact && (
+          <View className="flex-row flex-wrap mt-4">
+            {["Wagon wheel", "Pitch map", "Matchups"].map((label) => (
               <View
-                className={`flex-row items-center px-3.5 py-3 border-r ${
-                  isDarkMode
-                    ? "border-slate-700 bg-slate-800 rounded-l-2xl"
-                    : "border-slate-200 bg-slate-100 rounded-l-2xl"
-                }`}
+                key={label}
+                className="flex-row items-center px-3 py-1.5 rounded-full mr-2 mb-2 border"
+                style={{ borderColor: BRAND.line }}
               >
-                <ThemedText className="text-sm mr-1.5">🇮🇳</ThemedText>
-                <ThemedText
-                  className={`text-xs font-bold ${
-                    isDarkMode ? "text-slate-200" : "text-slate-700"
-                  }`}
-                >
-                  +91
+                <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: BRAND.teal }} />
+                <ThemedText className="text-[13px] font-bold" style={{ color: BRAND.cream }}>
+                  {label}
                 </ThemedText>
               </View>
-
-              <Phone
-                size={17}
-                color={
-                  focusedField === "mobile"
-                    ? "#3B82F6"
-                    : isDarkMode
-                    ? "#94A3B8"
-                    : "#64748B"
-                }
-                style={{ marginLeft: 12 }}
-              />
-
-              <TextInput
-                className={`flex-1 ml-2.5 mr-3 text-sm font-semibold ${
-                  isDarkMode ? "text-white" : "text-slate-900"
-                }`}
-                value={mobile}
-                onChangeText={(val) => setMobile(sanitizeMobileNumber(val))}
-                onFocus={() => setFocusedField("mobile")}
-                onBlur={() => setFocusedField(null)}
-                placeholder="Enter 10-digit mobile number"
-                placeholderTextColor={
-                  "#64748B"
-                }
-                keyboardType="phone-pad"
-                maxLength={18}
-                autoComplete="tel"
-                textContentType="telephoneNumber"
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onSubmitEditing={() => passwordInputRef.current?.focus()}
-              />
-            </View>
+            ))}
           </View>
+        )}
+      </View>
 
-          {/* Password Input */}
-          <View className="mb-2">
-            <ThemedText
-              className={`text-xs font-bold uppercase tracking-wider mb-2 ${
-                isDarkMode ? "text-slate-300" : "text-slate-600"
-              }`}
-            >
-              Password
-            </ThemedText>
+      <View className="flex-1 min-h-[24px]" />
 
-            <View
-              className={`flex-row items-center px-3.5 rounded-2xl border transition-colors ${
-                focusedField === "password"
-                  ? isDarkMode
-                    ? "border-blue-500 bg-slate-800/90"
-                    : "border-blue-600 bg-blue-50/20"
-                  : isDarkMode
-                  ? "bg-slate-800/60 border-slate-700/80"
-                  : "bg-slate-50 border-slate-200"
-              }`}
-              style={{ minHeight: 52 }}
-            >
-              <Lock
-                size={18}
-                color={
-                  focusedField === "password"
-                    ? "#3B82F6"
-                    : isDarkMode
-                    ? "#94A3B8"
-                    : "#64748B"
-                }
-              />
-
-              <TextInput
-                className={`flex-1 ml-3 mr-2 text-sm font-semibold ${
-                  isDarkMode ? "text-white" : "text-slate-900"
-                }`}
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-                onFocus={() => setFocusedField("password")}
-                onBlur={() => setFocusedField(null)}
-                placeholder="Enter your password"
-                placeholderTextColor={
-                  "#64748B"
-                }
-                ref={passwordInputRef}
-                autoCapitalize="none"
-                autoComplete="current-password"
-                textContentType="password"
-                returnKeyType="go"
-                onSubmitEditing={handleLogin}
-              />
-
-              <TouchableOpacity
-                onPress={() => setShowPassword((prev) => !prev)}
-                className="p-1.5"
-                activeOpacity={0.7}
-              >
-                {showPassword ? (
-                  <EyeOff
-                    size={18}
-                    color={isDarkMode ? "#94A3B8" : "#64748B"}
-                  />
-                ) : (
-                  <Eye
-                    size={18}
-                    color={isDarkMode ? "#94A3B8" : "#64748B"}
-                  />
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Forgot Password Link */}
-          <View className="items-end mb-6 mt-1">
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleForgotPassword}
-              className="py-1"
-            >
-              <ThemedText className="text-xs font-bold text-blue-500 dark:text-blue-400">
-                Forgot Password?
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-
-          {/* Primary Sign In Button */}
-          <TouchableOpacity
-            onPress={handleLogin}
-            disabled={isLoading}
-            activeOpacity={0.88}
-            className="rounded-2xl overflow-hidden mb-4 shadow-lg shadow-blue-600/30"
-            style={{
-              elevation: 5,
-            }}
-          >
-            <LinearGradient
-              colors={["#1D4ED8", "#2563EB", "#3B82F6"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className="py-4 items-center justify-center flex-row"
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <ThemedText className="text-white text-base font-black tracking-wide mr-2">
-                    Sign In
-                  </ThemedText>
-                  <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.5} />
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View className="flex-row items-center my-3">
-            <View
-              className={`flex-1 h-[1px] ${
-                isDarkMode ? "bg-slate-800" : "bg-slate-200"
-              }`}
-            />
-            <ThemedText
-              className={`mx-3 text-[11px] font-bold uppercase tracking-wider ${
-                isDarkMode ? "text-slate-500" : "text-slate-400"
-              }`}
-            >
-              or
-            </ThemedText>
-            <View
-              className={`flex-1 h-[1px] ${
-                isDarkMode ? "bg-slate-800" : "bg-slate-200"
-              }`}
-            />
-          </View>
-
-          {/* Sign Up / Create Account Button */}
-          <TouchableOpacity
-            onPress={handleSignUp}
-            activeOpacity={0.85}
-            className={`py-3.5 rounded-2xl border-2 items-center justify-center flex-row mb-3 ${
-              isDarkMode
-                ? "bg-blue-950/30 border-blue-600/60"
-                : "bg-blue-50/60 border-blue-500/70"
-            }`}
-          >
-            <UserPlus
-              size={18}
-              color={isDarkMode ? "#60A5FA" : "#2563EB"}
-              style={{ marginRight: 8 }}
-            />
-            <ThemedText
-              className={`text-sm font-bold tracking-wide ${
-                isDarkMode ? "text-blue-400" : "text-blue-600"
-              }`}
-            >
-              Create New Account
-            </ThemedText>
-          </TouchableOpacity>
-
-          {/* Explore as Guest Button */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.Home)}
-            activeOpacity={0.75}
-            className={`py-3 rounded-2xl border items-center justify-center flex-row ${
-              isDarkMode
-                ? "bg-slate-800/50 border-slate-700/60"
-                : "bg-slate-50 border-slate-200"
-            }`}
-          >
-            <Compass
-              size={16}
-              color={isDarkMode ? "#94A3B8" : "#64748B"}
-              style={{ marginRight: 6 }}
-            />
-            <ThemedText
-              className={`text-xs font-semibold ${
-                isDarkMode ? "text-slate-300" : "text-slate-600"
-              }`}
-            >
-              Explore as Guest
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
-      </AppKeyboardAwareScrollView>
-    </SafeAreaView>
+      {/* Sign-in form */}
+      <ThemedText
+        className={`text-2xl font-black ${isCompact ? "mb-2" : "mb-4"}`}
+        style={{ color: BRAND.cream }}
+      >
+        Sign in
+      </ThemedText>
+      <AuthField
+        label="Mobile number"
+        icon={Phone}
+        prefix="+91"
+        value={mobile}
+        onChangeText={(val) => setMobile(sanitizeMobileNumber(val))}
+        placeholder="10-digit mobile number"
+        keyboardType="phone-pad"
+        maxLength={18}
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => passwordInputRef.current?.focus()}
+      />
+      <AuthField
+        ref={passwordInputRef}
+        className=""
+        label="Password"
+        labelRight={<AuthTextLink label="Forgot password?" onPress={handleForgotPassword} />}
+        icon={Lock}
+        secure
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Your password"
+        autoCapitalize="none"
+        autoComplete="current-password"
+        textContentType="password"
+        returnKeyType="go"
+        onSubmitEditing={handleLogin}
+      />
+      <AuthButton label="Sign in" onPress={handleLogin} loading={isLoading} />
+      <AuthFooterLink text="New to Criconic?" linkText="Create an account" onPress={handleSignUp} />
+    </AuthScreen>
   );
 };
 

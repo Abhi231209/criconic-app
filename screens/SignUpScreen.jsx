@@ -1,41 +1,26 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  useColorScheme,
-  Alert,
-  ActivityIndicator,
-  Image,
-  ImageBackground,
-  Dimensions,
-  Platform,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Eye,
-  EyeOff,
-  Lock,
-  Phone,
-  User as UserIcon,
-  CheckCircle2,
-  KeyRound,
-} from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { View } from "react-native";
+import { Lock, Phone, User as UserIcon, CheckCircle2, KeyRound } from "lucide-react-native";
 import ThemedText from "@/components/ui/custom/ThemedText";
-import AppKeyboardAwareScrollView from "@/components/ui/custom/AppKeyboardAwareScrollView";
 import { useNavigation } from "@react-navigation/native";
 import SCREENS from "@/screens";
 import { useDispatch } from "react-redux";
 import { login as loginAction } from "@/redux/authSlice";
 import { authApi } from "@/utils/api";
-import CriconicLogo from "@/components/ui/custom/CriconicLogo";
 import User from "@/utils/User";
 import analytics from "@/utils/analytics";
 import { showGlobalAlert } from "@/contexts/AlertContext";
-import useAppTheme from "@/hooks/useAppTheme";
-
-const { height } = Dimensions.get("window");
+import {
+  BRAND,
+  AuthScreen,
+  GuestPill,
+  AuthHeading,
+  AuthField,
+  FieldAction,
+  AuthButton,
+  AuthFooterLink,
+  AuthTextLink,
+} from "@/components/ui/auth/AuthKit";
 
 function generateValidationID(length = 8) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -49,16 +34,11 @@ function generateValidationID(length = 8) {
 export default function SignUpScreen() {
   const navigation = useNavigation();
   const dispatch = useDispatch();
-  const { isDark } = useAppTheme();
-  const colorScheme = useColorScheme();
-  const isDarkMode = typeof isDark === "boolean" ? isDark : colorScheme === "dark";
 
   const [username, setUsername] = useState("");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // OTP Verification States matching sports-arena web project
   const [validationId, setValidationId] = useState("");
@@ -396,359 +376,138 @@ export default function SignUpScreen() {
     }
   };
 
+  const needsOtp = isOtpGenerated && !isPhoneValidated && !isOtpBypass;
+
   return (
-    <SafeAreaView className={`flex-1 ${isDarkMode ? "bg-gray-950" : "bg-slate-900"}`}>
-      <AppKeyboardAwareScrollView
-        extraHeight={80}
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Upper Hero Section */}
-        <View
-          style={{ minHeight: Math.max(height * 0.28, 200), width: "100%" }}
-          className="relative overflow-hidden justify-center items-center"
-        >
-          <ImageBackground
-            source={require("../assets/stadium-background-image.jpg")}
-            style={{ width: "100%", height: "100%", position: "absolute" }}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={
-              isDarkMode
-                ? ["rgba(15,23,42,0.65)", "rgba(30,27,75,0.85)", "rgba(15,23,42,0.98)"]
-                : ["rgba(30,58,138,0.7)", "rgba(37,99,235,0.82)", "rgba(29,78,216,0.96)"]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="absolute inset-0 items-center justify-center px-6 pt-4 pb-10"
-          >
-            <View className="items-center z-10">
-              <View className="mb-1.5">
-                <CriconicLogo
-                  variant="stacked"
-                  theme="dark"
-                  width={140}
-                  height={92}
-                />
-              </View>
-              <ThemedText className="text-blue-200 text-xs font-medium tracking-wide text-center">
-                Create Your Account
+    <AuthScreen
+      onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+      topRight={<GuestPill onPress={() => navigation.navigate(SCREENS.Home)} />}
+    >
+      <AuthHeading
+        className="mt-6 mb-5"
+        title="Create your"
+        accent="account."
+        subtitle="Score matches, build squads and run tournaments. Your stats are always free to see."
+      />
+
+      <AuthField
+        className="mb-3"
+        label="Full name"
+        icon={UserIcon}
+        value={username}
+        onChangeText={setUsername}
+        placeholder="Your full name"
+        autoComplete="name"
+        textContentType="name"
+        autoCapitalize="words"
+      />
+
+      {/* Mobile, verified by OTP before the account can be created */}
+      <AuthField
+        className="mb-3"
+        label="Mobile number"
+        labelRight={
+          isPhoneValidated ? (
+            <View className="flex-row items-center">
+              <CheckCircle2 size={14} color={BRAND.success} />
+              <ThemedText className="text-sm font-bold ml-1 mr-3" style={{ color: BRAND.success }}>
+                Verified
               </ThemedText>
+              <AuthTextLink label="Change" onPress={handleResetPhone} />
             </View>
-          </LinearGradient>
-        </View>
+          ) : null
+        }
+        icon={Phone}
+        prefix="+91"
+        value={mobile}
+        onChangeText={(text) => setMobile(sanitizeMobileNumber(text))}
+        placeholder="10-digit number"
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        maxLength={18}
+        editable={!isPhoneValidated}
+        right={
+          isPhoneValidated ? null : (
+            <FieldAction
+              label={timerCount > 0 ? `${timerCount}s` : isOtpGenerated ? "Resend" : "Get OTP"}
+              onPress={handleGenerateOtp}
+              loading={isGeneratingOtp}
+              disabled={mobile.length !== 10 || timerCount > 0}
+            />
+          )
+        }
+      />
 
-        {/* Sign Up Form Container */}
-        <View
-          className={`flex-1 -mt-6 px-6 pt-7 pb-10 rounded-t-3xl border-t ${
-            isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"
-          }`}
-          style={[
-            Platform.OS === "ios"
-              ? {
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: -3 },
-                  shadowOpacity: isDarkMode ? 0.35 : 0.08,
-                  shadowRadius: 10,
-                }
-              : { elevation: 6 },
-          ]}
-        >
-          {/* Header Title */}
-          <View className="mb-5">
-            <ThemedText className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              Join Criconic
-            </ThemedText>
-            <ThemedText className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              Sign up to score matches, manage squads & tournaments
-            </ThemedText>
-          </View>
+      {needsOtp && (
+        <AuthField
+          className="mb-3"
+          label="Code sent to your phone"
+          labelRight={
+            <AuthTextLink
+              label={timerCount > 0 ? `Resend in ${timerCount}s` : "Resend code"}
+              onPress={handleGenerateOtp}
+              disabled={timerCount > 0 || isGeneratingOtp}
+            />
+          }
+          icon={KeyRound}
+          value={otp}
+          onChangeText={setOtp}
+          placeholder="6-digit code"
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="sms-otp"
+          maxLength={6}
+          right={
+            <FieldAction
+              label="Verify"
+              onPress={handleValidateOtp}
+              loading={isValidatingOtp}
+              disabled={otp.length < 4}
+            />
+          }
+        />
+      )}
 
-          {/* Full Name / Username */}
-          <View className="mb-3.5">
-            <ThemedText className={`text-xs font-semibold mb-1.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-              User Name / Full Name
-            </ThemedText>
-            <View
-              className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
-                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
-              }`}
-            >
-              <UserIcon size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-              <TextInput
-                className={`flex-1 ml-3 text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Enter your full name"
-                autoComplete="name"
-                textContentType="name"
-                placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
-                autoCapitalize="words"
-              />
-            </View>
-          </View>
+      <AuthField
+        className="mb-3"
+        label="Password"
+        icon={Lock}
+        secure
+        value={password}
+        onChangeText={setPassword}
+        placeholder="At least 6 characters"
+        autoCapitalize="none"
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
+      />
+      <AuthField
+        ref={confirmPasswordInputRef}
+        className=""
+        label="Confirm password"
+        icon={Lock}
+        secure
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        placeholder="Type it again"
+        autoCapitalize="none"
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="go"
+        onSubmitEditing={handleSignUp}
+      />
 
-          {/* Mobile Number Field + Generate OTP */}
-          <View className="mb-3.5">
-            <View className="flex-row justify-between items-center mb-1.5">
-              <ThemedText className={`text-xs font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                Mobile Number
-              </ThemedText>
-              {isPhoneValidated ? (
-                <View className="flex-row items-center">
-                  <CheckCircle2 size={14} color="#10B981" />
-                  <ThemedText className="text-xs font-bold text-emerald-500 ml-1 mr-2">
-                    Verified
-                  </ThemedText>
-                  <TouchableOpacity
-                    onPress={handleResetPhone}
-                    activeOpacity={0.7}
-                    className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30"
-                  >
-                    <ThemedText className="text-[11px] font-semibold text-blue-500">
-                      Change
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-            <View
-              className={`flex-row items-center px-3.5 py-1.5 rounded-xl border ${
-                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
-              }`}
-            >
-              <Phone size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-              <TextInput
-                className={`flex-1 ml-3 text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}
-                value={mobile}
-                onChangeText={(text) => setMobile(sanitizeMobileNumber(text))}
-                placeholder="10-digit mobile number"
-                placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                textContentType="telephoneNumber"
-                maxLength={18}
-                editable={!isPhoneValidated}
-              />
-              {isPhoneValidated ? (
-                <TouchableOpacity
-                  onPress={handleResetPhone}
-                  activeOpacity={0.7}
-                  className="px-2.5 py-1 rounded-lg bg-blue-500/15 border border-blue-500/30"
-                >
-                  <ThemedText className="text-xs font-bold text-blue-500">
-                    Change
-                  </ThemedText>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  onPress={handleGenerateOtp}
-                  disabled={isGeneratingOtp || mobile.length !== 10 || timerCount > 0}
-                  className={`px-3 py-1.5 rounded-lg ${
-                    mobile.length === 10 && timerCount === 0
-                      ? "bg-blue-600"
-                      : "bg-gray-400 opacity-60"
-                  }`}
-                  activeOpacity={0.8}
-                >
-                  {isGeneratingOtp ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <ThemedText className="text-white text-xs font-bold">
-                      {timerCount > 0 ? `${timerCount}s` : isOtpGenerated ? "Resend OTP" : "Get OTP"}
-                    </ThemedText>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
+      <View className="flex-1 min-h-[8px]" />
 
-          {/* OTP Verification Input (When OTP is generated and not yet validated) */}
-          {isOtpGenerated && !isPhoneValidated && !isOtpBypass && (
-            <View className="mb-3.5 p-3 rounded-xl border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
-              <ThemedText className={`text-xs font-semibold mb-1.5 ${isDarkMode ? "text-blue-300" : "text-blue-900"}`}>
-                Enter Verification OTP
-              </ThemedText>
-              <View className="flex-row items-center">
-                <View
-                  className={`flex-1 flex-row items-center px-3.5 py-2 rounded-xl border mr-2 ${
-                    isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                  }`}
-                >
-                  <KeyRound size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-                  <TextInput
-                    className={`flex-1 ml-3 text-sm font-semibold tracking-widest ${
-                      isDarkMode ? "text-white" : "text-gray-900"
-                    }`}
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="Enter OTP"
-                    placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
-                    keyboardType="number-pad"
-                    textContentType="oneTimeCode"
-                    autoComplete="sms-otp"
-                    maxLength={6}
-                  />
-                </View>
-                <TouchableOpacity
-                  onPress={handleValidateOtp}
-                  disabled={isValidatingOtp || otp.length < 4}
-                  className={`px-4 py-2.5 rounded-xl ${
-                    otp.length >= 4 ? "bg-emerald-600" : "bg-gray-400 opacity-60"
-                  }`}
-                  activeOpacity={0.8}
-                >
-                  {isValidatingOtp ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <ThemedText className="text-white text-xs font-bold">Verify</ThemedText>
-                  )}
-                </TouchableOpacity>
-              </View>
-              {timerCount > 0 ? (
-                <ThemedText className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5">
-                  Resend OTP available in {timerCount} seconds
-                </ThemedText>
-              ) : (
-                <TouchableOpacity onPress={handleGenerateOtp} className="mt-1.5">
-                  <ThemedText className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
-                    Didn't receive OTP? Resend now
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Password Field */}
-          <View className="mb-3.5">
-            <ThemedText className={`text-xs font-semibold mb-1.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-              Password (at least 6 characters)
-            </ThemedText>
-            <View
-              className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
-                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
-              }`}
-            >
-              <Lock size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-              <TextInput
-                className={`flex-1 ml-3 text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="At least 6 characters"
-                autoCapitalize="none"
-                autoComplete="new-password"
-                textContentType="newPassword"
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
-                placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="p-1">
-                {showPassword ? (
-                  <EyeOff size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-                ) : (
-                  <Eye size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Confirm Password Field */}
-          <View className="mb-6">
-            <ThemedText className={`text-xs font-semibold mb-1.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-              Confirm Password
-            </ThemedText>
-            <View
-              className={`flex-row items-center px-3.5 py-2.5 rounded-xl border ${
-                isDarkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
-              }`}
-            >
-              <Lock size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-              <TextInput
-                className={`flex-1 ml-3 text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}
-                secureTextEntry={!showConfirmPassword}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Re-enter your password"
-                ref={confirmPasswordInputRef}
-                autoCapitalize="none"
-                autoComplete="new-password"
-                textContentType="newPassword"
-                returnKeyType="go"
-                onSubmitEditing={handleSignUp}
-                placeholderTextColor={isDarkMode ? "#6B7280" : "#94A3B8"}
-              />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} className="p-1">
-                {showConfirmPassword ? (
-                  <EyeOff size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-                ) : (
-                  <Eye size={18} color={isDarkMode ? "#9CA3AF" : "#64748B"} />
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Sign Up Submit Button */}
-          <TouchableOpacity
-            onPress={handleSignUp}
-            disabled={isLoading}
-            activeOpacity={0.88}
-            className="rounded-xl overflow-hidden mb-3"
-            style={[
-              Platform.OS === "ios"
-                ? {
-                    shadowColor: "#2563EB",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                  }
-                : { elevation: 4 },
-            ]}
-          >
-            <LinearGradient
-              colors={["#2563EB", "#1D4ED8"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className="py-3.5 items-center justify-center flex-row"
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <ThemedText className="text-white text-base font-bold tracking-wide">
-                  Create Account
-                </ThemedText>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Continue as Guest */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.Home)}
-            activeOpacity={0.7}
-            className={`py-3 rounded-xl border items-center justify-center mb-5 ${
-              isDarkMode ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"
-            }`}
-          >
-            <ThemedText className={`text-xs font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-              Explore as Guest
-            </ThemedText>
-          </TouchableOpacity>
-
-          {/* Sign In Link */}
-          <View className="flex-row justify-center items-center mt-auto">
-            <ThemedText className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              Already have an account?{" "}
-            </ThemedText>
-            <TouchableOpacity onPress={() => navigation.navigate(SCREENS.LoginScreen)} activeOpacity={0.7}>
-              <ThemedText className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                Sign In
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </AppKeyboardAwareScrollView>
-    </SafeAreaView>
+      <AuthButton label="Create account" onPress={handleSignUp} loading={isLoading} />
+      <AuthFooterLink
+        text="Already have an account?"
+        linkText="Sign in"
+        onPress={() => navigation.navigate(SCREENS.LoginScreen)}
+      />
+    </AuthScreen>
   );
 }
