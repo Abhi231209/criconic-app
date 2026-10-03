@@ -208,7 +208,9 @@ export default function PlayerSelectionScreen() {
         const defaults = await getTrackingDefaults();
 
         if (isMounted) {
-          if (storedWW !== null) {
+          if (route.params?.isWagonWheelEnabled !== undefined) {
+            setIsWagonWheelEnabled(Boolean(route.params.isWagonWheelEnabled));
+          } else if (storedWW !== null) {
             setIsWagonWheelEnabled(storedWW === "true");
           } else if (matchDetails?.config?.recordWagonWheel !== undefined) {
             const ww = matchDetails.config.recordWagonWheel;
@@ -217,7 +219,9 @@ export default function PlayerSelectionScreen() {
             setIsWagonWheelEnabled(defaults.wagonWheel);
           }
 
-          if (storedPM !== null) {
+          if (route.params?.isPitchMapEnabled !== undefined) {
+            setIsPitchMapEnabled(Boolean(route.params.isPitchMapEnabled));
+          } else if (storedPM !== null) {
             setIsPitchMapEnabled(storedPM === "true");
           } else if (matchDetails?.config?.recordPitchMap !== undefined) {
             const pm = matchDetails.config.recordPitchMap;
@@ -438,8 +442,16 @@ export default function PlayerSelectionScreen() {
           }
           // Otherwise, stay on PlayerSelectionScreen to let user select Inning 2 openers!
         } else {
-          // Standard Inning 1 checks ONLY
-          if (m.status === MATCH_STATUS.MATCH_CREATED) {
+          const isLimitedOvers = m.type !== "test";
+          const hasValidOvers = !isLimitedOvers || Number(m.totalOvers) > 0;
+          const hasLocation = Boolean(m.location?.trim() || m.address?.trim());
+          const isDetailsIncomplete = !hasValidOvers || !hasLocation;
+
+          if (
+            m.status === MATCH_STATUS.MATCH_CREATED ||
+            m.status === MATCH_STATUS.MATCH_SCHEDULED ||
+            isDetailsIncomplete
+          ) {
             isLeavingRef.current = true;
             navigation.replace(SCREENS.MatchDetailsScreen, { matchId, ...route.params });
             return;

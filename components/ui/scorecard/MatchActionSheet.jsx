@@ -76,21 +76,43 @@ const MatchActionSheet = ({
         onPress: async () => {
           closeSheet();
           let currentStatus = score?.matchCurrentStatus || matchDetails?.status || matchStatus;
+          let matchData = matchDetails;
           if (
             matchId &&
             (!currentStatus ||
               currentStatus === MATCH_STATUS.MATCH_CREATED ||
-              currentStatus === MATCH_STATUS.MATCH_SCHEDULED)
+              currentStatus === MATCH_STATUS.MATCH_SCHEDULED ||
+              currentStatus === MATCH_STATUS.MATCH_DETAILS_ENTERED)
           ) {
             try {
               const res = await matchesApi.getMatchById(matchId, { errorAlert: false });
-              if (res?.data?.status) {
-                currentStatus = res.data.status;
+              if (res?.data) {
+                matchData = res.data;
+                if (res.data.status) {
+                  currentStatus = res.data.status;
+                }
               }
             } catch (err) {
               console.warn("[MatchActionSheet] Error fetching fresh match status:", err);
             }
           }
+
+          if (
+            matchData &&
+            (currentStatus === MATCH_STATUS.MATCH_DETAILS_ENTERED ||
+              currentStatus === MATCH_STATUS.MATCH_CREATED ||
+              currentStatus === MATCH_STATUS.MATCH_SCHEDULED)
+          ) {
+            const isLimitedOvers = matchData.type !== "test";
+            const hasValidOvers = !isLimitedOvers || Number(matchData.totalOvers) > 0;
+            const hasLocation = Boolean(
+              matchData.location?.trim() || matchData.address?.trim()
+            );
+            if (!hasValidOvers || !hasLocation) {
+              currentStatus = MATCH_STATUS.MATCH_CREATED;
+            }
+          }
+
           const target = matchRedirectBasedOnStatus(matchId, currentStatus);
           navigation.navigate(target.screen, target.params);
         },
@@ -105,7 +127,45 @@ const MatchActionSheet = ({
         gradient: theme?.gradients?.actionPrimary || ["#3B82F6", "#2563EB"],
         onPress: async () => {
           closeSheet();
-          const target = matchRedirectBasedOnStatus(matchId, matchDetails?.status || MATCH_STATUS.MATCH_CREATED);
+          let currentStatus = matchDetails?.status || MATCH_STATUS.MATCH_CREATED;
+          let matchData = matchDetails;
+          if (
+            matchId &&
+            (!currentStatus ||
+              currentStatus === MATCH_STATUS.MATCH_CREATED ||
+              currentStatus === MATCH_STATUS.MATCH_SCHEDULED ||
+              currentStatus === MATCH_STATUS.MATCH_DETAILS_ENTERED)
+          ) {
+            try {
+              const res = await matchesApi.getMatchById(matchId, { errorAlert: false });
+              if (res?.data) {
+                matchData = res.data;
+                if (res.data.status) {
+                  currentStatus = res.data.status;
+                }
+              }
+            } catch (err) {
+              console.warn("[MatchActionSheet] Error fetching fresh match status:", err);
+            }
+          }
+
+          if (
+            matchData &&
+            (currentStatus === MATCH_STATUS.MATCH_DETAILS_ENTERED ||
+              currentStatus === MATCH_STATUS.MATCH_CREATED ||
+              currentStatus === MATCH_STATUS.MATCH_SCHEDULED)
+          ) {
+            const isLimitedOvers = matchData.type !== "test";
+            const hasValidOvers = !isLimitedOvers || Number(matchData.totalOvers) > 0;
+            const hasLocation = Boolean(
+              matchData.location?.trim() || matchData.address?.trim()
+            );
+            if (!hasValidOvers || !hasLocation) {
+              currentStatus = MATCH_STATUS.MATCH_CREATED;
+            }
+          }
+
+          const target = matchRedirectBasedOnStatus(matchId, currentStatus);
           navigation.navigate(target.screen, target.params);
         },
       });
